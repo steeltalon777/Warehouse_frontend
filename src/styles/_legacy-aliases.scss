@@ -1,0 +1,47 @@
+/* Legacy aliases are deprecated. New code should use .wh-* classes. */
+
+.warehouse-spa {
+  .page,
+  .operations-page {
+    display: flex;
+    flex-direction: column;
+    min-height: 100%;
+    background: var(--wh-color-bg);
+  }
+
+  .workspace {
+    display: grid;
+    gap: var(--wh-space-4);
+  }
+
+  .table-card,
+  .right-panel-wrapper,
+  .filters-card,
+  .panel-content,
+  .right-panel {
+    background: var(--wh-color-surface);
+    border: 1px solid var(--wh-color-border);
+    border-radius: var(--wh-radius-xl);
+  }
+
+  .page-header,
+  .modal-header,
+  .modal-footer,
+  .panel-header,
+  .section-header,
+  .filter-row,
+  .filter-panel,
+  .table-wrapper,
+  .action-buttons,
+  .header-actions {
+    font-family: inherit;
+  }
+
+  .badge-dirty { background: #fef3c7; color: #92400e; }
+  .badge-inactive { background: #e5e7eb; color: #374151; }
+  .badge-error { background: #fee2e2; color: #991b1b; }
+  .badge-item { background: #dbeafe; color: #1e40af; }
+  .badge-category { background: #dcfce7; color: #166534; }
+  .type-badge { background: #e0e7ff; color: #3730a3; }
+  .status-badge { background: #f3f4f6; color: #6b7280; }
+}

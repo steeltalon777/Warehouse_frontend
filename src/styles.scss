@@ -1,0 +1,33 @@
+@use './styles/tokens';
+@use './styles/primitives';
+@use './styles/legacy-aliases';
+@use './styles/tables';
+@use './styles/badges';
+@use './styles/modals';
+@use './styles/states';
+@use './styles/forms';
+
+html,
+body {
+  margin: 0;
+  padding: 0;
+  min-height: 100%;
+}
+
+.warehouse-spa ::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+
+.warehouse-spa ::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.warehouse-spa ::-webkit-scrollbar-thumb {
+  background: #d1d5db;
+  border-radius: 3px;
+}
+
+.warehouse-spa ::-webkit-scrollbar-thumb:hover {
+  background: #9ca3af;
+}
