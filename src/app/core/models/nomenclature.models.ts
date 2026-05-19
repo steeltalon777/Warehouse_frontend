@@ -1,0 +1,125 @@
+export interface Category {
+  id: string;
+  name: string;
+  code: string;
+  parent_id: string | null;
+  sort_order: number;
+  is_active: boolean;
+  children_count: number;
+  items_count: number;
+  children?: Category[];
+}
+
+export interface Item {
+  id: string;
+  name: string;
+  sku: string;
+  category_id: string;
+  category_name: string;
+  unit_id: string;
+  unit_symbol: string;
+  is_active: boolean;
+  hashtags: string[];
+}
+
+export interface Unit {
+  id: string;
+  name: string;
+  symbol: string;
+  sort_order: number;
+  is_active: boolean;
+}
+
+export interface BootstrapData {
+  user: {
+    id: string;
+    username: string;
+    full_name: string;
+  };
+  role: string;
+  permissions: string[];
+  feature_flags: Record<string, boolean>;
+  pagination: {
+    default_page_size: number;
+    max_page_size: number;
+  };
+  version: string;
+  server_time: string;
+}
+
+export interface ApiResponse<T> {
+  ok: boolean;
+  data?: T;
+  meta?: Record<string, unknown>;
+  error?: {
+    code: string;
+    message: string;
+    fields?: Record<string, string>;
+  };
+}
+
+export interface PaginatedResponse<T> {
+  items: T[];
+  total: number;
+  page: number;
+  page_size: number;
+  total_pages: number;
+}
+
+// ─── New spec models ───────────────────────────────────────────
+
+export type CatalogNodeType = 'category' | 'item';
+
+export type CatalogNodeState =
+  | 'normal'
+  | 'selected'
+  | 'dirty'
+  | 'inactive'
+  | 'error';
+
+export type CatalogPendingAction =
+  | 'create'
+  | 'update'
+  | 'deactivate'
+  | 'delete';
+
+export interface CatalogTreeNodeVm {
+  id: string;
+  type: CatalogNodeType;
+  name: string;
+
+  sku?: string;
+  meta?: string;
+
+  parentId?: string | null;
+  categoryId?: string | null;
+  unitId?: string | null;
+
+  isActive: boolean;
+
+  level: number;
+  children?: CatalogTreeNodeVm[];
+
+  expanded: boolean;
+  selected: boolean;
+  dirty: boolean;
+  error?: string | null;
+
+  pendingAction?: CatalogPendingAction;
+  state?: CatalogNodeState;
+}
+
+export interface CatalogPendingChange {
+  localId: string;
+  entityType: 'category' | 'item' | 'unit';
+  entityId?: string;
+  action: CatalogPendingAction;
+  payload: Record<string, unknown>;
+}
+
+export interface CatalogInlineEditEvent {
+  nodeId: string;
+  nodeType: CatalogNodeType;
+  field: string;
+  value: unknown;
+}

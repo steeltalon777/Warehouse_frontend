@@ -1,0 +1,38 @@
+- generic [ref=e4]:
+  - generic [ref=e6]:
+    - generic [ref=e7]:
+      - heading "Номенклатура" [level=1] [ref=e8]
+      - generic [ref=e9]: Read-only
+    - generic [ref=e11]:
+      - img
+      - textbox "Поиск по названию, артикулу или тегу..." [ref=e12]
+    - generic [ref=e13]:
+      - button "Создать" [disabled] [ref=e14]:
+        - img [ref=e15]
+        - generic [ref=e17]: Создать
+      - button "SSR Fallback" [disabled] [ref=e18]:
+        - img [ref=e19]
+  - generic [ref=e21]:
+    - generic [ref=e22]:
+      - generic [ref=e25]:
+        - generic [ref=e26]:
+          - heading "Категории" [level=2] [ref=e27]
+          - generic [ref=e28]: 4 корневых
+        - generic [ref=e29]:
+          - generic [ref=e31]
+          - generic [ref=e55]
+          - generic [ref=e75] [cursor=pointer]
+          - generic [ref=e80] [cursor=pointer]
+      - generic [ref=e85]:
+        - generic [ref=e86]:
+          - heading "Товарно-материальные ценности" [level=2] [ref=e87]
+          - generic [ref=e88]: 12 позиций
+        - table [ref=e90]:
+          - rowgroup [ref=e91]
+          - rowgroup [ref=e98]
+    - generic [ref=e238]:
+      - img [ref=e239]
+      - heading "Выберите элемент" [level=3] [ref=e242]
+      - paragraph [ref=e243]:
+        - text: Выберите категорию или ТМЦ в левой части экрана,
+        - text: чтобы просмотреть подробную информацию

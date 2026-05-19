@@ -1,0 +1,6 @@
+Angular components & states
+nomenclature-page → catalog-tree + category-edit-form/item-edit-form + pending-changes-bar. API-запросы держать в catalog-api.service.ts, локальный батч — в catalog-change-buffer.service.ts. 
+Компоненты дерева не отправляют HTTP сами, потому что мы всё-таки пытаемся строить архитектуру, а не свалку.
+Operations UI notes
+Angular рисует только правый content area внутри существующей Django-оболочки.
+ Экран /operations — это список операций с фильтрами и таблицей. Создание, редактирование черновика и подтверждение операции идут через модалки. Подтверждение переводит draft в полноценную операцию. Приёмка намеренно вынесена отдельно: это сверка ожидалось/приехало/расхождение.
