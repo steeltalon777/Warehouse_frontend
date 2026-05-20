@@ -181,6 +181,7 @@ Forbidden now:
 - Angular must not replace the global sidebar.
 - Angular must not fetch or own the global menu state unless a menu architecture TZ is approved.
 - Agents must not add a second topbar/sidebar inside Angular screens.
+- The main menu stays in Django during the current phase; Angular screens mount only in the content container to the right of that menu. Moving the menu into Angular requires a separate ADR/TZ with migration and test evidence.
 
 ## BFF-Only Data Contract
 

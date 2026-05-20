@@ -37,6 +37,7 @@ import { CatalogTreeNodeComponent } from '../catalog-tree-node/catalog-tree-node
       display: flex;
       flex-direction: column;
       background: #FFFFFF;
+      min-height: 0;
     }
     .tree-header {
       display: flex;

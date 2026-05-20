@@ -107,6 +107,7 @@ import { PendingChangesBarComponent } from '../pending-changes-bar/pending-chang
       display: flex;
       flex-direction: column;
       overflow: hidden;
+      min-height: 0;
     }
     .tree-wrapper {
       flex: 1;
@@ -119,6 +120,7 @@ import { PendingChangesBarComponent } from '../pending-changes-bar/pending-chang
       border: 1px solid #E5E7EB;
       border-radius: 16px;
       overflow: hidden;
+      min-height: 0;
     }
 
     .loading-overlay {
