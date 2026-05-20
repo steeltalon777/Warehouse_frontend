@@ -374,7 +374,8 @@ export class NomenclatureService {
   // ─── Batch apply ─────────────────────────────────────────────
 
   private _apiPath(entityType: string, entityId?: string): string {
-    const prefix = `/${entityType}s`;
+    const plural = entityType === 'category' ? 'categories' : `${entityType}s`;
+    const prefix = `/${plural}`;
     return entityId ? `${prefix}/${entityId}/` : `${prefix}/`;
   }
 
