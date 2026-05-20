@@ -66,9 +66,7 @@ import {
             (ngModelChange)="onDateBeforeChange($event)"
           />
         </div>
-      </div>
 
-      <div class="filter-row second">
         <div class="filter-group checkbox">
           <label class="checkbox-label">
             <input
@@ -80,32 +78,43 @@ import {
           </label>
         </div>
 
-        <button class="wh-btn wh-btn--secondary btn btn-reset" (click)="onReset()">Сбросить фильтры</button>
+        <button class="wh-btn wh-btn--secondary btn btn-reset" (click)="onReset()">Сбросить</button>
       </div>
     </div>
   `,
   styles: [`
-    .filter-panel { display: flex; flex-direction: column; gap: 8px; }
-    .filter-row { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
-    .filter-row.second { margin-top: 4px; }
+    .filter-panel { display: flex; flex-direction: column; }
+    .filter-row { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
 
-    .filter-group { display: flex; align-items: center; gap: 8px; }
-    .filter-group.search { flex: 1; min-width: 220px; }
-    .filter-group.date-range { display: flex; align-items: center; gap: 6px; }
+    .filter-group { display: flex; align-items: center; gap: 6px; }
+    .filter-group.search { flex: 1; min-width: 180px; }
+    .filter-group.date-range { display: flex; align-items: center; gap: 4px; }
     .filter-group.checkbox { margin-right: auto; }
 
-    .date-sep { color: #94A3B8; font-size: 13px; }
+    .input {
+      height: 32px;
+      padding: 0 8px;
+      font-size: 13px;
+    }
+
+    .date-sep { color: #94A3B8; font-size: 12px; }
 
     .checkbox-label {
       display: inline-flex;
       align-items: center;
-      gap: 6px;
-      font-size: 13px;
+      gap: 4px;
+      font-size: 12px;
       color: #374151;
       cursor: pointer;
+      white-space: nowrap;
     }
-    .checkbox-label input { cursor: pointer; }
+    .checkbox-label input { cursor: pointer; width: 14px; height: 14px; }
 
+    .btn-reset {
+      height: 32px;
+      padding: 0 10px;
+      font-size: 12px;
+    }
   `]
 })
 export class OperationsFilterPanelComponent {

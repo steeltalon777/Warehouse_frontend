@@ -211,6 +211,72 @@ describe('OperationsService', () => {
     expect(service.isSubmitting()).toBe(false);
   });
 
+  // ─── Role-aware cancel (Stage B2) ───────────────────────────────
+
+  it('root can cancel submitted operations', async () => {
+    authMock.authContext = vi.fn(() => ({ userId: 'user-1', role: 'root', defaultSiteId: null }));
+    const op = makeOperation('submitted');
+    bffMock.getList.mockReturnValue(of({ items: [op], total_count: 1, page: 1, page_size: 20 }));
+
+    await service.loadList({
+      search: '', type: null, status: null, siteId: null,
+      createdAfter: null, createdBefore: null, updatedAfter: null, updatedBefore: null,
+      createdByUserId: null, onlyMine: false, page: 1, pageSize: 20,
+    });
+
+    const row = service.rows()[0];
+    expect(row.canCancel).toBe(true);
+  });
+
+  it('chief_storekeeper cannot cancel submitted operations', async () => {
+    authMock.authContext = vi.fn(() => ({ userId: 'user-1', role: 'chief_storekeeper', defaultSiteId: null }));
+    const op = makeOperation('submitted');
+    bffMock.getList.mockReturnValue(of({ items: [op], total_count: 1, page: 1, page_size: 20 }));
+
+    await service.loadList({
+      search: '', type: null, status: null, siteId: null,
+      createdAfter: null, createdBefore: null, updatedAfter: null, updatedBefore: null,
+      createdByUserId: null, onlyMine: false, page: 1, pageSize: 20,
+    });
+
+    const row = service.rows()[0];
+    expect(row.canCancel).toBe(false);
+  });
+
+  it('storekeeper cannot cancel submitted operations', async () => {
+    authMock.authContext = vi.fn(() => ({ userId: 'user-1', role: 'storekeeper', defaultSiteId: null }));
+    const op = makeOperation('submitted');
+    bffMock.getList.mockReturnValue(of({ items: [op], total_count: 1, page: 1, page_size: 20 }));
+
+    await service.loadList({
+      search: '', type: null, status: null, siteId: null,
+      createdAfter: null, createdBefore: null, updatedAfter: null, updatedBefore: null,
+      createdByUserId: null, onlyMine: false, page: 1, pageSize: 20,
+    });
+
+    const row = service.rows()[0];
+    expect(row.canCancel).toBe(false);
+  });
+
+  it('non-root does not see cancelled rows in results', async () => {
+    authMock.authContext = vi.fn(() => ({ userId: 'user-1', role: 'storekeeper', defaultSiteId: null }));
+    const draft = makeOperation('draft');
+    const cancelled = makeOperation('cancelled', { id: 'op-cancelled', number: 'OP-CANCEL' });
+    bffMock.getList.mockReturnValue(of({ items: [draft, cancelled], total_count: 2, page: 1, page_size: 20 }));
+
+    await service.loadList({
+      search: '', type: null, status: null, siteId: null,
+      createdAfter: null, createdBefore: null, updatedAfter: null, updatedBefore: null,
+      createdByUserId: null, onlyMine: false, page: 1, pageSize: 20,
+    });
+
+    const rows = service.rows();
+    expect(rows.length).toBe(1);
+    expect(rows[0].status).not.toBe('cancelled');
+  });
+
+  // ─── isSaving / isSubmitting flags ─────────────────────────────────
+
   it('isSaving resets on createOperation error', async () => {
     bffMock.postData.mockReturnValue(throwError(() => ({ code: 'error', message: 'fail' })));
 

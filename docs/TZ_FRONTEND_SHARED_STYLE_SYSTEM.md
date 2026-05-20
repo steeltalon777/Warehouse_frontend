@@ -1,4 +1,4 @@
-# TZ: Warehouse Frontend Shared SPA Style System
+# TZ: FHD compact table layout for Angular warehouse screens
 
 ## Execution Checklist
 
@@ -16,515 +16,276 @@
 
 ## Check Rules
 
-- Architect creates this checklist, scope, levels, and acceptance criteria.
-- Executor agents may check implementation and test items only after the required verification is done and evidence is recorded.
+- Architect creates the checklist and acceptance criteria.
+- Executor agents may check implementation and test items only after running the required verification.
 - QA verifier may check final acceptance only after reviewing evidence.
-- Failed or unavailable checks stay unchecked with a blocker note.
+- If a check is skipped, it must stay unchecked with a reason in the report.
 
----
+## 0. Context and Problem
 
-## 1. Purpose
+Canonical functional authority: `../../Functional and WorkLogik.md`, especially sections I.3, VIII.2, VIII.3, VIII.4.
 
-Create one authoritative visual/style source for every Angular SPA screen in `Warehouse_frontend`, including screens that do not exist yet.
+Observed screen: `/balances/?search=ui&item_id=&site_id=&page_size=20` in the Django shell. On an FHD browser, the filter area consumes too much vertical space before the table. The operator sees only a small part of the balances table, although this screen is primarily a data table.
 
-The result must make nomenclature, operations, future balances, acceptance, temporary items, lost assets, issued assets, reports, and dashboard SPA screens look like one product inside the Django-owned shell.
+Specific current issues found in `Warehouse_web/templates/balances/list.html` and shared frontend docs:
 
-This TZ is a prerequisite for broad Angular screen development. New screens must use the shared style system instead of copying per-screen CSS from mockups or existing components.
+- The balances filter card uses generous vertical spacing (`card`, `mb-4`, `grid-2`, full-width checkbox row, full-width action row), so controls take about two thirds of the useful vertical area in the screenshot.
+- Table headers are plain `<th>` elements, not clickable sort controls.
+- The SSR page exposes page sizes `20`, `50`, `100`, `200`, while the functional requirement says `10`, `20`, `50`.
+- The table wrapper only provides horizontal overflow; normal FHD table work needs vertical table-body scrolling with sticky headers.
+- `Warehouse_frontend/docs/ARCHITECTURE_FRONTEND_SPA.md` already references this shared style document, but the document was missing before this TZ.
 
----
+This TZ sets the shared UI contract for all Angular table-heavy screens. Existing SSR screens should follow the same visual rules when touched, but the priority is Angular screens mounted in the Django shell.
 
-## 2. Source Requirements
+## 1. Architecture Boundaries
 
-Canonical functional requirements:
+### In scope
 
-- `Functional and WorkLogik.md` is authoritative for screen layout and table behavior:
-  - UI is designed primarily for FHD screens;
-  - Django shell has top brand/user/logout area and left navigation;
-  - Angular screens render in the remaining content container;
-  - all tables need sortable columns;
-  - pagination must use 10/20/50;
-  - table body scrolls while headers and controls remain fixed;
-  - modals that do not fit the screen must scroll internally.
+- `Warehouse_frontend/src/styles/*` shared `wh-*` layout primitives.
+- Angular table-heavy screens: balances, operations, pending acceptance, unaccepted/lost assets, temporary items, issued assets, catalog/nomenclature tables.
+- Angular component templates/styles that render filters, table cards, sortable headers, pagination, loading/empty/error states.
+- BFF/API query contracts only where sorting/pagination parameters are needed by a screen.
+- Playwright UI checks through the Django-hosted business URLs.
 
-Project rules:
+### Out of scope
 
-- `Warehouse_frontend/AGENTS.md` says Angular must use Django same-origin/BFF and must not call SyncServer directly.
-- `Warehouse_frontend/docs/TZ_FRONTEND_SCREENS_IMPLEMENTATION.md` already establishes that operation mockups are the canonical visual baseline for Angular workspaces and that Angular must not redraw the Django shell.
+- Moving the Django topbar/sidebar into Angular.
+- Direct browser calls to `SyncServer`.
+- Changing warehouse domain write ownership; all writes remain owned by `SyncServer` services.
+- Replacing the whole Django shell visual system unless a separate ADR/TZ approves it.
+- Working on `WarehouseAIWorkstation`.
 
-Visual references:
+## 2. Shared FHD Compact Layout Contract
 
-- `Warehouse_frontend/docs/screens_plan/Операции Django v2 — список + модалка создания операции.png`
-- `Warehouse_frontend/docs/screens_plan/Операции Django v2 — подтверждение черновика.png`
-- `Warehouse_frontend/docs/screens_plan/СТИЛИ список операций + модальное окно создания операции.md`
-- `Warehouse_frontend/docs/screens_plan/nomenclature-screen-spec.md` for forms/tree behavior only; its full-page shell parts are non-normative.
+Target display: FHD `1920x1080`, with Django topbar and sidebar visible. Angular owns only the content rectangle to the right of the sidebar and below the topbar.
 
----
+For every Angular table-heavy screen:
 
-## 3. Current State Snapshot
+1. Use a column layout with `height: 100%` or equivalent inherited height, `min-height: 0`, and a growing table region.
+2. The control zone from the bottom of the Django topbar to the bottom of the primary filter action row must be at most 25% of the visible content height on FHD. Acceptance target: `<= 240px` at `1920x1080` after browser chrome is excluded by Playwright viewport.
+3. Page title, description, and view-level actions must use a compact header. Prefer one row on FHD; wrap only below tablet widths.
+4. Filter cards must use compact spacing:
+   - card padding: `12-16px`;
+   - grid gaps: `8-12px`;
+   - input/select height: `32-36px`;
+   - labels: `12-13px`;
+   - no empty full-width rows unless content genuinely spans the full width.
+5. For balances-like filters, expected FHD layout is two rows maximum: row 1 fields, row 2 remaining fields plus boolean toggle and action buttons.
+6. Primary and reset buttons should be near the filters and visible within the 25% control-zone budget.
+7. The table card must fill the remaining content height. Overflow belongs to `.wh-table-scroll`/table body, not to the entire page.
+8. Sticky table headers are mandatory when the table scrolls vertically.
 
-Observed current Angular style state:
+## 3. Shared Table Behavior Contract
 
-- Global `src/styles.scss` contains only a small reset, body font/background, scrollbar styling, focus-visible, and button font inheritance.
-- `src/app/app.scss` only sets host block height.
-- Feature components use large inline `styles: [\`...\`]` blocks inside TypeScript files.
-- Operations components duplicate generic classes such as `.btn`, `.modal-overlay`, `.modal-container`, `.badge`, `.table-card`, `.loading-overlay`, `.error-banner`.
-- Nomenclature components also define page/card/layout values inline and use similar but not identical colors/radii/spacing.
-- No dedicated shared SCSS token library exists.
-- `angular.json` loads only `src/styles.scss` as the global style entry.
+1. All meaningful columns are sortable by clicking the header.
+2. Sort state must be visible through an icon/indicator and accessible through `aria-sort`.
+3. Sorting must be deterministic:
+   - client-side only for already loaded complete datasets;
+   - BFF/query-param based for paginated server datasets.
+4. Pagination options are exactly `10`, `20`, `50`.
+5. The table must provide loading, empty, error, and permission-denied states inside the table card.
+6. The scroll container must preserve the page header, filters, table header, and pagination controls in predictable locations.
+7. Date columns that display operation/business dates must use the user-facing format required by `Functional and WorkLogik.md`, not raw ISO, unless a screen-specific TZ says otherwise.
 
-Problem:
+## 4. Balances Screen Acceptance Baseline
 
-- Future agents can accidentally create visually incompatible screens by copying local inline styles.
-- Global styles currently include bare selectors like `html`, `body`, and `button`; when Angular is hosted inside Django, broad selectors can affect the Django shell.
-- Colors and status/type badge styles are currently partly hardcoded in TS methods and inline `[style.background]` bindings.
+The balances screen is the first known violation and should be used as the reference fix.
 
----
+Required user-visible outcome for `/balances/` after migration/fix:
 
-## 4. Architecture Boundaries
+- FHD content shows compact title/header, compact filters, and most of the remaining height as balances table.
+- Distance from Django topbar bottom to the filter action buttons is `<= 25%` of the content viewport, target `<= 240px`.
+- Search, item ID, site, page size, positive-only toggle, `Применить фильтры`, and `Сбросить` are visible without page scrolling on FHD.
+- Page size options are `10`, `20`, `50` only.
+- Clicking `ТМЦ`, `Склад`, `Количество`, or `Обновлено` sorts by that column and updates the visual sort indicator.
+- The table body scrolls independently when rows exceed visible space; header remains sticky.
+- Django shell topbar/sidebar stay visible and unchanged.
 
-### Django shell owns
+## 5. Implementation Levels
 
-- Top navbar/brand/user/logout.
-- Left navigation.
-- Global authenticated layout outside the Angular content rectangle.
-- Organization brand variables and shell identity display.
+### Level 1 — Shared style primitives
 
-### Angular style system owns
+Writable area: `Warehouse_frontend/src/styles/*`, Angular shared table/filter components if present.
 
-- Styles inside the Angular SPA root/content container.
-- Shared page primitives for Angular feature screens.
-- Visual tokens, spacing, typography, buttons, forms, tables, badges, modals, loading/error/empty/permission states.
+Tasks:
 
-### Forbidden
+- Add or adjust shared classes for compact page headers, compact filter cards, compact filter grids, inline boolean/actions row, table viewport, sticky headers, and sortable header controls.
+- Keep class names under the `wh-` prefix.
+- Do not introduce screen-local magic spacing that duplicates the shared primitives.
 
-- Angular must not style or redraw Django topbar/sidebar.
-- Angular global CSS must not accidentally restyle Django shell through broad selectors.
-- New screens must not define their own unrelated button/table/modal/card systems.
-- New screens must not use hardcoded magic colors when a token/class exists.
-- New components must not use inline `[style.background]` for semantic states that belong to the design system.
+Acceptance:
 
----
-
-## 5. Style System Decision
-
-### 5.1 Single source of truth
-
-Use `src/styles.scss` as the only global style entry imported by Angular CLI, but split the implementation into SCSS partials under a dedicated folder.
-
-Recommended file layout:
-
-```text
-Warehouse_frontend/src/styles.scss
-Warehouse_frontend/src/styles/
-  _tokens.scss
-  _reset.scss
-  _typography.scss
-  _layout.scss
-  _buttons.scss
-  _forms.scss
-  _tables.scss
-  _badges.scss
-  _modals.scss
-  _states.scss
-  _utilities.scss
-  README.md
-```
-
-`src/styles.scss` should only compose these partials and define the root SPA scope.
-
-### 5.2 SPA scope
-
-Introduce a root class for Angular content, recommended:
-
-```html
-<div class="warehouse-spa">
-  <router-outlet />
-</div>
-```
-
-All product classes should be scoped to `.warehouse-spa` or prefixed with `wh-`.
-
-Recommended prefix: `wh-`.
-
-Examples:
-
-- `.wh-page`
-- `.wh-page-header`
-- `.wh-card`
-- `.wh-filter-card`
-- `.wh-table-card`
-- `.wh-data-table`
-- `.wh-modal-overlay`
-- `.wh-btn`
-- `.wh-badge`
-- `.wh-empty-state`
-- `.wh-error-state`
-
-### 5.3 Token model
-
-Define visual tokens as CSS custom properties inside `.warehouse-spa` and optionally SCSS variables for build-time convenience.
-
-Minimum token groups:
-
-- colors:
-  - workspace background;
-  - card background;
-  - border/subtle border;
-  - text primary/secondary/muted;
-  - primary action;
-  - danger/success/warning/info;
-  - status colors;
-  - operation type colors;
-- spacing scale: `4/8/12/16/20/24/32`;
-- radii: `6/8/10/12/16`;
-- shadows/elevation;
-- typography sizes/weights;
-- z-index layers for modal/dropdown/toast;
-- content dimensions for FHD-first layout;
-- table row/header heights.
-
-Baseline token values should be extracted from the operation mockups and current operations implementation, for example:
-
-- workspace background near `#F1F5F9`;
-- card background `#FFFFFF`;
-- borders near `#E2E8F0` / `#E5E7EB`;
-- primary dark text/action near `#0F172A` / `#334155`;
-- secondary text near `#64748B`.
-
-Executor may adjust exact values after screenshot comparison, but all adjustments must happen in tokens, not screen-local CSS.
-
----
-
-## 6. Shared Primitives Required
-
-The shared style system must provide class contracts for these primitives.
-
-### 6.1 Page/container
-
-- `.wh-page` — fills Django content container, not full browser viewport.
-- `.wh-page-header` — title/subtitle/actions row.
-- `.wh-page-title`, `.wh-page-subtitle`.
-- `.wh-workspace` — internal page layout area.
-
-### 6.2 Cards and panels
-
-- `.wh-card` — generic white panel.
-- `.wh-filter-card` — filters/search/status controls.
-- `.wh-table-card` — data table container with constrained scroll.
-- `.wh-panel` — side/right panel for tree/form layouts.
-
-### 6.3 Buttons/actions
-
-- `.wh-btn`
-- `.wh-btn--primary`
-- `.wh-btn--secondary`
-- `.wh-btn--danger`
-- `.wh-btn--success`
-- `.wh-btn--ghost`
-- `.wh-btn--sm`
-- `.wh-icon-btn`
-
-### 6.4 Forms
-
-- `.wh-field`
-- `.wh-label`
-- `.wh-input`
-- `.wh-select`
-- `.wh-textarea`
-- `.wh-form-row`
-- `.wh-form-grid`
-- `.wh-validation-message`
-
-Textarea for operation comments must support the Functional requirement of two visible rows.
-
-### 6.5 Tables
-
-- `.wh-table-card`
-- `.wh-table-scroll`
-- `.wh-data-table`
-- `.wh-sortable-th`
-- `.wh-sort-indicator`
-- `.wh-pagination`
-- `.wh-page-size`
-
-Mandatory behavior:
-
-- sort state is visible;
-- header is sticky;
-- rows scroll without moving toolbar/header;
-- page sizes are 10/20/50;
-- empty/loading/error states fit inside table card.
-
-### 6.6 Badges and semantic states
-
-- `.wh-badge`
-- `.wh-badge--status-draft`
-- `.wh-badge--status-submitted`
-- `.wh-badge--status-cancelled`
-- `.wh-badge--status-pending`
-- `.wh-badge--status-resolved`
-- `.wh-badge--type-receive`
-- `.wh-badge--type-expense`
-- `.wh-badge--type-move`
-- `.wh-badge--type-write-off`
-- `.wh-badge--type-issue`
-- `.wh-badge--type-issue-return`
-- `.wh-badge--type-adjustment`
-
-Semantic badge colors must come from classes/tokens, not TS `[style]` bindings.
-
-### 6.7 Modals/overlays
-
-- `.wh-modal-overlay`
-- `.wh-modal`
-- `.wh-modal--md`, `.wh-modal--lg`, `.wh-modal--xl`
-- `.wh-modal-header`
-- `.wh-modal-body`
-- `.wh-modal-footer`
-- `.wh-modal-close`
-
-Mandatory behavior:
-
-- overlay is contained visually within Angular content area unless product decision requires full-page overlay;
-- modal body scrolls internally when content exceeds available height;
-- header/footer remain visible;
-- confirm and create modal use the same primitive.
-
-### 6.8 Loading/error/empty/permission states
-
-- `.wh-loading-state`
-- `.wh-spinner`
-- `.wh-error-banner`
-- `.wh-empty-state`
-- `.wh-permission-state`
-
----
-
-## 7. Implementation Levels
-
-### Level 0 — Inventory and migration plan
-
-Scope:
-
-- Inventory all inline `styles: [\`...\`]` blocks in `src/app/features/**`.
-- Inventory duplicated classes and hardcoded colors/radii/shadows.
-- Identify any global selectors in `src/styles.scss` that can leak into Django shell.
-- Decide exact SCSS file layout and root SPA class.
-
-Acceptance criteria:
-
-- Executor records the list of components to migrate.
-- Executor records which global selectors will be scoped or kept.
-- No visual refactor starts before this inventory is captured in the completion report.
-
-### Level 1 — Token and global style foundation
-
-Scope:
-
-- Create `src/styles/` partials.
-- Move product visual values into `_tokens.scss`.
-- Refactor `src/styles.scss` into the single entry that imports partials.
-- Scope resets/product classes to `.warehouse-spa` and/or `wh-` classes.
-- Keep only safe global resets outside `.warehouse-spa`.
-
-Acceptance criteria:
-
+- Existing Angular screens can opt into the layout without rewriting the Django shell.
 - `npm run build` passes.
-- Django shell is not visibly restyled by Angular global CSS when Angular is hosted.
-- A future screen can use `.wh-page`, `.wh-card`, `.wh-btn`, `.wh-data-table`, `.wh-modal` without defining local styles.
 
-### Level 2 — Shared primitives and documentation
+### Level 2 — Balances screen implementation
 
-Scope:
+Writable areas:
 
-- Implement class contracts from section 6.
-- Add `src/styles/README.md` describing:
-  - token usage;
-  - naming rules;
-  - allowed local component styles;
-  - examples for page/table/modal/form.
-- Optional but recommended: create simple shared Angular UI wrapper components under `src/app/shared/ui/` only when classes alone are insufficient.
+- If Angular implementation exists or is created: `Warehouse_frontend/src/app/features/balances/**` and shared BFF client/models.
+- If transitional SSR is fixed first: `Warehouse_web/templates/balances/list.html`, related Django view sorting/page-size handling, and tests.
 
-Acceptance criteria:
+Tasks:
 
-- README is usable by future screen agents.
-- No screen-specific operation/nomenclature naming appears in generic primitive classes.
-- Shared classes are semantic and reusable.
+- Apply the compact FHD layout.
+- Implement sortable headers and deterministic sort contract.
+- Restrict page sizes to `10`, `20`, `50`.
+- Ensure table-body scrolling with sticky header.
+- Keep browser data access through Django same-origin BFF; no direct SyncServer calls from Angular.
 
-### Level 3 — Refactor existing nomenclature screen to style system
+Acceptance:
 
-Scope:
+- Balances screen meets the baseline in section 4.
+- No SyncServer token is exposed to the browser.
 
-- Replace nomenclature page/card/button/form/loading/error local styles with shared classes where possible.
-- Keep only feature-specific grid/tree sizing locally.
-- Ensure nomenclature remains inside Django content container and does not draw shell.
+### Level 3 — Extend contract to other Angular table screens
 
-Acceptance criteria:
+Writable areas by feature ownership, one feature at a time:
 
-- Nomenclature visual result remains compatible with current design direction.
-- Local styles are reduced to feature-specific layout exceptions.
-- Nomenclature uses shared buttons, panels, states, forms, and page primitives.
+- operations journal;
+- pending acceptance;
+- unaccepted/lost assets;
+- temporary items;
+- catalog/nomenclature tables;
+- future issued assets repository.
 
-### Level 4 — Refactor existing operations screen to style system
+Tasks:
 
-Scope:
+- Replace ad-hoc table/filter layout with shared primitives.
+- Verify sortable headers and pagination choices per screen.
+- Preserve each screen's domain permissions and action visibility.
 
-- Replace operations page/table/filter/modal/button/badge local styles with shared classes.
-- Remove TS-driven badge colors in favor of semantic badge classes.
-- Ensure modal overlay/body/header/footer use shared modal primitive.
-- Ensure table uses shared sticky header/pagination contract.
+Acceptance:
 
-Acceptance criteria:
+- Each touched screen has evidence for FHD compactness, sorting, pagination, sticky header, and no page-level table scrolling.
 
-- Operations screen keeps visual alignment with operation mockups.
-- No duplicate `.btn`, `.badge`, `.modal-*`, `.data-table`, `.loading-overlay`, `.error-banner` systems remain inside operations components.
-- All 7 operation types have style classes.
+## 6. Parallelization Plan
 
-### Level 5 — Future screen guardrails
+Parallel execution recommended after Level 1 is merged.
 
-Scope:
+Stage A must be sequential:
 
-- Add a short section to frontend docs or this TZ completion report stating that all future Angular screens must start from shared classes.
-- Add a lightweight review/check rule for executors:
-  - search for large inline style blocks before completion;
-  - search for hardcoded colors in feature components;
-  - justify any local SCSS.
+- One agent owns shared style primitives and any shared table/filter component contract.
+- Reason: all feature screens depend on the same classes and must not create competing primitives.
 
-Acceptance criteria:
+Stage B may run in parallel by feature ownership:
 
-- New feature screen checklist includes style-system compliance.
-- Future screens can be started without asking which colors/buttons/table/modal styles to use.
+| Unit | Writable area | Required input | Verification |
+|---|---|---|---|
+| Balances | `Warehouse_frontend/src/app/features/balances/**` or transitional `Warehouse_web/templates/balances/list.html` plus view/tests | Level 1 shared primitives | Build/tests, Playwright FHD screenshot, sort/pagination evidence |
+| Operations | `Warehouse_frontend/src/app/features/operations/**` | Level 1 shared primitives, existing operations contracts | Build/tests, Playwright FHD scenario |
+| Temporary items | `Warehouse_frontend/src/app/features/temporary-items/**` and/or SSR fallback only if explicitly assigned | Level 1 shared primitives, Functional section IV | Build/tests, Playwright or SSR smoke evidence |
+| Catalog/nomenclature | `Warehouse_frontend/src/app/features/nomenclature/**` | Level 1 shared primitives, existing nomenclature TZ | Build/tests, component/UI evidence |
 
-### Level 6 — Visual verification and regression
+Integration checkpoint after Stage B:
 
-Scope:
+- Parent/orchestrator runs `npm run build` in `Warehouse_frontend`.
+- If Django files changed, run `python manage.py test` in `Warehouse_web`.
+- Probe stand before real-stand checks; if unavailable, stop with the required blocker message.
+- Run Playwright at FHD viewport for every touched business URL.
 
-- Build Angular.
-- Run unit/component tests if available.
-- Run or add Playwright/pytest browser smoke through Django-hosted route.
-- Capture screenshots for:
-  - nomenclature in Django shell;
-  - operations list in Django shell;
-  - operation create modal;
-  - operation confirm modal.
+## 7. Test Strategy
 
-Acceptance criteria:
+### Static checks
 
-- Screenshots show stable Django topbar/sidebar and Angular content styled consistently.
-- No direct SyncServer calls are introduced.
-- Build budgets remain acceptable or documented.
+- `Warehouse_frontend`: `npm run build`.
+- If lint/type scripts exist later, run them too.
+- `Warehouse_web` if Django files changed: Django system checks through `python manage.py test`.
 
----
+### Unit tests
 
-## 8. Real Test Stand Requirement
+- Sort-state reducers/helpers, query-param mappers, pagination option validators.
+- Date/quantity display mappers where changed.
 
-This TZ touches runtime UI behavior, so a real stand is required before final acceptance.
+### Component tests
 
-### Database
+- Angular component tests for sortable headers, page-size options, filter form layout state, loading/empty/error states.
+- Django template/view tests only for transitional SSR fixes.
 
-- Django safe test DB for sessions/auth.
-- SyncServer PostgreSQL test DB for BFF data if operations/nomenclature screens need real data.
-- Lifecycle:
-  - migrate SyncServer;
-  - bootstrap root/Django device tokens;
-  - migrate Django;
-  - seed users/sites/items/operations or use existing fixtures.
+### Integration tests
 
-### Seed data
+- BFF/API tests using real Django test DB and mocked/fixture sync-client responses where appropriate.
+- Sorting/pagination query parameters must be verified at the BFF/view boundary for server-side datasets.
 
-- Django authenticated user bound to SyncServer identity.
-- Sites: at least one default/active warehouse.
-- Catalog categories/items/units.
-- Operations covering draft/submitted/cancelled and several operation types.
-- Temporary item optional unless used by visible states.
+### Real stand smoke tests
 
-### Services to start
+Runtime UI changes require the real stand unless user explicitly says to skip.
 
-- SyncServer API.
-- Django app hosting Angular build or dev server proxy.
-- Angular dev server only if `FRONTEND_MODE` uses dev-server mode.
+Stand:
 
-### Environment variable names only
+- SyncServer API: `http://localhost:8000`, health `GET /api/v1/health`.
+- Django: `http://localhost:8001`, health `GET /healthz/`.
+- PostgreSQL via user-managed SSH tunnel: `localhost:5434`.
 
-- `DJANGO_SETTINGS_MODULE`
-- `SECRET_KEY`
+Environment variable names only:
+
+- `DJANGO_ENV`
 - `SYNC_SERVER_URL`
 - `SYNC_ROOT_USER_TOKEN`
 - `SYNC_DEVICE_TOKEN`
-- `FRONTEND_MODE`
-- `FRONTEND_DEV_SERVER_URL`
-- `FRONTEND_BUILD_DIR`
-- `DJANGO_BASE_URL`
-- `SYNC_SERVER_BASE_URL`
-- `TEST_USERNAME`
-- `TEST_PASSWORD`
-- `PLAYWRIGHT_BROWSERS_PATH`
+- `DATABASE_URL`
+- `DJANGO_SETTINGS_MODULE`
+- `SECRET_KEY`
 
-### Health checks
+Probe protocol:
 
-- SyncServer health endpoint.
-- Django health/BFF health endpoint.
-- `/nomenclature/` renders inside Django shell.
-- `/operations/` renders inside Django shell if route is enabled.
+1. Probe both health endpoints before smoke/UI tests.
+2. If unavailable, stop and report: `Стенд не обнаружен. Подними стенд (Django :8001 + SyncServer :8000 + SSH-туннель :5434).`
+3. Do not start the stand automatically.
+4. If still unavailable, leave stand and UI checklist items unchecked with blocker `стенд недоступен`.
 
-### Smoke commands
+Smoke coverage:
 
-```bash
-npm run build
-npm test -- --watch=false
-python manage.py check
-python manage.py test apps.catalog apps.bff_api
-pytest tests_e2e/test_nomenclature_spa.py
-```
+- Open `/balances/` through Django.
+- Confirm Django shell is visible.
+- Confirm filters and actions are visible within FHD control-zone budget.
+- Confirm table rows render from real BFF/stand data or known seed data.
+- Confirm sort and pagination actions do not break the page.
 
-Executors must adapt commands to the project workdir and available test runner.
+### UI automation
 
-### Cleanup
+Use Playwright for web scenarios.
 
-- Stop dev/background sessions.
-- Reset disposable DBs or test fixtures.
-- Do not commit generated screenshots unless the project already stores visual baselines intentionally.
+Required assertions at `1920x1080` viewport for each touched table screen:
 
----
+- Django topbar/sidebar visible.
+- Filter action row bottom is within `25%` of content viewport height from topbar bottom, or `<= 240px` target for balances.
+- Table body area height is greater than control-zone height.
+- Table header remains visible after scrolling table body.
+- Clicking each sortable header changes sort indicator and row order or request query.
+- Page-size control offers only `10`, `20`, `50`.
 
-## 9. Test Strategy Ladder
+### User scenarios
 
-| Level | Required? | Checks |
-|---|---|---|
-| Static checks | Yes | `npm run build`; formatting/lint if configured; grep for forbidden direct SyncServer URLs/tokens |
-| Unit tests | Yes if tooling available | Component class mapping helpers; badge class helpers; page-size options |
-| Component tests | Yes if practical | Render key shared primitives and ensure class contracts exist |
-| Integration tests | Yes | Django-hosted Angular routes with BFF stubs or real test services |
-| Real stand smoke | Yes | Django shell + Angular + SyncServer test data |
-| UI automation | Yes | Playwright/pytest screenshots or DOM checks for shell/container, tables, modals |
-| User scenarios | Yes | User opens nomenclature/operations, sees consistent layout, table scroll/header behavior, modal internal scroll |
-| Regression pack | Yes | Existing nomenclature flow, operations list/modal flow, no direct SyncServer calls |
-| Acceptance review | Yes | Evidence table + screenshots/logs reviewed |
+- Storekeeper opens balances, filters by search/site, sorts by quantity, switches page size, and scrolls table without losing header.
+- Chief storekeeper/root sees the same layout while retaining allowed actions on screens where actions exist.
 
----
+### Regression checks
 
-## 10. Acceptance Criteria
+- Authentication/login still routes to Django shell.
+- Sidebar links still open business URLs.
+- No direct `/api/v1/*` SyncServer request appears from the browser network log.
+- Existing operations and nomenclature screens still build and render.
 
-- There is one documented global style source composed from `src/styles.scss` and `src/styles/*` partials.
-- Product styles are scoped to Angular SPA root and do not restyle Django shell unexpectedly.
-- Shared tokens define colors, spacing, radii, typography, table dimensions, modal layers, and semantic state colors.
-- Existing nomenclature and operations screens use shared style classes/primitives.
-- Future screens have documented style-start rules and examples.
-- No large duplicated button/table/modal/badge systems remain in feature components without justification.
-- Tables follow Functional requirements: sortable headers, sticky header, body scroll, pagination 10/20/50.
-- Modals follow Functional requirements: internal scroll when content exceeds available height.
-- UI automation evidence shows consistent Angular content inside stable Django shell.
+## 8. Evidence Required From Executors
 
----
-
-## 11. Evidence Table
+Every completion report must include:
 
 | Check | Command / Tool | Result | Evidence |
 |---|---|---|---|
-| Static/build |  |  |  |
-| Unit/component tests |  |  |  |
-| Django-hosted integration |  |  |  |
-| Real stand smoke |  |  |  |
-| UI automation/screenshots |  |  |  |
-| Regression checks |  |  |  |
-| Documentation/readme |  |  |  |
+| Static build | `npm run build` | pass/fail/skipped | log path or short output |
+| Django tests if touched | `python manage.py test` | pass/fail/skipped | log path or short output |
+| Component/unit tests | project test command | pass/fail/skipped | affected tests |
+| Stand smoke | health probes + browser/manual command | pass/fail/skipped | URL, seed note, screenshot/log |
+| UI automation | Playwright | pass/fail/skipped | report path/screenshots |
+| FHD measurement | Playwright bounding boxes or screenshot annotation | pass/fail/skipped | measured pixels/ratio |
+
+## 9. Final Acceptance Criteria
+
+- `Functional and WorkLogik.md` sections I.3 and VIII.2-4 are explicitly satisfied for every touched Angular table screen.
+- Shared frontend architecture document links to this TZ and contains the FHD compact workspace contract.
+- Balances no longer uses a vertically wasteful filter area in the accepted implementation path.
+- Sorting by table header is implemented and verified.
+- Pagination choices are `10`, `20`, `50`.
+- Sticky table headers and table-body scrolling are verified at FHD.
+- Real-stand and Playwright checks are either passed or left unchecked with the required blocker note.

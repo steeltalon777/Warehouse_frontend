@@ -1,6 +1,7 @@
-import { Component, input, output } from '@angular/core';
+import { Component, input, output, inject, computed } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { STATUS_TABS } from '../../../../core/models/operations.models';
+import { AuthContextService } from '../../../../core/services/auth-context.service';
 
 @Component({
   selector: 'app-operations-status-tabs',
@@ -8,7 +9,7 @@ import { STATUS_TABS } from '../../../../core/models/operations.models';
   imports: [CommonModule],
   template: `
     <div class="status-tabs">
-      @for (tab of tabs; track tab.key) {
+      @for (tab of tabs(); track tab.key) {
         <button
           class="tab"
           [class.active]="activeTab() === tab.key"
@@ -23,9 +24,9 @@ import { STATUS_TABS } from '../../../../core/models/operations.models';
     .status-tabs {
       display: flex;
       gap: 4px;
-      padding-top: 10px;
+      padding-top: 6px;
       border-top: 1px solid #E2E8F0;
-      margin-top: 10px;
+      margin-top: 6px;
     }
     .tab {
       height: 32px;
@@ -53,5 +54,11 @@ export class OperationsStatusTabsComponent {
   activeTab = input.required<string>();
   tabChange = output<string>();
 
-  readonly tabs = STATUS_TABS;
+  private authContextService = inject(AuthContextService);
+
+  readonly tabs = computed(() => {
+    const role = this.authContextService.authContext()?.role ?? 'observer';
+    if (role === 'root') return STATUS_TABS;
+    return STATUS_TABS.filter(t => t.key !== 'cancelled');
+  });
 }

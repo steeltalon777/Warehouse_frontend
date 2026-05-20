@@ -32,7 +32,12 @@ import {
                 <span class="sort-arrow">{{ sortDirection() === 'asc' ? '▲' : '▼' }}</span>
               }
             </th>
-            <th class="col-direction">Направление</th>
+            <th class="col-direction" (click)="sort.emit('directionLabel')">
+              Направление
+              @if (sortColumn() === 'directionLabel') {
+                <span class="sort-arrow">{{ sortDirection() === 'asc' ? '▲' : '▼' }}</span>
+              }
+            </th>
             <th class="col-date" (click)="sort.emit('createdAt')">
               Дата создания
               @if (sortColumn() === 'createdAt') {
@@ -131,7 +136,8 @@ import {
     </div>
   `,
   styles: [`
-    .table-wrapper { flex: 1; overflow: auto; display: flex; flex-direction: column; }
+    :host { display: block; height: 100%; }
+    .table-wrapper { flex: 1; overflow-y: auto; display: flex; flex-direction: column; min-height: 0; }
 
     .data-table {
       width: 100%;

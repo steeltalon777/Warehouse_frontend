@@ -260,6 +260,25 @@ All Angular data tables must follow `Functional and WorkLogik.md`:
 - visible loading, empty, error, and permission-denied states;
 - row actions must respect user role and domain status.
 
+## FHD Compact Workspace Contract
+
+All Angular warehouse screens are designed first for an FHD operator display (`1920x1080`) inside the permanent Django shell.
+
+The Django topbar/sidebar remain outside Angular ownership. Angular must optimize the remaining content rectangle for data work, not for marketing-style vertical whitespace.
+
+Required layout behavior for table-heavy screens such as balances, operations, acceptance, temporary items, repositories, and catalogs:
+
+- The screen is a flex/grid column with `min-height: 0` so the table region can consume remaining height.
+- The area from the bottom of the Django topbar to the filter action row (`Применить`, `Сбросить`, etc.) must occupy no more than one quarter of the visible content height on FHD; target budget is about `220-240px` including page title, tabs, filter card, and action buttons.
+- Page headers are compact: title, short description, and top-right screen actions must fit in one row where possible; avoid large `margin-bottom` blocks before filters.
+- Filters for data tables use a compact grid: two to four fields per row on FHD, `32-36px` controls, `8-12px` row/column gaps, and `12-16px` card padding.
+- Boolean filters must be inline with the field/action row when space allows; they must not create large empty rows across the whole card.
+- Table cards flex-grow and own vertical overflow. The page itself should not scroll for normal FHD table work; the table body scrolls with a sticky header.
+- Sortable headers must be visible as clickable controls with sort indicator and `aria-sort`; sorting may be client-side or BFF/query-param based, but the behavior must be deterministic and covered by tests.
+- Pagination choices are exactly `10`, `20`, `50` unless an ADR/TZ explicitly justifies another option for a specific screen.
+
+Detailed implementation assignment and verification requirements are tracked in `TZ_FRONTEND_SHARED_STYLE_SYSTEM.md`.
+
 ## Route Migration Matrix
 
 Every browser screen should be tracked with one of these states.

@@ -65,7 +65,14 @@ export class OperationsService {
       };
       if (filters.search) params['search'] = filters.search;
       if (filters.type) params['type'] = filters.type;
-      if (filters.status) params['status'] = filters.status;
+      if (filters.status) {
+        const role = this.authContextService.authContext()?.role ?? 'observer';
+        if (role !== 'root' && filters.status === 'cancelled') {
+          // non-root must not request cancelled status
+        } else {
+          params['status'] = filters.status;
+        }
+      }
       if (filters.siteId) params['site_id'] = filters.siteId;
       if (filters.createdAfter) params['created_after'] = filters.createdAfter;
       if (filters.createdBefore) params['created_before'] = filters.createdBefore;
@@ -78,7 +85,13 @@ export class OperationsService {
         this.bff.getList<OperationDto>('/operations', params)
       );
 
-      const rows = (result.items ?? []).map(op => this.mapToRowVm(op));
+      let rows = (result.items ?? []).map(op => this.mapToRowVm(op));
+
+      const role = this.authContextService.authContext()?.role ?? 'observer';
+      if (role !== 'root') {
+        rows = rows.filter(r => r.status !== 'cancelled');
+      }
+
       this.listResult.set({
         rows,
         totalCount: result.total_count ?? 0,
@@ -226,6 +239,8 @@ export class OperationsService {
     const isCreated = op.status === 'created';
     const isPending = op.status === 'pending';
     const isSubmitted = op.status === 'submitted';
+    const isCancelled = op.status === 'cancelled';
+    const isRejected = op.status === 'rejected';
 
     const auth = this.authContextService.authContext();
     const role = auth?.role ?? 'observer';
@@ -249,13 +264,23 @@ export class OperationsService {
       canCancel = isDraft || isCreated || isPending;
       canPrint = isSubmitted;
       canAccept = isPending;
-    } else {
-      // root / chief_storekeeper / default
+    } else if (role === 'chief_storekeeper') {
       canEdit = isDraft;
       canSubmit = isDraft || isCreated;
       canCancel = isDraft || isCreated || isPending;
       canPrint = isSubmitted;
       canAccept = isPending;
+    } else {
+      // root / default (fallback)
+      canEdit = isDraft;
+      canSubmit = isDraft || isCreated;
+      canCancel = isDraft || isCreated || isPending || isSubmitted;
+      canPrint = isSubmitted;
+      canAccept = isPending;
+    }
+
+    if (isCancelled || isRejected) {
+      canCancel = false;
     }
 
     return {

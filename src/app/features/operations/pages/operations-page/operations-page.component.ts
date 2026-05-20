@@ -1,7 +1,8 @@
-import { Component, OnInit, signal, computed, inject, HostListener } from '@angular/core';
+import { Component, OnInit, signal, computed, inject, HostListener, effect } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { OperationsService } from '../../../../core/services/operations.service';
+import { AuthContextService } from '../../../../core/services/auth-context.service';
 import {
   OperationsFilterVm,
   OperationListRowVm,
@@ -119,6 +120,7 @@ import { OperationConfirmModalComponent } from '../../components/operation-confi
       height: 100%;
       background: #F1F5F9;
       overflow: hidden;
+      min-height: 0;
     }
 
     .page-header {
@@ -127,9 +129,10 @@ import { OperationConfirmModalComponent } from '../../components/operation-confi
       align-items: flex-start;
       justify-content: space-between;
       gap: 16px;
-      padding: 16px 20px;
+      padding: 12px 20px;
       background: #FFFFFF;
       border-bottom: 1px solid #E2E8F0;
+      min-height: 0;
     }
     .header-info { min-width: 0; }
     .page-title {
@@ -186,7 +189,8 @@ import { OperationConfirmModalComponent } from '../../components/operation-confi
       flex-shrink: 0;
       background: #FFFFFF;
       border-bottom: 1px solid #E2E8F0;
-      padding: 12px 20px;
+      padding: 8px 20px;
+      min-height: 0;
     }
 
     .table-card {
@@ -195,9 +199,10 @@ import { OperationConfirmModalComponent } from '../../components/operation-confi
       display: flex;
       flex-direction: column;
       background: #FFFFFF;
-      margin: 12px 20px 16px;
+      margin: 8px 20px 12px;
       border: 1px solid #E2E8F0;
       border-radius: 10px;
+      min-height: 0;
     }
 
     .loading-overlay {
@@ -232,6 +237,18 @@ import { OperationConfirmModalComponent } from '../../components/operation-confi
 })
 export class OperationsPageComponent implements OnInit {
   readonly service = inject(OperationsService);
+  private authContextService = inject(AuthContextService);
+
+  constructor() {
+    effect(() => {
+      const role = this.authContextService.authContext()?.role ?? 'observer';
+      if (role !== 'root' && this.activeStatusTab() === 'cancelled') {
+        this.activeStatusTab.set('all');
+        this.filters.update(f => ({ ...f, page: 1 }));
+        this.loadList();
+      }
+    });
+  }
 
   // ─── Filters state ───────────────────────────────────────────
   readonly filters = signal<OperationsFilterVm>({
