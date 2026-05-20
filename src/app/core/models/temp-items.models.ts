@@ -1,6 +1,9 @@
 export interface TemporaryItem {
   id: string;
+  /** Display name (maps to item_name from review-items API). */
   name: string;
+  /** Alias for name (for backward compat with old template variable name). */
+  get item_name(): string;
   normalized_name?: string;
   sku?: string;
   description?: string;
@@ -9,6 +12,7 @@ export interface TemporaryItem {
   unit_id?: string;
   unit_name?: string;
   unit_symbol?: string;
+  /** Legacy TemporaryItem status or review status for new flow. */
   status: TemporaryItemStatus;
   created_by_user_id: string;
   created_at: string;
@@ -20,6 +24,17 @@ export interface TemporaryItem {
   backing_item_is_active?: boolean;
   total_balance: number;
   hashtags?: string;
+  /** New review-item fields (permanent catalog items requiring review). */
+  requires_review?: boolean;
+  review_status?: string;
+  review_created_by_user_id?: string;
+  review_resolved_by_user_id?: string;
+  review_resolved_at?: string;
+  review_note?: string;
+  /** Balances per site from review-items detail API. */
+  balances_per_site?: TempItemBalancePerSite[];
+  /** Count of operations using this item. */
+  operations_count?: number;
 }
 
 export type TemporaryItemStatus = 'active' | 'approved_as_item' | 'merged_to_item' | 'deleted';
@@ -43,6 +58,7 @@ export interface TempItemOperation {
 export interface TempItemDetail extends TemporaryItem {
   balances_per_site: TempItemBalancePerSite[];
   operations: TempItemOperation[];
+  operations_count: number;
 }
 
 export interface TempItemMergePayload {
@@ -85,13 +101,13 @@ export type TempItemUiStatus =
   | 'delete_blocked';
 
 export const TEMP_ITEM_UI_STATUS_LABELS: Record<TempItemUiStatus, string> = {
-  'needs_review': 'Требует разбора',
+  'needs_review': 'Требует проверки',
   'has_balance': 'Есть остаток',
   'in_pending_acceptance': 'В незавершённой приёмке',
-  'can_convert': 'Можно преобразовать',
+  'can_convert': 'Можно подтвердить',
   'can_delete': 'Можно удалить',
-  'converted': 'Преобразована',
-  'merged': 'Смержена',
+  'converted': 'Подтверждена',
+  'merged': 'Объединена',
   'delete_blocked': 'Удаление заблокировано',
 };
 

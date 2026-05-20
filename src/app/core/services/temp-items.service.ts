@@ -53,7 +53,7 @@ export class TempItemsService {
       }
 
       const response = await firstValueFrom(
-        this.bffApi.getList<TemporaryItem>('/temporary-items', params)
+        this.bffApi.getList<TemporaryItem>('/review-items', params)
       );
 
       const hasPendingAcceptance = false;
@@ -100,7 +100,7 @@ export class TempItemsService {
   async loadDetail(id: string): Promise<TempItemDetail | null> {
     try {
       return await firstValueFrom(
-        this.bffApi.getData<TempItemDetail>(`/temporary-items/${id}`)
+        this.bffApi.getData<TempItemDetail>(`/review-items/${id}`)
       );
     } catch {
       return null;
@@ -110,7 +110,7 @@ export class TempItemsService {
   async loadOperations(id: string): Promise<TempItemOperation[]> {
     try {
       const response = await firstValueFrom(
-        this.bffApi.getList<TempItemOperation>(`/temporary-items/${id}/operations`)
+        this.bffApi.getList<TempItemOperation>(`/review-items/${id}/operations`)
       );
       return response?.items || [];
     } catch {
@@ -121,7 +121,7 @@ export class TempItemsService {
   async approveAsItem(id: string, payload: TempItemApprovePayload): Promise<boolean> {
     try {
       await firstValueFrom(
-        this.bffApi.postData(`/temporary-items/${id}/approve-as-item`, payload)
+        this.bffApi.postData(`/review-items/${id}/confirm`, payload)
       );
       return true;
     } catch {
@@ -134,7 +134,7 @@ export class TempItemsService {
       const payload: TempItemMergePayload = { target_item_id: targetItemId };
       if (comment) payload.comment = comment;
       await firstValueFrom(
-        this.bffApi.postData(`/temporary-items/${id}/merge`, payload)
+        this.bffApi.postData(`/review-items/${id}/merge`, payload)
       );
       return true;
     } catch {
@@ -145,7 +145,7 @@ export class TempItemsService {
   async deleteItem(id: string): Promise<boolean> {
     try {
       await firstValueFrom(
-        this.bffApi.deleteData(`/temporary-items/${id}`)
+        this.bffApi.deleteData(`/review-items/${id}`)
       );
       return true;
     } catch {

@@ -1,8 +1,27 @@
-import { Component, input, output, signal, computed, effect, ViewChild, ElementRef, HostListener, inject } from '@angular/core';
+import { Component, input, output, signal, computed, effect, ViewChild, ElementRef, HostListener, inject, OnDestroy } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
-import { NomenclatureService } from '../../../../core/services/nomenclature.service';
+import { Subject, of } from 'rxjs';
+import { debounceTime, distinctUntilChanged, switchMap, takeUntil, catchError } from 'rxjs/operators';
+import { CatalogSearchService, CatalogSearchItem } from '../../../../core/services/catalog-search.service';
 import { Item } from '../../../../core/models/nomenclature.models';
+
+/**
+ * Adapter to convert CatalogSearchItem to Item for compatibility
+ */
+function toItem(searchItem: CatalogSearchItem): Item {
+  return {
+    id: searchItem.id,
+    name: searchItem.name,
+    sku: searchItem.sku,
+    category_id: searchItem.category_id,
+    category_name: searchItem.category_name,
+    unit_id: searchItem.unit_id,
+    unit_symbol: searchItem.unit_symbol || searchItem.unit_name || '',
+    is_active: searchItem.is_active,
+    hashtags: [],
+  };
+}
 
 @Component({
   selector: 'app-item-cache-search',
@@ -23,15 +42,22 @@ import { Item } from '../../../../core/models/nomenclature.models';
       />
       @if (searchText() && !selectedItem()) {
         <div class="search-dropdown">
-          @if (filteredItems().length > 0) {
-            @for (item of filteredItems(); track item.id; let idx = $index) {
+          @if (isLoading() || isSearching()) {
+            <div class="search-loading">Поиск...</div>
+          } @else if (displayItems().length > 0) {
+            @for (item of displayItems(); track item.id; let idx = $index) {
               <div
                 class="search-option"
                 [class.highlighted]="idx === highlightedIndex()"
                 (mousedown)="selectItem(item)"
               >
                 <span class="option-name">{{ item.name }}</span>
-                <span class="option-sku">{{ item.sku }}</span>
+                @if (item.category_name) {
+                  <span class="option-category">{{ item.category_name }}</span>
+                }
+                @if (item.sku) {
+                  <span class="option-sku">{{ item.sku }}</span>
+                }
               </div>
             }
           } @else {
@@ -91,9 +117,10 @@ import { Item } from '../../../../core/models/nomenclature.models';
     .search-option.highlighted {
       background: #F1F5F9;
     }
-    .option-name { color: #1F2937; font-weight: 500; }
-    .option-sku { color: #94A3B8; font-size: 11px; }
-    .search-empty {
+    .option-name { color: #1F2937; font-weight: 500; flex-shrink: 0; }
+    .option-category { color: #6B7280; font-size: 11px; margin: 0 8px; flex-shrink: 0; }
+    .option-sku { color: #94A3B8; font-size: 11px; flex-shrink: 0; }
+    .search-loading, .search-empty {
       padding: 12px;
       text-align: center;
       color: #94A3B8;
@@ -123,29 +150,26 @@ import { Item } from '../../../../core/models/nomenclature.models';
     .badge-clear:hover { color: #1E40AF; }
   `]
 })
-export class ItemCacheSearchComponent {
+export class ItemCacheSearchComponent implements OnDestroy {
   placeholder = input<string>('Начните вводить название...');
   itemName = input<string>('');
 
   itemSelected = output<Item>();
   cleared = output<void>();
 
-  private readonly nomenclature = inject(NomenclatureService);
+  private readonly catalogSearch = inject(CatalogSearchService);
+  private readonly searchQuery$ = new Subject<string>();
+  private readonly destroy$ = new Subject<void>();
 
   readonly searchText = signal<string>('');
   readonly selectedItem = signal<Item | null>(null);
   readonly highlightedIndex = signal<number>(-1);
   readonly isFocused = signal<boolean>(false);
+  readonly isLoading = signal<boolean>(false);
 
-  readonly allItems = computed(() => this.nomenclature.allItems());
-
-  readonly filteredItems = computed(() => {
-    const query = this.searchText().toLowerCase().trim();
-    if (!query) return [];
-    return this.allItems().filter(
-      i => i.name.toLowerCase().includes(query) || i.sku.toLowerCase().includes(query)
-    ).slice(0, 20);
-  });
+  // Use the catalog search service results
+  readonly searchResults = computed(() => this.catalogSearch.itemResults());
+  readonly isSearching = computed(() => this.catalogSearch.isSearchingItems());
 
   @ViewChild('inputEl') inputEl!: ElementRef<HTMLInputElement>;
   @ViewChild('wrapper') wrapperEl!: ElementRef<HTMLElement>;
@@ -157,7 +181,41 @@ export class ItemCacheSearchComponent {
         this.searchText.set(name);
       }
     });
+
+    // Set up debounced search
+    this.searchQuery$.pipe(
+      debounceTime(150),
+      distinctUntilChanged(),
+      takeUntil(this.destroy$),
+      switchMap(query => {
+        if (!query || query.length < 2) {
+          return of([]);
+        }
+        this.isLoading.set(true);
+        return this.catalogSearch.searchItemsOnce(query);
+      }),
+      catchError(err => {
+        console.error('Search error:', err);
+        return of([]);
+      })
+    ).subscribe(items => {
+      this.isLoading.set(false);
+    });
   }
+
+  ngOnDestroy(): void {
+    this.destroy$.next();
+    this.destroy$.complete();
+  }
+
+  // Computed to display items from search service
+  readonly displayItems = computed(() => {
+    const query = this.searchText().toLowerCase().trim();
+    if (!query || query.length < 2) return [];
+    return this.searchResults()
+      .slice(0, 20)
+      .map(item => toItem(item));
+  });
 
   @HostListener('document:click', ['$event'])
   onDocumentClick(event: MouseEvent): void {
@@ -173,6 +231,9 @@ export class ItemCacheSearchComponent {
     if (!value) {
       this.selectedItem.set(null);
       this.cleared.emit();
+    } else if (value.length >= 2) {
+      // Trigger search via the subject
+      this.searchQuery$.next(value);
     }
   }
 
