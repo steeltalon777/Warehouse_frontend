@@ -80,6 +80,10 @@ export class CatalogSearchService implements OnDestroy {
     this.searchQuery$.next(query);
   }
 
+  private initCategorySearch(): void {
+    // reserved — category search implementation coming in a future PR.
+  }
+
   private initItemSearch(): void {
     this.searchQuery$.pipe(
       debounceTime(150),

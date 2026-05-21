@@ -242,7 +242,7 @@ export class ItemCacheSearchComponent implements OnDestroy {
   }
 
   onKeydown(event: KeyboardEvent): void {
-    const items = this.filteredItems();
+    const items = this.displayItems();
     const idx = this.highlightedIndex();
 
     if (event.key === 'ArrowDown') {
