@@ -1,4 +1,4 @@
-import { Component, computed, inject, OnInit } from '@angular/core';
+import { Component, computed, inject, signal, OnInit } from '@angular/core';
 import { NomenclatureService } from '../../../core/services/nomenclature.service';
 import { CatalogChangeBufferService } from '../../../core/services/catalog-change-buffer.service';
 import { PageHeaderComponent } from '../page-header/page-header';
@@ -43,6 +43,9 @@ import { PendingChangesBarComponent } from '../pending-changes-bar/pending-chang
               (valueChange)="onSearchChange($event)"
             />
             <app-action-buttons
+              (createCategory)="onCreateCategory()"
+              (createItem)="onCreateItem()"
+              (createUnit)="onCreateUnit()"
               (expandAll)="onExpandAll()"
             />
             <div class="tree-wrapper">
@@ -67,8 +70,10 @@ import { PendingChangesBarComponent } from '../pending-changes-bar/pending-chang
               [selectedNode]="selectedNode()"
               [selectedItem]="selectedItem()"
               [selectedCategory]="selectedCategory()"
+              [selectedUnit]="selectedUnit()"
               [units]="units()"
               [categories]="categories()"
+              [createModeEntity]="createModeEntity()"
               (saveDraft)="onSaveDraft($event)"
               (resetDraft)="onResetDraft()"
               (deactivate)="onDeactivate($event)"
@@ -177,19 +182,23 @@ export class NomenclaturePageComponent implements OnInit {
   readonly visibleNodeCount = this.service.visibleNodeCount;
   readonly selectedNode = this.service.selectedNode;
   readonly isSaving = this.service.isSaving;
-  readonly units = this.service.units;
+  readonly units = this.service.allUnits;
   readonly categories = this.service.categories;
 
   readonly selectedItem = computed(() => this.service.getSelectedItem());
   readonly selectedCategory = computed(() => this.service.getSelectedCategory());
+  readonly selectedUnit = computed(() => this.service.selectedUnit());
   readonly pendingCount = computed(() => this.changeBuffer.count());
   readonly applyDisabled = computed(() => this.changeBuffer.isEmpty());
+
+  readonly createModeEntity = signal<{ type: 'category' | 'item' | 'unit'; entity: unknown } | null>(null);
 
   onSearchChange(query: string): void {
     this.service.setSearch(query);
   }
 
-  onSelectNode(node: { id: string; type: 'category' | 'item' }): void {
+  onSelectNode(node: { id: string; type: string }): void {
+    this.createModeEntity.set(null);
     this.service.selectNode(node as any);
   }
 
@@ -201,7 +210,35 @@ export class NomenclaturePageComponent implements OnInit {
     this.service.expandAll();
   }
 
+  onCreateCategory(): void {
+    this.service.clearSelection();
+    this.createModeEntity.set({ type: 'category', entity: null });
+  }
+
+  onCreateItem(): void {
+    this.service.clearSelection();
+    this.createModeEntity.set({ type: 'item', entity: null });
+  }
+
+  onCreateUnit(): void {
+    this.service.clearSelection();
+    this.createModeEntity.set({ type: 'unit', entity: null });
+  }
+
   onSaveDraft(event: { id: string; payload: Record<string, unknown> }): void {
+    const cm = this.createModeEntity();
+    if (cm && event.id === '__new__') {
+      const tmpId = `tmp-${cm.type}-${Date.now()}`;
+      this.changeBuffer.addChange({
+        localId: `${cm.type}-${tmpId}`,
+        entityType: cm.type,
+        action: 'create',
+        payload: event.payload,
+      });
+      this.createModeEntity.set(null);
+      return;
+    }
+
     const node = this.selectedNode();
     if (!node) return;
 
@@ -219,6 +256,9 @@ export class NomenclaturePageComponent implements OnInit {
   }
 
   onDeactivate(id: string): void {
+    const cm = this.createModeEntity();
+    if (cm) return;
+
     const node = this.selectedNode();
     if (!node) return;
 
@@ -242,13 +282,19 @@ export class NomenclaturePageComponent implements OnInit {
     try {
       await this.service.applyBatch(changes);
       this.changeBuffer.clearAll();
+      this.createModeEntity.set(null);
     } catch (err: any) {
-      // Error is already set in service.error
       console.error('Batch apply failed:', err);
     }
   }
 
   onDelete(id: string): void {
+    const cm = this.createModeEntity();
+    if (cm) {
+      this.createModeEntity.set(null);
+      return;
+    }
+
     const node = this.selectedNode();
     if (!node) return;
 
@@ -260,7 +306,6 @@ export class NomenclaturePageComponent implements OnInit {
       payload: {},
     });
 
-    // Clear selection since the entity will be deleted
     this.service.clearSelection();
   }
 }

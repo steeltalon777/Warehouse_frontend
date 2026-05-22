@@ -105,6 +105,7 @@ export interface OperationLineDraftVm {
   localId: string;
   itemId?: string | null;
   itemName: string;
+  categoryName?: string;
   sku?: string | null;
   unitId?: string | null;
   unitName: string;

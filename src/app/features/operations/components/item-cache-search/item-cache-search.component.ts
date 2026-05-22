@@ -19,7 +19,8 @@ function toItem(searchItem: CatalogSearchItem): Item {
     unit_id: searchItem.unit_id,
     unit_symbol: searchItem.unit_symbol || searchItem.unit_name || '',
     is_active: searchItem.is_active,
-    hashtags: [],
+    hashtags: searchItem.hashtags ?? [],
+    source_site_qty: searchItem.source_site_qty,
   };
 }
 
@@ -57,6 +58,9 @@ function toItem(searchItem: CatalogSearchItem): Item {
                 }
                 @if (item.sku) {
                   <span class="option-sku">{{ item.sku }}</span>
+                }
+                @if (item.source_site_qty) {
+                  <span class="option-stock">на складе: {{ item.source_site_qty }}</span>
                 }
               </div>
             }
@@ -120,6 +124,7 @@ function toItem(searchItem: CatalogSearchItem): Item {
     .option-name { color: #1F2937; font-weight: 500; flex-shrink: 0; }
     .option-category { color: #6B7280; font-size: 11px; margin: 0 8px; flex-shrink: 0; }
     .option-sku { color: #94A3B8; font-size: 11px; flex-shrink: 0; }
+    .option-stock { color: #059669; font-size: 11px; font-weight: 500; flex-shrink: 0; }
     .search-loading, .search-empty {
       padding: 12px;
       text-align: center;
@@ -153,6 +158,7 @@ function toItem(searchItem: CatalogSearchItem): Item {
 export class ItemCacheSearchComponent implements OnDestroy {
   placeholder = input<string>('Начните вводить название...');
   itemName = input<string>('');
+  sourceSiteId = input<string | null>(null);
 
   itemSelected = output<Item>();
   cleared = output<void>();
@@ -166,9 +172,8 @@ export class ItemCacheSearchComponent implements OnDestroy {
   readonly highlightedIndex = signal<number>(-1);
   readonly isFocused = signal<boolean>(false);
   readonly isLoading = signal<boolean>(false);
+  readonly localResults = signal<CatalogSearchItem[]>([]);
 
-  // Use the catalog search service results
-  readonly searchResults = computed(() => this.catalogSearch.itemResults());
   readonly isSearching = computed(() => this.catalogSearch.isSearchingItems());
 
   @ViewChild('inputEl') inputEl!: ElementRef<HTMLInputElement>;
@@ -192,7 +197,7 @@ export class ItemCacheSearchComponent implements OnDestroy {
           return of([]);
         }
         this.isLoading.set(true);
-        return this.catalogSearch.searchItemsOnce(query);
+        return this.catalogSearch.searchItemsOnce(query, 20, this.sourceSiteId() ?? undefined);
       }),
       catchError(err => {
         console.error('Search error:', err);
@@ -200,6 +205,7 @@ export class ItemCacheSearchComponent implements OnDestroy {
       })
     ).subscribe(items => {
       this.isLoading.set(false);
+      this.localResults.set(items);
     });
   }
 
@@ -208,11 +214,11 @@ export class ItemCacheSearchComponent implements OnDestroy {
     this.destroy$.complete();
   }
 
-  // Computed to display items from search service
+  // Computed to display items from local search results
   readonly displayItems = computed(() => {
     const query = this.searchText().toLowerCase().trim();
     if (!query || query.length < 2) return [];
-    return this.searchResults()
+    return this.localResults()
       .slice(0, 20)
       .map(item => toItem(item));
   });

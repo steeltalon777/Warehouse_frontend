@@ -77,20 +77,26 @@ function nextLocalId(): string {
             <textarea class="wh-form-input input" rows="2" [ngModel]="localDraft().comment" (ngModelChange)="onCommentChange($event)" placeholder="Комментарий к операции..."></textarea>
           </div>
 
+          <!-- Item search area -->
+          <div class="add-item-search">
+            <app-item-cache-search
+              [placeholder]="'Поиск по названию, SKU или хештегу...'"
+              [sourceSiteId]="localDraft().sourceSiteId ?? null"
+              (itemSelected)="onNewItemSelected($event)"
+            />
+          </div>
+
           <!-- Lines table -->
           <div class="lines-section">
             <div class="section-header">
               <h3>Позиции ({{ lines().length }})</h3>
-              <button class="wh-btn wh-btn--primary btn btn-sm btn-primary" (click)="addLine()">+ Добавить позицию</button>
             </div>
 
             <table class="wh-table lines-table">
               <thead>
                 <tr>
-                  <th>Номенклатура</th>
+                  <th>Позиция</th>
                   <th>Количество</th>
-                  <th>Ед. изм.</th>
-                  <th>Остаток</th>
                   <th></th>
                 </tr>
               </thead>
@@ -101,50 +107,48 @@ function nextLocalId(): string {
                       @if (line.itemId) {
                         <div class="item-selected">
                           <span class="item-name">{{ line.itemName }}</span>
+                          @if (line.categoryName) {
+                            <span class="item-category">{{ line.categoryName }}</span>
+                          }
                           @if (line.sku) { <span class="item-sku">{{ line.sku }}</span> }
                           <button class="wh-btn-icon btn-icon-sm" (click)="editItemLine(line.localId)" title="Изменить" aria-label="Изменить номенклатуру">✎</button>
                           @if (line.isTemporary) {
                             <span class="temp-badge">временная</span>
                           }
+                          <span class="item-unit">{{ line.unitName }}</span>
                         </div>
                       } @else {
-                        <app-item-cache-search
-                          [placeholder]="'Начните вводить название...'"
-                          (itemSelected)="onItemSelected(line.localId, $event)"
+                        <div class="inline-search-cell">
+                          <app-item-cache-search
+                            [placeholder]="'Начните вводить название...'"
+                            [sourceSiteId]="localDraft().sourceSiteId ?? null"
+                            (itemSelected)="onItemSelected(line.localId, $event)"
+                          />
+                        </div>
+                      }
+                    </td>
+                    <td>
+                      <div class="qty-cell">
+                        <input
+                          type="number"
+                          class="wh-form-input input qty-input"
+                          [ngModel]="line.quantity"
+                          (ngModelChange)="onQuantityChange(line.localId, $event)"
+                          min="0"
+                          step="0.001"
                         />
-                      }
+                        @if (line.sourceSiteQuantity != null && line.itemId) {
+                          <span class="source-stock-hint">из ({{ line.sourceSiteQuantity }})</span>
+                        }
+                      </div>
                     </td>
                     <td>
-                      <input
-                        type="number"
-                        class="wh-form-input input qty-input"
-                        [ngModel]="line.quantity"
-                        (ngModelChange)="onQuantityChange(line.localId, $event)"
-                        min="0"
-                        step="0.001"
-                      />
-                    </td>
-                    <td>
-                      <input type="text" class="wh-form-input input unit-input" [value]="line.unitName" readonly />
-                    </td>
-                    <td>
-                      @if (line.itemId) {
-                        <span class="stock-hint" [class.low-stock]="line.availableQuantity != null && line.availableQuantity < (line.quantity ?? 0)">
-                          {{ line.availableQuantity ?? '—' }}
-                        </span>
-                      } @else {
-                        <span class="stock-hint muted">—</span>
-                      }
-                    </td>
-                    <td>
-                      <button class="wh-btn-icon wh-btn-icon--danger btn-icon danger" (click)="removeLine(line.localId)" title="Удалить" aria-label="Удалить позицию">
-                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
-                      </button>
+                      <button class="remove-btn" (click)="removeLine(line.localId)" title="Удалить" aria-label="Удалить позицию">×</button>
                     </td>
                   </tr>
                 } @empty {
                   <tr>
-                    <td colspan="5" class="empty-lines">Добавьте позиции операции</td>
+                    <td colspan="3" class="empty-lines">Начните поиск номенклатуры выше, чтобы добавить позиции</td>
                   </tr>
                 }
               </tbody>
@@ -230,7 +234,8 @@ function nextLocalId(): string {
     .input:focus { outline: none; border-color: #3B82F6; box-shadow: 0 0 0 2px rgba(59,130,246,0.15); }
     textarea.input { height: auto; padding: 8px 10px; resize: vertical; }
 
-    .lines-section { margin-top: 16px; }
+    .add-item-search { margin-bottom: 12px; }
+    .lines-section { margin-top: 12px; }
     .section-header {
       display: flex; align-items: center; justify-content: space-between;
       margin-bottom: 8px;
@@ -254,7 +259,6 @@ function nextLocalId(): string {
       font-size: 12px;
     }
     .lines-table .qty-input { width: 90px; }
-    .lines-table .unit-input { width: 60px; background: #F8FAFC; }
     .lines-table .empty-lines {
       text-align: center;
       padding: 20px;
@@ -271,7 +275,27 @@ function nextLocalId(): string {
       flex-wrap: wrap;
     }
     .item-selected .item-name { font-weight: 500; color: #1F2937; }
+    .item-selected .item-category { font-size: 11px; color: #64748B; font-weight: 400; }
     .item-selected .item-sku { font-size: 11px; color: #94A3B8; }
+    .item-selected .item-unit { font-size: 11px; color: #6B7280; margin-left: 2px; }
+    .inline-search-cell { min-width: 200px; }
+    .qty-cell {
+      display: flex;
+      flex-direction: column;
+      gap: 2px;
+    }
+    .source-stock-hint {
+      font-size: 11px;
+      color: #6B7280;
+      white-space: nowrap;
+    }
+    .remove-btn {
+      width: 26px; height: 26px;
+      display: inline-flex; align-items: center; justify-content: center;
+      border: 1px solid #E2E8F0; border-radius: 6px;
+      background: #FFFFFF; color: #64748B; cursor: pointer;
+    }
+    .remove-btn:hover { background: #FEE2E2; color: #991B1B; border-color: #FECACA; }
     .btn-icon-sm {
       width: 20px; height: 20px;
       border: none; background: transparent;
@@ -314,13 +338,7 @@ function nextLocalId(): string {
     .btn-submit { background: #059669; color: #FFFFFF; border-color: #059669; }
     .btn-submit:hover:not(:disabled) { background: #047857; }
 
-    .btn-icon {
-      width: 26px; height: 26px;
-      display: inline-flex; align-items: center; justify-content: center;
-      border: 1px solid #E2E8F0; border-radius: 6px;
-      background: #FFFFFF; color: #64748B; cursor: pointer;
-    }
-    .btn-icon.danger:hover { background: #FEE2E2; color: #991B1B; border-color: #FECACA; }
+
   `]
 })
 export class OperationCreateModalComponent implements OnInit {
@@ -411,6 +429,19 @@ export class OperationCreateModalComponent implements OnInit {
     }));
   }
 
+  private refreshSourceQuantities(): void {
+    const d = this.localDraft();
+    const siteId = d.sourceSiteId || undefined;
+    this.localDraft.update(state => ({
+      ...state,
+      lines: state.lines.map(l => {
+        if (!l.itemId) return l;
+        const qty = this.service.getBalanceForItem(l.itemId, siteId);
+        return { ...l, sourceSiteQuantity: qty, availableQuantity: qty };
+      }),
+    }));
+  }
+
   onOverlayClick(event: MouseEvent): void {
     if (event.target === event.currentTarget) {
       this.cancel.emit();
@@ -424,6 +455,7 @@ export class OperationCreateModalComponent implements OnInit {
 
   onSourceSiteChange(value: string | null): void {
     this.localDraft.update(d => ({ ...d, sourceSiteId: value }));
+    this.refreshSourceQuantities();
   }
 
   onDestinationSiteChange(value: string | null): void {
@@ -471,6 +503,7 @@ export class OperationCreateModalComponent implements OnInit {
               ...l,
               itemId: item.id,
               itemName: item.name,
+              categoryName: item.category_name,
               sku: item.sku,
               unitId: item.unit_id,
               unitName: item.unit_symbol,
@@ -482,6 +515,28 @@ export class OperationCreateModalComponent implements OnInit {
     if (line) {
       this.updateLineStockHint(line);
     }
+  }
+
+  onNewItemSelected(item: Item): void {
+    this.localDraft.update(d => ({
+      ...d,
+      lines: [
+        ...d.lines,
+        {
+          localId: nextLocalId(),
+          itemId: item.id,
+          itemName: item.name,
+          categoryName: item.category_name,
+          sku: item.sku,
+          unitId: item.unit_id,
+          unitName: item.unit_symbol,
+          quantity: null,
+          sourceSiteQuantity: item.source_site_qty ? parseFloat(item.source_site_qty) : null,
+          isTemporary: false,
+          fromBalances: false,
+        },
+      ],
+    }));
   }
 
   editItemLine(localId: string): void {

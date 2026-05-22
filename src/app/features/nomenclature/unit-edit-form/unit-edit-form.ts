@@ -1,48 +1,34 @@
 import { Component, input, output, signal, computed, SimpleChanges } from '@angular/core';
 import { FormsModule } from '@angular/forms';
-import { Category } from '../../../core/models/nomenclature.models';
+import { Unit } from '../../../core/models/nomenclature.models';
 
 @Component({
-  selector: 'app-category-edit-form',
+  selector: 'app-unit-edit-form',
   standalone: true,
   imports: [FormsModule],
   template: `
     <div class="form-container">
       <div class="form-grid">
-        <!-- Название -->
         <div class="form-group full">
           <label class="form-label">Название <span class="required">*</span></label>
           <input
             type="text"
             class="wh-form-input form-input"
             [(ngModel)]="draft.name"
-            placeholder="Введите название категории"
+            placeholder="Введите название единицы измерения"
           />
         </div>
 
-        <!-- Код -->
         <div class="form-group">
-          <label class="form-label">Код</label>
+          <label class="form-label">Символ <span class="required">*</span></label>
           <input
             type="text"
             class="wh-form-input form-input"
-            [(ngModel)]="draft.code"
-            placeholder="Код категории"
+            [(ngModel)]="draft.symbol"
+            placeholder="шт, кг, м"
           />
         </div>
 
-        <!-- Родительская категория -->
-        <div class="form-group">
-          <label class="form-label">Родительская категория</label>
-          <select class="wh-form-input form-select" [(ngModel)]="draft.parentId">
-            <option [value]="null">— Корневая —</option>
-            @for (c of flatCategories(); track c.id) {
-              <option [value]="c.id">{{ c.indent }}{{ c.name }}</option>
-            }
-          </select>
-        </div>
-
-        <!-- Сортировка -->
         <div class="form-group">
           <label class="form-label">Сортировка</label>
           <input
@@ -54,11 +40,10 @@ import { Category } from '../../../core/models/nomenclature.models';
         </div>
       </div>
 
-      <!-- Активность switch -->
       <div class="switch-row">
         <div class="switch-info">
           <span class="switch-label">Активность</span>
-          <span class="switch-desc">Неактивные категории скрыты из операций.</span>
+          <span class="switch-desc">Неактивные единицы скрыты из выбора.</span>
         </div>
         <label class="switch">
           <input type="checkbox" [(ngModel)]="draft.isActive" />
@@ -68,7 +53,6 @@ import { Category } from '../../../core/models/nomenclature.models';
         </label>
       </div>
 
-      <!-- Actions -->
       <div class="form-actions">
         <button class="wh-btn wh-btn--danger btn btn-danger" (click)="onDeactivate()" type="button">
           Деактивировать
@@ -255,9 +239,9 @@ import { Category } from '../../../core/models/nomenclature.models';
     }
   `]
 })
-export class CategoryEditFormComponent {
-  readonly category = input.required<Category>();
-  readonly categories = input<Category[]>([]);
+export class UnitEditFormComponent {
+  readonly unit = input<Unit | null>(null);
+  readonly units = input<Unit[]>([]);
 
   readonly saveDraft = output<{ id: string; payload: Record<string, unknown> }>();
   readonly resetDraft = output<void>();
@@ -266,64 +250,47 @@ export class CategoryEditFormComponent {
 
   readonly formError = signal<string | null>(null);
 
+  readonly isCreateMode = computed(() => this.unit() === null);
+
   draft = {
     name: '',
-    code: '',
-    parentId: null as string | null,
+    symbol: '',
     sortOrder: 0,
     isActive: true,
   };
 
-  readonly flatCategories = computed(() => {
-    const cat = this.category();
-    const result: { id: string; name: string; indent: string }[] = [];
-    const walk = (cats: Category[], level: number) => {
-      for (const c of cats) {
-        if (cat && c.id === cat.id) continue; // Exclude self
-        result.push({
-          id: c.id,
-          name: c.name,
-          indent: '  '.repeat(level),
-        });
-        if (c.children) walk(c.children, level + 1);
-      }
-    };
-    walk(this.categories(), 0);
-    return result;
-  });
-
   get isValid(): boolean {
-    return this.draft.name.trim().length > 0;
+    return this.draft.name.trim().length > 0 && this.draft.symbol.trim().length > 0;
   }
 
   ngOnChanges(changes: SimpleChanges) {
-    if (changes['category']) {
-      const cat = this.category();
-      if (!cat) return;
-      this.draft = {
-        name: cat.name,
-        code: cat.code,
-        parentId: cat.parent_id,
-        sortOrder: cat.sort_order,
-        isActive: cat.is_active,
-      };
+    if (changes['unit']) {
+      const u = this.unit();
+      if (u) {
+        this.draft = {
+          name: u.name,
+          symbol: u.symbol,
+          sortOrder: u.sort_order,
+          isActive: u.is_active,
+        };
+      } else {
+        this.draft = { name: '', symbol: '', sortOrder: 0, isActive: true };
+      }
       this.formError.set(null);
     }
   }
 
   onSubmit(): void {
     if (!this.isValid) {
-      this.formError.set('Название обязательно');
+      this.formError.set('Название и символ обязательны');
       return;
     }
     const d = this.draft;
-    const cat = this.category();
     this.saveDraft.emit({
-      id: cat?.id ?? '__new__',
+      id: this.unit()?.id ?? '__new__',
       payload: {
         name: d.name.trim(),
-        code: d.code.trim(),
-        parent_id: d.parentId,
+        symbol: d.symbol.trim(),
         sort_order: d.sortOrder,
         is_active: d.isActive,
       },
@@ -332,30 +299,31 @@ export class CategoryEditFormComponent {
   }
 
   onReset(): void {
-    const cat = this.category();
-    if (!cat) { this.draft = { name: '', code: '', parentId: null, sortOrder: 0, isActive: true }; this.formError.set(null); return; }
-    this.draft = {
-      name: cat.name,
-      code: cat.code,
-      parentId: cat.parent_id,
-      sortOrder: cat.sort_order,
-      isActive: cat.is_active,
-    };
+    const u = this.unit();
+    if (u) {
+      this.draft = {
+        name: u.name,
+        symbol: u.symbol,
+        sortOrder: u.sort_order,
+        isActive: u.is_active,
+      };
+    } else {
+      this.draft = { name: '', symbol: '', sortOrder: 0, isActive: true };
+    }
     this.formError.set(null);
     this.resetDraft.emit();
   }
 
   onDeactivate(): void {
-    const cat = this.category();
-    if (!cat) return;
-    this.deactivate.emit(cat.id);
+    const u = this.unit();
+    if (u) this.deactivate.emit(u.id);
   }
 
   onDelete(): void {
-    const cat = this.category();
-    if (!cat) return;
-    if (confirm('Удалить категорию? Это действие нельзя отменить.')) {
-      this.delete.emit(cat.id);
+    const u = this.unit();
+    if (!u) return;
+    if (confirm('Удалить единицу измерения? Это действие нельзя отменить.')) {
+      this.delete.emit(u.id);
     }
   }
 }

@@ -15,6 +15,10 @@ export interface CatalogSearchItem {
   is_active: boolean;
   requires_review: boolean;
   source: 'cache' | 'remote';
+  hashtags?: string[];
+  source_site_id?: string;
+  source_site_qty?: string;
+  balance_qty?: string;
 }
 
 export interface CatalogSearchCategory {
@@ -68,7 +72,7 @@ export class CatalogSearchService implements OnDestroy {
 
   // ─── Item Search ────────────────────────────────────────────────
 
-  searchItems(query: string, limit: number = this.defaultLimit): void {
+  searchItems(query: string, limit: number = this.defaultLimit, sourceSiteId?: string, includeBalance?: boolean): void {
     this.itemSearchQuery.set(query);
 
     if (!query || query.trim().length < 2) {
@@ -77,8 +81,14 @@ export class CatalogSearchService implements OnDestroy {
       return;
     }
 
+    // Store params for the search pipeline
+    this._lastSourceSiteId = sourceSiteId;
+    this._lastIncludeBalance = includeBalance;
     this.searchQuery$.next(query);
   }
+
+  private _lastSourceSiteId?: string;
+  private _lastIncludeBalance?: boolean;
 
   private initCategorySearch(): void {
     // reserved — category search implementation coming in a future PR.
@@ -93,7 +103,7 @@ export class CatalogSearchService implements OnDestroy {
         this.isSearchingItems.set(true);
         this.itemSearchError.set(null);
       }),
-      switchMap(query => this.performItemSearch(query)),
+      switchMap(query => this.performItemSearch(query, this.defaultLimit, this._lastSourceSiteId, this._lastIncludeBalance)),
       catchError(err => {
         console.error('Item search error:', err);
         this.itemSearchError.set(err.message || 'Ошибка поиска');
@@ -106,10 +116,13 @@ export class CatalogSearchService implements OnDestroy {
     });
   }
 
-  private performItemSearch(query: string, limit: number = this.defaultLimit): Observable<CatalogSearchResults<CatalogSearchItem>> {
+  private performItemSearch(query: string, limit: number = this.defaultLimit, sourceSiteId?: string, includeBalance?: boolean): Observable<CatalogSearchResults<CatalogSearchItem>> {
+    const params: Record<string, string | number | boolean> = { q: query, limit };
+    if (sourceSiteId) params['source_site_id'] = sourceSiteId;
+    if (includeBalance) params['include_balance'] = true;
     return this.bff.getData<CatalogSearchResults<CatalogSearchItem>>(
       `${this.basePath}/items`,
-      { q: query, limit }
+      params
     );
   }
 
@@ -160,13 +173,16 @@ export class CatalogSearchService implements OnDestroy {
 
   // ─── Direct Search Methods (for one-off calls) ─────────────────
 
-  searchItemsOnce(query: string, limit: number = this.defaultLimit): Observable<CatalogSearchItem[]> {
+  searchItemsOnce(query: string, limit: number = this.defaultLimit, sourceSiteId?: string, includeBalance?: boolean): Observable<CatalogSearchItem[]> {
     if (!query || query.trim().length < 2) {
       return of([]);
     }
+    const params: Record<string, string | number | boolean> = { q: query, limit };
+    if (sourceSiteId) params['source_site_id'] = sourceSiteId;
+    if (includeBalance) params['include_balance'] = true;
     return this.bff.getData<CatalogSearchResults<CatalogSearchItem>>(
       `${this.basePath}/items`,
-      { q: query, limit }
+      params
     ).pipe(
       map(response => response.results || [])
     );

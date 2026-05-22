@@ -106,7 +106,7 @@ import { Item, Unit, Category } from '../../../core/models/nomenclature.models';
           class="wh-btn wh-btn--primary btn btn-primary"
           (click)="onSubmit()"
           type="button"
-          [disabled]="!isValid()"
+          [disabled]="!isValid"
         >
           Добавить в изменения
         </button>
@@ -323,14 +323,15 @@ export class ItemEditFormComponent {
     return result;
   });
 
-  readonly isValid = computed(() => {
+  get isValid(): boolean {
     const d = this.draft;
-    return d.name.trim().length > 0 && d.sku.trim().length > 0 && d.unitId && d.categoryId;
-  });
+    return !!(d.name.trim().length > 0 && d.sku.trim().length > 0 && d.unitId && d.categoryId);
+  }
 
   ngOnChanges(changes: SimpleChanges) {
     if (changes['item']) {
       const it = this.item();
+      if (!it) return;
       this.draft = {
         name: it.name,
         sku: it.sku,
@@ -345,13 +346,14 @@ export class ItemEditFormComponent {
   }
 
   onSubmit(): void {
-    if (!this.isValid()) {
+    if (!this.isValid) {
       this.formError.set('Заполните все обязательные поля');
       return;
     }
     const d = this.draft;
+    const it = this.item();
     this.saveDraft.emit({
-      id: this.item().id,
+      id: it?.id ?? '__new__',
       payload: {
         name: d.name.trim(),
         sku: d.sku.trim(),
@@ -366,6 +368,7 @@ export class ItemEditFormComponent {
 
   onReset(): void {
     const it = this.item();
+    if (!it) { this.draft = { name: '', sku: '', unitId: '', categoryId: '', hashtags: '', description: '', isActive: true }; this.formError.set(null); this.resetDraft.emit(); return; }
     this.draft = {
       name: it.name,
       sku: it.sku,
@@ -380,12 +383,16 @@ export class ItemEditFormComponent {
   }
 
   onDeactivate(): void {
-    this.deactivate.emit(this.item().id);
+    const it = this.item();
+    if (!it) return;
+    this.deactivate.emit(it.id);
   }
 
   onDelete(): void {
+    const it = this.item();
+    if (!it) return;
     if (confirm('Удалить ТМЦ? Это действие нельзя отменить.')) {
-      this.delete.emit(this.item().id);
+      this.delete.emit(it.id);
     }
   }
 }

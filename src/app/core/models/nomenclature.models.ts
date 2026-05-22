@@ -20,6 +20,7 @@ export interface Item {
   unit_symbol: string;
   is_active: boolean;
   hashtags: string[];
+  source_site_qty?: string;
 }
 
 export interface Unit {
@@ -68,7 +69,7 @@ export interface PaginatedResponse<T> {
 
 // ─── New spec models ───────────────────────────────────────────
 
-export type CatalogNodeType = 'category' | 'item';
+export type CatalogNodeType = 'category' | 'item' | 'unit';
 
 export type CatalogNodeState =
   | 'normal'
@@ -122,4 +123,37 @@ export interface CatalogInlineEditEvent {
   nodeType: CatalogNodeType;
   field: string;
   value: unknown;
+}
+
+// ─── Batch contract ──────────────────────────────────────────
+
+export interface CatalogBatchChange {
+  local_id: string;
+  entity_type: 'unit' | 'category' | 'item';
+  action: 'create' | 'update' | 'deactivate' | 'delete';
+  entity_id?: string | number;
+  payload: Record<string, unknown>;
+}
+
+export interface CatalogBatchRequest {
+  client_batch_id: string;
+  mode: string;
+  changes: CatalogBatchChange[];
+}
+
+export interface CatalogBatchResponse {
+  client_batch_id: string;
+  mode: string;
+  status: string;
+  summary: Record<string, number>;
+  records: Array<{
+    local_id: string;
+    entity_type: string;
+    action: string;
+    status: string;
+    entity_id?: number;
+    error_code?: string;
+    error_message?: string;
+  }>;
+  server_time: string;
 }

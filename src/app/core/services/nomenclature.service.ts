@@ -1,12 +1,12 @@
 import { Injectable, signal, computed } from '@angular/core';
-import { Category, Item, Unit, CatalogTreeNodeVm, CatalogPendingChange } from '../models/nomenclature.models';
+import { Category, Item, Unit, CatalogTreeNodeVm, CatalogPendingChange, CatalogBatchChange, CatalogBatchRequest } from '../models/nomenclature.models';
 import { CatalogChangeBufferService } from './catalog-change-buffer.service';
-import { ApiService } from '../api/api.service';
 import { BffApiService } from '../api/bff-api.service';
+import { ApiService } from '../api/api.service';
 import { firstValueFrom } from 'rxjs';
 
 export interface SelectedEntity {
-  type: 'category' | 'item';
+  type: 'category' | 'item' | 'unit';
   id: string;
 }
 
@@ -27,6 +27,22 @@ export class NomenclatureService {
   readonly allItems = signal<Item[]>([]);
   readonly units = signal<Unit[]>([]);
 
+  /** Project pending create-unit changes as Unit objects so they appear in selects */
+  readonly stagedUnits = computed<Unit[]>(() => {
+    return this.changeBuffer.changes()
+      .filter(c => c.entityType === 'unit' && c.action === 'create')
+      .map(c => ({
+        id: c.localId,
+        name: (c.payload['name'] as string) || '',
+        symbol: (c.payload['symbol'] as string) || '',
+        sort_order: (c.payload['sort_order'] as number) ?? 0,
+        is_active: (c.payload['is_active'] as boolean) ?? true,
+      } as Unit));
+  });
+
+  /** Combined units: server + staged, for form selects */
+  readonly allUnits = computed<Unit[]>(() => [...this.units(), ...this.stagedUnits()]);
+
   // ─── UI state ────────────────────────────────────────────────
   readonly selectedEntity = signal<SelectedEntity | null>(null);
   readonly expandedIds = signal<Set<string>>(new Set());
@@ -45,6 +61,115 @@ export class NomenclatureService {
     const buffer = this.changeBuffer;
 
     const tree = this.buildTree(cats, items, 0, expanded, selected, buffer);
+
+    // Inject pending create nodes from buffer
+    const pendingCreates = this.changeBuffer.changes().filter(c => c.action === 'create');
+    
+    // Category creates
+    for (const change of pendingCreates) {
+      if (change.entityType === 'category') {
+        const name = (change.payload['name'] as string) || 'Новая категория';
+        
+        const newNode: CatalogTreeNodeVm = {
+          id: change.localId,
+          type: 'category',
+          name,
+          isActive: (change.payload['is_active'] as boolean) ?? true,
+          level: 0,
+          expanded: false,
+          selected: selected?.id === change.localId && selected?.type === 'category',
+          dirty: true,
+          pendingAction: 'create',
+          children: undefined,
+        };
+        
+        const parentId = change.payload['parent_id'] as string | undefined;
+        const parentIdx = parentId ? tree.findIndex(n => n.id === parentId && n.type === 'category') : -1;
+        if (parentIdx >= 0) {
+          tree.splice(parentIdx + 1, 0, newNode);
+        } else {
+          tree.push(newNode);
+        }
+      }
+    }
+    
+    // Item creates
+    for (const change of pendingCreates) {
+      if (change.entityType === 'item') {
+        const name = (change.payload['name'] as string) || 'Новый ТМЦ';
+        const catLocalId = change.payload['category_local_id'] as string | undefined;
+        const catId = change.payload['category_id'] as string | undefined;
+        const parentId = catLocalId || catId || '';
+        
+        const newNode: CatalogTreeNodeVm = {
+          id: change.localId,
+          type: 'item',
+          name,
+          sku: (change.payload['sku'] as string) || undefined,
+          parentId,
+          isActive: (change.payload['is_active'] as boolean) ?? true,
+          level: 1,
+          expanded: false,
+          selected: selected?.id === change.localId && selected?.type === 'item',
+          dirty: true,
+          pendingAction: 'create',
+        };
+        
+        const parentIdx = parentId ? tree.findIndex(n => n.id === parentId && n.type === 'category') : -1;
+        if (parentIdx >= 0) {
+          tree.splice(parentIdx + 1, 0, newNode);
+        } else {
+          tree.push(newNode);
+        }
+      }
+    }
+    
+    // Add unit section with staged and existing units
+    const hasUnits = this.units().length > 0 || pendingCreates.some(c => c.entityType === 'unit');
+    if (hasUnits) {
+      const unitSectionId = '__units__';
+      tree.push({
+        id: unitSectionId,
+        type: 'category',
+        name: 'Единицы измерения',
+        isActive: true,
+        level: 0,
+        expanded: expanded.has(unitSectionId),
+        selected: false,
+        dirty: false,
+        children: undefined,
+      });
+      
+      for (const u of this.units()) {
+        tree.push({
+          id: u.id,
+          type: 'unit',
+          name: `${u.name} (${u.symbol})`,
+          meta: u.is_active ? undefined : 'неактивно',
+          parentId: unitSectionId,
+          isActive: u.is_active,
+          level: 1,
+          expanded: false,
+          selected: selected?.id === u.id && selected?.type === 'unit',
+          dirty: this.changeBuffer.hasPending(u.id, 'unit'),
+        });
+      }
+      
+      for (const u of this.stagedUnits()) {
+        tree.push({
+          id: u.id,
+          type: 'unit',
+          name: `${u.name} (${u.symbol})`,
+          parentId: unitSectionId,
+          isActive: u.is_active,
+          level: 1,
+          expanded: false,
+          selected: selected?.id === u.id && selected?.type === 'unit',
+          dirty: true,
+          pendingAction: 'create' as const,
+        });
+      }
+    }
 
     if (!query) return tree;
     return this.filterTree(tree, query);
@@ -371,13 +496,20 @@ export class NomenclatureService {
     };
   }
 
-  // ─── Batch apply ─────────────────────────────────────────────
+  // ─── Selected unit ───────────────────────────────────────────
 
-  private _apiPath(entityType: string, entityId?: string): string {
-    const plural = entityType === 'category' ? 'categories' : `${entityType}s`;
-    const prefix = `/${plural}`;
-    return entityId ? `${prefix}/${entityId}/` : `${prefix}/`;
+  readonly selectedUnit = computed<Unit | null>(() => {
+    const sel = this.selectedEntity();
+    if (sel?.type !== 'unit') return null;
+    return this.allUnits().find(u => u.id === sel.id) ?? null;
+  });
+
+  /** Helper: resolve unit by ID from allUnits — used by right-panel template as fallback */
+  resolveUnitById(unitId: string): Unit | null {
+    return this.allUnits().find(u => u.id === unitId) ?? null;
   }
+
+  // ─── Batch apply ─────────────────────────────────────────────
 
   async applyBatch(changes: CatalogPendingChange[]): Promise<void> {
     if (changes.length === 0) return;
@@ -385,23 +517,21 @@ export class NomenclatureService {
     this.error.set(null);
 
     try {
-      for (const change of changes) {
-        const path = this._apiPath(change.entityType, change.entityId);
-        if (change.action === 'delete') {
-          await firstValueFrom(this.api.delete(path));
-        } else if (change.action === 'deactivate') {
-          await firstValueFrom(
-            this.api.patch(path, { is_active: false })
-          );
-        } else if (change.action === 'update') {
-          await firstValueFrom(
-            this.api.patch(path, change.payload)
-          );
-        } else if (change.action === 'create') {
-          const createPath = this._apiPath(change.entityType);
-          await firstValueFrom(this.api.post(createPath, change.payload));
-        }
-      }
+      const batchChanges: CatalogBatchChange[] = changes.map(c => ({
+        local_id: c.localId,
+        entity_type: c.entityType as 'unit' | 'category' | 'item',
+        action: c.action as 'create' | 'update' | 'deactivate' | 'delete',
+        entity_id: c.entityId,
+        payload: c.payload,
+      }));
+
+      const batchRequest: CatalogBatchRequest = {
+        client_batch_id: `catalog-ui-${new Date().toISOString()}-${Math.random().toString(36).substring(2, 8)}`,
+        mode: 'atomic',
+        changes: batchChanges,
+      };
+
+      await firstValueFrom(this.bff.post('/catalog/admin/batch', batchRequest));
       await this.loadBootstrap();
     } catch (err: any) {
       this.error.set(err?.message || 'Batch apply failed');
