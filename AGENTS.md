@@ -49,6 +49,14 @@ Permanent standard:
 - If checks/tests fail, are unavailable, or were not run, do not commit unless the user explicitly instructs to commit with that limitation documented.
 - Git push is completely forbidden; the user pushes manually.
 
+## Dev-стенд и тестирование
+
+Агенты тестируют изменения на работающем dev-стенде. По умолчанию стенд запущен. Если нет — агент может запустить/перезапустить/пересобрать его через `make` из `/home/makc/AI_sandbox/warehouse_solution`.
+
+- Полный список `make`-команд и протокол восстановления стенда: `AGENTS.md` в корне workspace.
+- Основные команды: `make up` (запуск), `make restart` (перезапуск), `make build-angular` (ребилд фронтенда), `make status` (проверка).
+- После сборки (`npm run build`) агент копирует актуальный bundle в `dist/`, который отдаёт Django.
+
 ## Verification
 
 - Run `npm run build` after frontend changes once Angular scripts exist.

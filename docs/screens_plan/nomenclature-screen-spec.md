@@ -60,6 +60,13 @@ All changes are collected locally.
 The user applies them using the “Применить” button.
 ```
 
+Clarification for current catalog batch flow:
+
+```text
+The right-side form button “Добавить в изменения” only stages a local draft.
+The server write happens later, only from the left-side “Применить все” action.
+```
+
 ---
 
 ## 3. Technology target
@@ -589,7 +596,7 @@ font-weight: 500
 Used in mockup for:
 
 ```text
-Расходники без SKU
+Расходники без заполненной категории/единицы
 ```
 
 Style:
@@ -614,7 +621,7 @@ font-weight: 500
 Secondary line:
 
 ```text
-Требуется SKU
+Заполните обязательные поля формы
 ```
 
 ---
@@ -711,7 +718,7 @@ Fields:
 
 ```text
 Название *
-SKU *
+SKU
 Единица измерения *
 Категория *
 Ключевые слова
@@ -733,12 +740,19 @@ height: 40
 #### Field: SKU
 
 ```text
-label: SKU *
+label: SKU
 value: CBL-UTP-5E-305
 x: 968
 y: 328
 width: 384
 height: 40
+```
+
+Behavior note:
+
+```text
+SKU is optional in the Angular form.
+If left empty, the staged payload sends null and the item can still be added to pending changes.
 ```
 
 #### Field: Единица измерения

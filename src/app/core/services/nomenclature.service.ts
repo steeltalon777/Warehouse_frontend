@@ -43,6 +43,32 @@ export class NomenclatureService {
   /** Combined units: server + staged, for form selects */
   readonly allUnits = computed<Unit[]>(() => [...this.units(), ...this.stagedUnits()]);
 
+  /** Project pending create-category changes so they can be selected before apply */
+  readonly stagedCategories = computed<Category[]>(() => {
+    return this.changeBuffer.changes()
+      .filter(c => c.entityType === 'category' && c.action === 'create')
+      .map(c => ({
+        id: c.localId,
+        name: String(c.payload['name'] ?? ''),
+        code: String(c.payload['code'] ?? ''),
+        parent_id: c.payload['parent_local_id'] != null
+          ? String(c.payload['parent_local_id'])
+          : c.payload['parent_id'] != null
+            ? String(c.payload['parent_id'])
+            : null,
+        sort_order: c.payload['sort_order'] != null ? Number(c.payload['sort_order']) : 0,
+        is_active: c.payload['is_active'] !== false,
+        children_count: 0,
+        items_count: 0,
+        children: [],
+      }));
+  });
+
+  /** Combined categories tree: server + staged, for form selects and staged edits */
+  readonly allCategories = computed<Category[]>(() => {
+    return this.mergeCategoriesWithStaged(this.categories(), this.stagedCategories());
+  });
+
   // ─── UI state ────────────────────────────────────────────────
   readonly selectedEntity = signal<SelectedEntity | null>(null);
   readonly expandedIds = signal<Set<string>>(new Set());
@@ -83,7 +109,8 @@ export class NomenclatureService {
           children: undefined,
         };
         
-        const parentId = change.payload['parent_id'] as string | undefined;
+        const parentId = (change.payload['parent_local_id'] as string | undefined)
+          ?? (change.payload['parent_id'] as string | undefined);
         const parentIdx = parentId ? tree.findIndex(n => n.id === parentId && n.type === 'category') : -1;
         if (parentIdx >= 0) {
           tree.splice(parentIdx + 1, 0, newNode);
@@ -391,7 +418,7 @@ export class NomenclatureService {
   }
 
   findCategoryById(id: string, tree?: Category[]): Category | null {
-    tree ??= this.categories();
+    tree ??= this.allCategories();
     for (const cat of tree) {
       if (cat.id === id) return cat;
       if (cat.children) {
@@ -447,6 +474,49 @@ export class NomenclatureService {
     for (const item of items) {
       item.category_name = catNameMap[item.category_id] ?? '';
     }
+  }
+
+  private mergeCategoriesWithStaged(baseCategories: Category[], stagedCategories: Category[]): Category[] {
+    const cloneCategory = (category: Category): Category => ({
+      ...category,
+      children: category.children?.map(cloneCategory) ?? [],
+    });
+
+    const roots = baseCategories.map(cloneCategory);
+    const categoryMap = new Map<string, Category>();
+
+    const indexTree = (categories: Category[]) => {
+      for (const category of categories) {
+        categoryMap.set(category.id, category);
+        if (category.children?.length) {
+          indexTree(category.children);
+        }
+      }
+    };
+
+    indexTree(roots);
+
+    for (const staged of stagedCategories) {
+      const stagedClone: Category = {
+        ...staged,
+        children: [],
+      };
+
+      categoryMap.set(stagedClone.id, stagedClone);
+
+      if (stagedClone.parent_id) {
+        const parent = categoryMap.get(stagedClone.parent_id);
+        if (parent) {
+          parent.children = [...(parent.children ?? []), stagedClone];
+          parent.children_count = parent.children.length;
+          continue;
+        }
+      }
+
+      roots.push(stagedClone);
+    }
+
+    return roots;
   }
 
   private toCategoryTree(raw: Record<string, unknown>): Category[] {

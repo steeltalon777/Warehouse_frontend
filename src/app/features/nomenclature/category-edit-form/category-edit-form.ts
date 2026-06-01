@@ -35,9 +35,9 @@ import { Category } from '../../../core/models/nomenclature.models';
         <div class="form-group">
           <label class="form-label">Родительская категория</label>
           <select class="wh-form-input form-select" [(ngModel)]="draft.parentId">
-            <option [value]="null">— Корневая —</option>
+            <option [ngValue]="null">— Корневая —</option>
             @for (c of flatCategories(); track c.id) {
-              <option [value]="c.id">{{ c.indent }}{{ c.name }}</option>
+              <option [ngValue]="c.id">{{ c.indent }}{{ c.name }}</option>
             }
           </select>
         </div>
@@ -296,6 +296,10 @@ export class CategoryEditFormComponent {
     return this.draft.name.trim().length > 0;
   }
 
+  private isLocalRef(id: string | null): boolean {
+    return !!id && id.startsWith('category-tmp-');
+  }
+
   ngOnChanges(changes: SimpleChanges) {
     if (changes['category']) {
       const cat = this.category();
@@ -318,15 +322,24 @@ export class CategoryEditFormComponent {
     }
     const d = this.draft;
     const cat = this.category();
+    const payload: Record<string, unknown> = {
+      name: d.name.trim(),
+      code: d.code.trim(),
+      sort_order: d.sortOrder,
+      is_active: d.isActive,
+    };
+
+    if (!d.parentId) {
+      payload['parent_id'] = null;
+    } else if (this.isLocalRef(d.parentId)) {
+      payload['parent_local_id'] = d.parentId;
+    } else {
+      payload['parent_id'] = d.parentId;
+    }
+
     this.saveDraft.emit({
       id: cat?.id ?? '__new__',
-      payload: {
-        name: d.name.trim(),
-        code: d.code.trim(),
-        parent_id: d.parentId,
-        sort_order: d.sortOrder,
-        is_active: d.isActive,
-      },
+      payload,
     });
     this.formError.set(null);
   }

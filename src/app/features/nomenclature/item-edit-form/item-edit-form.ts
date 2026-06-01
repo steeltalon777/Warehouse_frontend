@@ -22,7 +22,7 @@ import { Item, Unit, Category } from '../../../core/models/nomenclature.models';
 
         <!-- SKU -->
         <div class="form-group">
-          <label class="form-label">SKU <span class="required">*</span></label>
+          <label class="form-label">SKU</label>
           <input
             type="text"
             class="wh-form-input form-input"
@@ -325,7 +325,11 @@ export class ItemEditFormComponent {
 
   get isValid(): boolean {
     const d = this.draft;
-    return !!(d.name.trim().length > 0 && d.sku.trim().length > 0 && d.unitId && d.categoryId);
+    return !!(d.name.trim().length > 0 && d.unitId && d.categoryId);
+  }
+
+  private isLocalRef(id: string, entityType: 'category' | 'unit'): boolean {
+    return id.startsWith(`${entityType}-tmp-`);
   }
 
   ngOnChanges(changes: SimpleChanges) {
@@ -352,16 +356,29 @@ export class ItemEditFormComponent {
     }
     const d = this.draft;
     const it = this.item();
+    const normalizedSku = d.sku.trim();
+    const payload: Record<string, unknown> = {
+      name: d.name.trim(),
+      sku: normalizedSku || null,
+      hashtags: d.hashtags.split(',').map(s => s.trim()).filter(Boolean),
+      is_active: d.isActive,
+    };
+
+    if (this.isLocalRef(d.unitId, 'unit')) {
+      payload['unit_local_id'] = d.unitId;
+    } else {
+      payload['unit_id'] = d.unitId;
+    }
+
+    if (this.isLocalRef(d.categoryId, 'category')) {
+      payload['category_local_id'] = d.categoryId;
+    } else {
+      payload['category_id'] = d.categoryId;
+    }
+
     this.saveDraft.emit({
       id: it?.id ?? '__new__',
-      payload: {
-        name: d.name.trim(),
-        sku: d.sku.trim(),
-        unit_id: d.unitId,
-        category_id: d.categoryId,
-        hashtags: d.hashtags.split(',').map(s => s.trim()).filter(Boolean),
-        is_active: d.isActive,
-      },
+      payload,
     });
     this.formError.set(null);
   }

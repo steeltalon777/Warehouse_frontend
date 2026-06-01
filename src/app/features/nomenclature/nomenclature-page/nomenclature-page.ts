@@ -183,7 +183,7 @@ export class NomenclaturePageComponent implements OnInit {
   readonly selectedNode = this.service.selectedNode;
   readonly isSaving = this.service.isSaving;
   readonly units = this.service.allUnits;
-  readonly categories = this.service.categories;
+  readonly categories = this.service.allCategories;
 
   readonly selectedItem = computed(() => this.service.getSelectedItem());
   readonly selectedCategory = computed(() => this.service.getSelectedCategory());
