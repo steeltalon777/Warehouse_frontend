@@ -386,7 +386,10 @@ export class OperationCreateModalComponent implements OnInit {
 
   readonly canSubmit = computed(() => {
     const d = this.localDraft();
-    return d.lines.length > 0 && d.lines.every(l => l.quantity != null && l.quantity > 0);
+    if (d.lines.length === 0) return false;
+    if (d.lines.some(l => l.quantity == null || l.quantity <= 0)) return false;
+    if (d.type === 'MOVE' && (!d.sourceSiteId || !d.destinationSiteId)) return false;
+    return true;
   });
 
   constructor() {
@@ -397,7 +400,9 @@ export class OperationCreateModalComponent implements OnInit {
         const defaultSiteId = this.authContextService.authContext()?.defaultSiteId;
         if (d.type === 'RECEIVE' && !d.destinationSiteId && defaultSiteId) {
           defaults.destinationSiteId = defaultSiteId;
-        } else if ((d.type === 'EXPENSE' || d.type === 'WRITE_OFF') && !d.sourceSiteId && defaultSiteId) {
+        } else if (d.type === 'MOVE' && !d.sourceSiteId && defaultSiteId) {
+          defaults.sourceSiteId = defaultSiteId;
+        } else if ((d.type === 'EXPENSE' || d.type === 'WRITE_OFF' || d.type === 'ISSUE') && !d.sourceSiteId && defaultSiteId) {
           defaults.sourceSiteId = defaultSiteId;
         }
         this.localDraft.set({ ...d, lines: [...d.lines], ...defaults });
@@ -413,7 +418,6 @@ export class OperationCreateModalComponent implements OnInit {
   }
 
   ngOnInit(): void {
-    this.service.loadBalances();
   }
 
   private updateLineStockHint(line: OperationLineDraftVm): void {

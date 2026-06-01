@@ -310,21 +310,44 @@ export class OperationsService {
   }
 
   private buildPayload(draft: OperationDraftVm): Record<string, unknown> {
+    const safeId = (val: unknown): string | number | null => {
+      if (val === null || val === undefined) return null;
+      if (typeof val === 'string') {
+        if (val === '' || val === 'undefined' || val === 'null') return null;
+        return val;
+      }
+      if (typeof val === 'number') return val;
+      return null;
+    };
+
+    const primarySiteId = (): string | number | null => {
+      if (draft.type === 'RECEIVE') {
+        return safeId(draft.destinationSiteId);
+      }
+      return safeId(draft.sourceSiteId);
+    };
+
     const payload: Record<string, unknown> = {
       type: draft.type,
+      site_id: primarySiteId(),
       notes: draft.comment || '',
       lines: draft.lines
         .filter(l => l.quantity != null && l.quantity > 0)
-        .map(l => ({
-          item_id: l.itemId,
+        .map((l, idx) => ({
+          line_number: idx + 1,
+          item_id: safeId(l.itemId),
           qty: String(l.quantity),
-          unit_id: l.unitId,
+          unit_id: safeId(l.unitId),
           note: '',
         })),
     };
 
-    if (draft.sourceSiteId) payload['source_site_id'] = draft.sourceSiteId;
-    if (draft.destinationSiteId) payload['destination_site_id'] = draft.destinationSiteId;
+    const srcId = safeId(draft.sourceSiteId);
+    if (srcId !== null) payload['source_site_id'] = srcId;
+
+    const dstId = safeId(draft.destinationSiteId);
+    if (dstId !== null) payload['destination_site_id'] = dstId;
+
     if (draft.personName) payload['person_name'] = draft.personName;
 
     return payload;
