@@ -19,6 +19,18 @@ export const routes: Routes = [
     loadComponent: () => import('./features/operations/pages/operations-page/operations-page.component').then(m => m.OperationsPageComponent),
   },
   {
+    path: 'operations/:operationId/acceptance',
+    loadComponent: () => import('./features/operations/pages/operation-acceptance-page/operation-acceptance-page.component').then(m => m.OperationAcceptancePageComponent),
+  },
+  {
+    path: 'operations/lost-assets',
+    loadComponent: () => import('./features/lost-assets/pages/lost-assets-page/lost-assets-page.component').then(m => m.LostAssetsPageComponent),
+  },
+  {
+    path: 'operations/lost-assets/:operationLineId',
+    loadComponent: () => import('./features/lost-assets/pages/lost-asset-detail-page/lost-asset-detail-page.component').then(m => m.LostAssetDetailPageComponent),
+  },
+  {
     path: 'temporary-items',
     loadComponent: () => import('./features/temporary-items/pages/temp-items-page.component').then(m => m.TempItemsPageComponent),
   },

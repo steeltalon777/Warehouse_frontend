@@ -1,6 +1,7 @@
 import { Component, OnDestroy, OnInit, signal, computed, inject, HostListener, effect } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
+import { Router } from '@angular/router';
 import { OperationsService } from '../../../../core/services/operations.service';
 import { AuthContextService } from '../../../../core/services/auth-context.service';
 import { CatalogSearchService } from '../../../../core/services/catalog-search.service';
@@ -110,6 +111,7 @@ import { firstValueFrom } from 'rxjs';
         (submit)="onDraftSubmit($event)"
         (cancel)="onDraftCancel()"
         (delete)="onDraftDelete($event)"
+        (cancelOperation)="onDraftOperationCancel($event)"
       />
     }
 
@@ -250,6 +252,7 @@ export class OperationsPageComponent implements OnInit, OnDestroy {
   readonly service = inject(OperationsService);
   private authContextService = inject(AuthContextService);
   private catalogSearchService = inject(CatalogSearchService);
+  private router = inject(Router);
   private searchTimer: ReturnType<typeof setTimeout> | null = null;
   private loadSequence = 0;
   private readonly itemSearchCache = new Map<string, string[]>();
@@ -492,7 +495,7 @@ export class OperationsPageComponent implements OnInit, OnDestroy {
   }
 
   onRowAccept(row: OperationListRowVm): void {
-    // TODO: navigate to acceptance screen or open modal
+    void this.router.navigate(['/operations', row.id, 'acceptance']);
   }
 
   private buildRowFromDto(dto: OperationDto): OperationListRowVm {
@@ -680,6 +683,19 @@ export class OperationsPageComponent implements OnInit, OnDestroy {
     if (!confirm('Удалить черновик?')) return;
     try {
       await this.service.deleteOperation(draft.id);
+      this.showCreateModal.set(false);
+      this.editingDraft.set(null);
+      void this.loadList();
+    } catch {
+      // error already in service.error
+    }
+  }
+
+  async onDraftOperationCancel(draft: OperationDraftVm): Promise<void> {
+    if (!draft.id) return;
+    if (!confirm('Отменить операцию? Она будет переведена в статус «Отменена».')) return;
+    try {
+      await this.service.cancelOperation(draft.id);
       this.showCreateModal.set(false);
       this.editingDraft.set(null);
       void this.loadList();
