@@ -5,7 +5,8 @@ export type OperationType =
   | 'WRITE_OFF'
   | 'ISSUE'
   | 'ISSUE_RETURN'
-  | 'CORRECTION';
+  | 'CORRECTION'
+  | 'ADJUSTMENT';
 
 export type OperationStatus =
   | 'draft'
@@ -18,13 +19,18 @@ export type OperationStatus =
 export interface OperationDto {
   id: string;
   number?: string;
+  display_number?: string;
   type: OperationType;
   status: OperationStatus;
+  site_id?: string | null;
+  site_name?: string | null;
   source_site_id?: string | null;
   source_site_name?: string | null;
   destination_site_id?: string | null;
   destination_site_name?: string | null;
   person_name?: string | null;
+  issue_object_id?: string | null;
+  issue_object_name_snapshot?: string | null;
   comment?: string | null;
   created_by_user_id: string;
   created_by_label?: string;
@@ -32,6 +38,8 @@ export interface OperationDto {
   updated_at: string;
   effective_at?: string | null;
   lines_count?: number;
+  acceptance_state?: string;
+  acceptance_state_label?: string;
   lines?: OperationLineDto[];
 }
 
@@ -52,6 +60,7 @@ export interface OperationLineDto {
 
 export interface OperationsFilterVm {
   search: string;
+  itemIds?: string[];
   type: OperationType | null;
   status: OperationStatus | null;
   siteId: string | null;
@@ -68,10 +77,12 @@ export interface OperationsFilterVm {
 export interface OperationListRowVm {
   id: string;
   number: string;
+  displayNumber: string;
   type: OperationType;
   typeLabel: string;
   status: OperationStatus;
   statusLabel: string;
+  statusLines: string[];
   createdAt: string;
   createdByUserId: string;
   createdByLabel: string;
@@ -80,11 +91,18 @@ export interface OperationListRowVm {
   destinationSiteId?: string | null;
   destinationSiteName?: string | null;
   personName?: string | null;
+  issueObjectId?: string | null;
+  issueObjectName?: string | null;
   directionLabel: string;
+  siteName: string | null;
   linesCount: number;
+  positionCount: number;
+  acceptanceStateLabel: string;
+  canInvoice: boolean;
   canOpen: boolean;
   canEdit: boolean;
   canSubmit: boolean;
+  canDelete: boolean;
   canCancel: boolean;
   canPrint: boolean;
   canAccept: boolean;
@@ -93,12 +111,19 @@ export interface OperationListRowVm {
 export interface OperationDraftVm {
   id?: string;
   type: OperationType;
-  status: 'draft';
+  status: OperationStatus;
   sourceSiteId?: string | null;
   destinationSiteId?: string | null;
   personName?: string | null;
+  issueObjectId?: string | null;
+  issueObjectName?: string | null;
+  writeOffSource?: 'warehouse' | 'object' | null;
   comment?: string | null;
   lines: OperationLineDraftVm[];
+  /** Serialized clean state for dirty-check */
+  lastSavedSnapshot?: string;
+  /** Whether balance refresh is in progress */
+  isBalanceRefreshing?: boolean;
 }
 
 export interface OperationLineDraftVm {
@@ -116,6 +141,8 @@ export interface OperationLineDraftVm {
   isTemporary: boolean;
   fromBalances: boolean;
   error?: string | null;
+  /** Preserved line number from backend for stable ordering */
+  lineNumber?: number;
 }
 
 export interface TemporaryItemDraftVm {
@@ -147,6 +174,7 @@ export const OPERATION_TYPE_LABELS: Record<OperationType, string> = {
   ISSUE: 'Выдача',
   ISSUE_RETURN: 'Возврат выдачи',
   CORRECTION: 'Корректировка',
+  ADJUSTMENT: 'Корректировка',
 };
 
 export const OPERATION_STATUS_LABELS: Record<OperationStatus, string> = {
@@ -176,6 +204,7 @@ export const TYPE_BADGE_COLORS: Record<OperationType, { bg: string; text: string
   ISSUE: { bg: '#FEF9C3', text: '#854D0E' },
   ISSUE_RETURN: { bg: '#F3F4F6', text: '#374151' },
   CORRECTION: { bg: '#E0E7FF', text: '#3730A3' },
+  ADJUSTMENT: { bg: '#E0E7FF', text: '#3730A3' },
 };
 
 /** @deprecated Use CSS class bindings (wh-badge--status-*) instead. */

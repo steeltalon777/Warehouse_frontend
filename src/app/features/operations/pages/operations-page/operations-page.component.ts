@@ -1,8 +1,10 @@
-import { Component, OnInit, signal, computed, inject, HostListener, effect } from '@angular/core';
+import { Component, OnDestroy, OnInit, signal, computed, inject, HostListener, effect } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { OperationsService } from '../../../../core/services/operations.service';
 import { AuthContextService } from '../../../../core/services/auth-context.service';
+import { CatalogSearchService } from '../../../../core/services/catalog-search.service';
+import { snapshotDraft } from '../../components/operation-create-modal/operation-draft-mappers';
 import {
   OperationsFilterVm,
   OperationListRowVm,
@@ -10,12 +12,16 @@ import {
   OperationType,
   OperationStatus,
   STATUS_TABS,
+  OperationDto,
+  OPERATION_TYPE_LABELS,
+  OPERATION_STATUS_LABELS,
 } from '../../../../core/models/operations.models';
 import { OperationsFilterPanelComponent } from '../../components/operations-filter-panel/operations-filter-panel.component';
 import { OperationsStatusTabsComponent } from '../../components/operations-status-tabs/operations-status-tabs.component';
 import { OperationsTableComponent } from '../../components/operations-table/operations-table.component';
 import { OperationCreateModalComponent } from '../../components/operation-create-modal/operation-create-modal.component';
 import { OperationConfirmModalComponent } from '../../components/operation-confirm-modal/operation-confirm-modal.component';
+import { firstValueFrom } from 'rxjs';
 
 @Component({
   selector: 'app-operations-page',
@@ -84,6 +90,10 @@ import { OperationConfirmModalComponent } from '../../components/operation-confi
             (rowEdit)="onRowEdit($event)"
             (rowSubmit)="onRowSubmit($event)"
             (rowCancel)="onRowCancel($event)"
+            (numberClick)="onRowEdit($event)"
+            (rowInvoice)="onRowInvoice($event)"
+            (rowAccept)="onRowAccept($event)"
+            (rowDelete)="onRowDelete($event)"
           />
         }
       </div>
@@ -99,6 +109,7 @@ import { OperationConfirmModalComponent } from '../../components/operation-confi
         (save)="onDraftSave($event)"
         (submit)="onDraftSubmit($event)"
         (cancel)="onDraftCancel()"
+        (delete)="onDraftDelete($event)"
       />
     }
 
@@ -235,9 +246,13 @@ import { OperationConfirmModalComponent } from '../../components/operation-confi
     }
   `]
 })
-export class OperationsPageComponent implements OnInit {
+export class OperationsPageComponent implements OnInit, OnDestroy {
   readonly service = inject(OperationsService);
   private authContextService = inject(AuthContextService);
+  private catalogSearchService = inject(CatalogSearchService);
+  private searchTimer: ReturnType<typeof setTimeout> | null = null;
+  private loadSequence = 0;
+  private readonly itemSearchCache = new Map<string, string[]>();
 
   constructor() {
     effect(() => {
@@ -245,7 +260,7 @@ export class OperationsPageComponent implements OnInit {
       if (role !== 'root' && this.activeStatusTab() === 'cancelled') {
         this.activeStatusTab.set('all');
         this.filters.update(f => ({ ...f, page: 1 }));
-        this.loadList();
+        void this.loadList();
       }
     });
   }
@@ -306,21 +321,65 @@ export class OperationsPageComponent implements OnInit {
 
   ngOnInit(): void {
     this.service.loadSites();
-    this.loadList();
+    void this.loadList();
+  }
+
+  ngOnDestroy(): void {
+    if (this.searchTimer) {
+      clearTimeout(this.searchTimer);
+      this.searchTimer = null;
+    }
   }
 
   // ─── List loading ────────────────────────────────────────────
 
-  private loadList(): void {
+  private scheduleSearchLoad(): void {
+    if (this.searchTimer) {
+      clearTimeout(this.searchTimer);
+    }
+    this.searchTimer = setTimeout(() => {
+      void this.loadList();
+    }, 250);
+  }
+
+  private async resolveSearchItemIds(search: string): Promise<string[]> {
+    const query = search.trim();
+    const cacheKey = query.toLowerCase();
+    if (query.length < 2) {
+      return [];
+    }
+
+    const cachedIds = this.itemSearchCache.get(cacheKey);
+    if (cachedIds) {
+      return cachedIds;
+    }
+
+    const results = await firstValueFrom(this.catalogSearchService.searchItemsOnce(query, 50));
+    const ids = results.map(item => item.id).filter(Boolean);
+    this.itemSearchCache.set(cacheKey, ids);
+    return ids;
+  }
+
+  private async loadList(): Promise<void> {
+    if (this.searchTimer) {
+      clearTimeout(this.searchTimer);
+      this.searchTimer = null;
+    }
+    const currentLoad = ++this.loadSequence;
     const f = this.filters();
+    const itemIds = await this.resolveSearchItemIds(f.search);
+    if (currentLoad !== this.loadSequence) {
+      return;
+    }
     // Apply active status tab filter
     const tab = STATUS_TABS.find(t => t.key === this.activeStatusTab());
     const filtersWithStatus: OperationsFilterVm = {
       ...f,
       status: tab?.status ?? null,
+      itemIds,
       page: f.page,
     };
-    this.service.loadList(filtersWithStatus);
+    await this.service.loadList(filtersWithStatus);
   }
 
   // ─── Header actions ──────────────────────────────────────────
@@ -338,7 +397,11 @@ export class OperationsPageComponent implements OnInit {
 
   onFiltersChange(newFilters: Partial<OperationsFilterVm>): void {
     this.filters.update(f => ({ ...f, ...newFilters, page: 1 }));
-    this.loadList();
+    if (Object.prototype.hasOwnProperty.call(newFilters, 'search')) {
+      this.scheduleSearchLoad();
+      return;
+    }
+    void this.loadList();
   }
 
   onFiltersReset(): void {
@@ -357,13 +420,13 @@ export class OperationsPageComponent implements OnInit {
       pageSize: this.pageSize(),
     });
     this.activeStatusTab.set('all');
-    this.loadList();
+    void this.loadList();
   }
 
   onStatusTabChange(tabKey: string): void {
     this.activeStatusTab.set(tabKey);
     this.filters.update(f => ({ ...f, page: 1 }));
-    this.loadList();
+    void this.loadList();
   }
 
   // ─── Sort / Pagination ───────────────────────────────────────
@@ -381,12 +444,12 @@ export class OperationsPageComponent implements OnInit {
 
   onPageChange(page: number): void {
     this.filters.update(f => ({ ...f, page }));
-    this.loadList();
+    void this.loadList();
   }
 
   onPageSizeChange(size: number): void {
     this.filters.update(f => ({ ...f, pageSize: size, page: 1 }));
-    this.loadList();
+    void this.loadList();
   }
 
   // ─── Row actions ─────────────────────────────────────────────
@@ -395,18 +458,17 @@ export class OperationsPageComponent implements OnInit {
     // TODO: open detail modal
   }
 
-  onRowEdit(row: OperationListRowVm): void {
-    // TODO: load operation and open edit modal
-    this.editingDraft.set({
-      id: row.id,
-      type: row.type,
-      status: 'draft',
-      sourceSiteId: row.sourceSiteId,
-      destinationSiteId: row.destinationSiteId,
-      personName: row.personName,
-      lines: [],
-    });
-    this.showCreateModal.set(true);
+  async onRowEdit(row: OperationListRowVm): Promise<void> {
+    try {
+      const dto = await this.service.getOperation(row.id);
+      if (!dto) return;
+      const draft = this.service.mapDtoToDraftVm(dto);
+      draft.lastSavedSnapshot = snapshotDraft(draft);
+      this.editingDraft.set(draft);
+      this.showCreateModal.set(true);
+    } catch {
+      // error already in service.error
+    }
   }
 
   onRowSubmit(row: OperationListRowVm): void {
@@ -418,10 +480,129 @@ export class OperationsPageComponent implements OnInit {
     if (!confirm('Отменить операцию?')) return;
     try {
       await this.service.cancelOperation(row.id);
-      this.loadList();
+      void this.loadList();
     } catch {
       // error already in service.error
     }
+  }
+
+  onRowInvoice(row: OperationListRowVm): void {
+    // Invoice button — will be implemented when PDF endpoint is ready
+    // For now, the button is disabled with tooltip
+  }
+
+  onRowAccept(row: OperationListRowVm): void {
+    // TODO: navigate to acceptance screen or open modal
+  }
+
+  private buildRowFromDto(dto: OperationDto): OperationListRowVm {
+    const normalizedType = dto.type === 'ADJUSTMENT' ? 'CORRECTION' : dto.type;
+    const typeLabel = OPERATION_TYPE_LABELS[normalizedType as OperationType] ?? dto.type;
+    const statusLabel = OPERATION_STATUS_LABELS[dto.status] ?? dto.status;
+    const displayNumber = dto.display_number || dto.number || this.computeClientDisplayNumber(dto);
+    const directionLabel = this.buildDirectionLabel(dto);
+    const statusLines = this.buildStatusLines(dto);
+
+    return {
+      id: dto.id,
+      number: displayNumber,
+      displayNumber,
+      type: normalizedType as OperationType,
+      typeLabel,
+      status: dto.status,
+      statusLabel,
+      statusLines,
+      createdAt: dto.created_at,
+      createdByUserId: dto.created_by_user_id,
+      createdByLabel: dto.created_by_label || 'Пользователь',
+      sourceSiteId: dto.source_site_id,
+      sourceSiteName: dto.source_site_name,
+      destinationSiteId: dto.destination_site_id,
+      destinationSiteName: dto.destination_site_name,
+      personName: dto.person_name,
+      issueObjectId: dto.issue_object_id,
+      issueObjectName: dto.issue_object_name_snapshot,
+      directionLabel,
+      siteName: dto.site_name || null,
+      linesCount: dto.lines_count ?? (dto.lines?.length ?? 0),
+      positionCount: dto.lines_count ?? (dto.lines?.length ?? 0),
+      acceptanceStateLabel: dto.acceptance_state_label || '',
+      canInvoice: dto.status === 'submitted' || dto.status === 'pending',
+      canOpen: true,
+      canEdit: false,
+      canSubmit: false,
+      canDelete: false,
+      canCancel: false,
+      canPrint: false,
+      canAccept: false,
+    };
+  }
+
+  private computeClientDisplayNumber(op: OperationDto): string {
+    if (op.site_id && op.created_at) {
+      try {
+        const d = new Date(op.created_at);
+        const hh = String(d.getHours()).padStart(2, '0');
+        const mm = String(d.getMinutes()).padStart(2, '0');
+        const dd = String(d.getDate()).padStart(2, '0');
+        const MM = String(d.getMonth() + 1).padStart(2, '0');
+        const yy = String(d.getFullYear()).slice(-2);
+        return `${op.site_id}/${hh}${mm}/${dd}${MM}${yy}`;
+      } catch { }
+    }
+    return op.id.slice(0, 8).toUpperCase();
+  }
+
+  private buildDirectionLabel(op: OperationDto): string {
+    const srcName = op.source_site_name || (op.source_site_id ? `Склад #${op.source_site_id}` : null);
+    const dstName = op.destination_site_name || (op.destination_site_id ? `Склад #${op.destination_site_id}` : null);
+    const siteName = op.site_name || (op.site_id ? `Склад #${op.site_id}` : null);
+    const issueObjName = op.issue_object_name_snapshot || null;
+
+    switch (op.type) {
+      case 'MOVE':
+        return `${srcName || '—'} → ${dstName || '—'}`;
+      case 'RECEIVE':
+        return `→ ${siteName || dstName || '—'}`;
+      case 'EXPENSE':
+        return `${siteName || srcName || '—'} → расход`;
+      case 'WRITE_OFF':
+        return `${siteName || srcName || '—'} → списание`;
+      case 'ISSUE':
+        return `${siteName || srcName || '—'} → ${issueObjName || 'объект'}`;
+      case 'ISSUE_RETURN':
+        return `${issueObjName || 'объект'} → ${siteName || srcName || '—'}`;
+      case 'CORRECTION':
+      case 'ADJUSTMENT':
+        return `${siteName || srcName || '—'} → корректировка`;
+      default:
+        if (srcName && dstName) return `${srcName} → ${dstName}`;
+        if (srcName) return srcName;
+        if (dstName) return `→ ${dstName}`;
+        return '—';
+    }
+  }
+
+  private buildStatusLines(op: OperationDto): string[] {
+    const lines: string[] = [];
+    const statusLabel = OPERATION_STATUS_LABELS[op.status] ?? op.status;
+    lines.push(statusLabel);
+
+    if (op.acceptance_state && op.acceptance_state !== 'not_required') {
+      const accLabel = op.acceptance_state_label || this.getAcceptanceStateLabel(op.acceptance_state);
+      lines.push(accLabel);
+    }
+
+    return lines.slice(0, 4);
+  }
+
+  private getAcceptanceStateLabel(state: string): string {
+    const labels: Record<string, string> = {
+      'pending': 'Приёмка: ожидает',
+      'in_progress': 'Приёмка: частично',
+      'resolved': 'Приёмка: закрыта',
+    };
+    return labels[state] || state;
   }
 
   @HostListener('document:keydown.escape')
@@ -437,31 +618,84 @@ export class OperationsPageComponent implements OnInit {
 
   async onDraftSave(draft: OperationDraftVm): Promise<void> {
     try {
+      let result: OperationDto | null = null;
       if (draft.id) {
-        await this.service.updateOperation(draft.id, draft);
+        result = await this.service.updateOperation(draft.id, draft);
       } else {
-        await this.service.createOperation(draft);
+        result = await this.service.createOperation(draft);
       }
-      this.showCreateModal.set(false);
-      this.editingDraft.set(null);
-      this.loadList();
+      if (result) {
+        const savedDraft = this.service.mapDtoToDraftVm(result);
+        savedDraft.lastSavedSnapshot = snapshotDraft(savedDraft);
+        this.editingDraft.set(savedDraft);
+      }
+      void this.loadList();
     } catch {
       // error already in service.error
     }
   }
 
-  onDraftSubmit(draft: OperationDraftVm): void {
-    // Open confirm modal instead of direct submit
-    const row = this.rows().find(r => r.id === draft.id);
-    if (row) {
+  async onDraftSubmit(draft: OperationDraftVm): Promise<void> {
+    if (draft.id) {
+      let row = this.rows().find(r => r.id === draft.id);
+      if (!row) {
+        const dto = await this.service.getOperation(draft.id);
+        if (dto) row = this.buildRowFromDto(dto);
+      }
+      if (row) {
+        this.confirmingOperation.set(row);
+        this.showConfirmModal.set(true);
+      }
+      return;
+    }
+
+    // New unsaved draft: save first, then open confirm modal
+    try {
+      const result = await this.service.createOperation(draft);
+      if (!result) return;
+
+      const savedDraft = this.service.mapDtoToDraftVm(result);
+      savedDraft.lastSavedSnapshot = snapshotDraft(savedDraft);
+      this.editingDraft.set(savedDraft);
+
+      // Refresh list in background
+      void this.loadList();
+
+      // Open confirm modal with the newly created operation
+      const row = this.buildRowFromDto(result);
       this.confirmingOperation.set(row);
       this.showConfirmModal.set(true);
+    } catch {
+      // error already in service.error
     }
   }
 
   onDraftCancel(): void {
     this.showCreateModal.set(false);
     this.editingDraft.set(null);
+  }
+
+  async onDraftDelete(draft: OperationDraftVm): Promise<void> {
+    if (!draft.id) return;
+    if (!confirm('Удалить черновик?')) return;
+    try {
+      await this.service.deleteOperation(draft.id);
+      this.showCreateModal.set(false);
+      this.editingDraft.set(null);
+      void this.loadList();
+    } catch {
+      // error already in service.error
+    }
+  }
+
+  async onRowDelete(row: OperationListRowVm): Promise<void> {
+    if (!confirm('Удалить черновик?')) return;
+    try {
+      await this.service.deleteOperation(row.id);
+      void this.loadList();
+    } catch {
+      // error already in service.error
+    }
   }
 
   async onConfirmSubmit(): Promise<void> {
@@ -473,7 +707,7 @@ export class OperationsPageComponent implements OnInit {
       this.confirmingOperation.set(null);
       this.showCreateModal.set(false);
       this.editingDraft.set(null);
-      this.loadList();
+      void this.loadList();
     } catch {
       // error already in service.error
     }

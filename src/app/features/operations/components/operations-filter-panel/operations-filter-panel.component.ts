@@ -19,7 +19,7 @@ import {
           <input
             type="text"
             class="wh-form-input input"
-            placeholder="Поиск: номер, участок, создатель..."
+            placeholder="Поиск: номер, участок, создатель, ТМЦ, SKU, #хештег..."
             [ngModel]="filters().search"
             (ngModelChange)="onSearchChange($event)"
           />

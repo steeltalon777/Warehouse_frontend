@@ -201,6 +201,53 @@ describe('OperationsService', () => {
     expect(service.isSaving()).toBe(false);
   });
 
+  it('createOperation builds payload with backend field names', async () => {
+    bffMock.postData.mockReturnValue(of({ id: 'op-1' }));
+
+    await service.createOperation({
+      type: 'MOVE' as OperationType,
+      status: 'draft',
+      sourceSiteId: '10',
+      destinationSiteId: '20',
+      personName: 'Иванов Иван',
+      issueObjectId: '7',
+      issueObjectName: 'Объект A',
+      comment: 'test note',
+      lines: [
+        {
+          localId: 'local-1',
+          itemId: '5',
+          itemName: 'Кабель',
+          unitName: 'шт',
+          unitId: '2',
+          quantity: 400,
+          isTemporary: false,
+          fromBalances: false,
+        },
+      ],
+    });
+
+    expect(bffMock.postData).toHaveBeenCalledOnce();
+    const [, payload] = bffMock.postData.mock.calls[0];
+    expect(payload).toMatchObject({
+      type: 'MOVE',
+      site_id: '10',
+      source_site_id: '10',
+      destination_site_id: '20',
+      issued_to_name: 'Иванов Иван',
+      issue_object_id: '7',
+      issue_object_name_snapshot: 'Объект A',
+      notes: 'test note',
+    });
+    expect(payload.lines).toEqual([
+      {
+        line_number: 1,
+        item_id: '5',
+        qty: '400',
+      },
+    ]);
+  });
+
   it('isSubmitting toggles during submitOperation', async () => {
     bffMock.postData.mockReturnValue(of({}));
 
@@ -292,6 +339,130 @@ describe('OperationsService', () => {
 
     await expect(service.createOperation(draft)).rejects.toBeDefined();
     expect(service.isSaving()).toBe(false);
+  });
+
+  // ─── Payload mapping per operation type ──────────────────────────
+
+  it('createOperation RECEIVE sends site_id as destinationSiteId and omits source_site_id', async () => {
+    bffMock.postData.mockReturnValue(of({ id: 'op-1' }));
+
+    await service.createOperation({
+      type: 'RECEIVE' as OperationType,
+      status: 'draft',
+      sourceSiteId: '10',
+      destinationSiteId: '20',
+      comment: null,
+      lines: [],
+    });
+
+    const [, payload] = bffMock.postData.mock.calls[0];
+    expect(payload.site_id).toBe('20');
+    expect(payload.source_site_id).toBeUndefined();
+    expect(payload.destination_site_id).toBe('20');
+  });
+
+  it('createOperation MOVE sends site_id as sourceSiteId plus both site fields', async () => {
+    bffMock.postData.mockReturnValue(of({ id: 'op-1' }));
+
+    await service.createOperation({
+      type: 'MOVE' as OperationType,
+      status: 'draft',
+      sourceSiteId: '10',
+      destinationSiteId: '20',
+      comment: null,
+      lines: [],
+    });
+
+    const [, payload] = bffMock.postData.mock.calls[0];
+    expect(payload.site_id).toBe('10');
+    expect(payload.source_site_id).toBe('10');
+    expect(payload.destination_site_id).toBe('20');
+  });
+
+  it('createOperation EXPENSE sends site_id as sourceSiteId and omits destination_site_id', async () => {
+    bffMock.postData.mockReturnValue(of({ id: 'op-1' }));
+
+    await service.createOperation({
+      type: 'EXPENSE' as OperationType,
+      status: 'draft',
+      sourceSiteId: '10',
+      destinationSiteId: null,
+      comment: null,
+      lines: [],
+    });
+
+    const [, payload] = bffMock.postData.mock.calls[0];
+    expect(payload.site_id).toBe('10');
+    expect(payload.source_site_id).toBe('10');
+    expect(payload.destination_site_id).toBeUndefined();
+  });
+
+  it('createOperation payload never sends lines without itemId', async () => {
+    bffMock.postData.mockReturnValue(of({ id: 'op-1' }));
+
+    await service.createOperation({
+      type: 'MOVE' as OperationType,
+      status: 'draft',
+      sourceSiteId: '10',
+      destinationSiteId: '20',
+      comment: null,
+      lines: [
+        { localId: 'l1', itemId: '5', itemName: 'A', unitName: 'шт', quantity: 10, isTemporary: false, fromBalances: false },
+        { localId: 'l2', itemId: null, itemName: '', unitName: 'шт', quantity: 5, isTemporary: false, fromBalances: false },
+        { localId: 'l3', itemId: '6', itemName: 'B', unitName: 'шт', quantity: 0, isTemporary: false, fromBalances: false },
+      ],
+    });
+
+    const [, payload] = bffMock.postData.mock.calls[0];
+    expect(payload.lines).toHaveLength(1);
+    expect(payload.lines[0].item_id).toBe('5');
+  });
+
+  // ─── mapDtoToDraftVm ─────────────────────────────────────────────
+
+  it('mapDtoToDraftVm maps DTO lines with stable localIds', () => {
+    const dto: OperationDto = {
+      id: 'op-1',
+      number: 'OP-001',
+      type: 'MOVE',
+      status: 'draft',
+      source_site_id: '10',
+      destination_site_id: '20',
+      created_by_user_id: 'u1',
+      created_at: '2026-01-01T00:00:00Z',
+      updated_at: '2026-01-01T00:00:00Z',
+      lines: [
+        { id: 'line-1', item_id: 'item-1', item_name: 'Кабель', sku: 'SKU-1', unit_symbol: 'м', qty: '100' },
+        { id: 'line-2', item_id: 'item-2', item_name: 'Разъем', sku: 'SKU-2', unit_symbol: 'шт', qty: '50' },
+      ],
+    };
+
+    const draft = service.mapDtoToDraftVm(dto);
+    expect(draft.id).toBe('op-1');
+    expect(draft.type).toBe('MOVE');
+    expect(draft.sourceSiteId).toBe('10');
+    expect(draft.destinationSiteId).toBe('20');
+    expect(draft.lines).toHaveLength(2);
+    expect(draft.lines[0].itemId).toBe('item-1');
+    expect(draft.lines[0].itemName).toBe('Кабель');
+    expect(draft.lines[0].quantity).toBe(100);
+    expect(draft.lines[0].lineNumber).toBe(1);
+    expect(draft.lines[1].lineNumber).toBe(2);
+  });
+
+  it('mapDtoToDraftVm handles empty lines', () => {
+    const dto: OperationDto = {
+      id: 'op-1',
+      number: 'OP-001',
+      type: 'EXPENSE',
+      status: 'draft',
+      created_by_user_id: 'u1',
+      created_at: '2026-01-01T00:00:00Z',
+      updated_at: '2026-01-01T00:00:00Z',
+    };
+
+    const draft = service.mapDtoToDraftVm(dto);
+    expect(draft.lines).toHaveLength(0);
   });
 });
 

@@ -10,8 +10,12 @@ import {
   OPERATION_TYPE_LABELS,
 } from '../../../../core/models/operations.models';
 import { OperationsService } from '../../../../core/services/operations.service';
+import { IssueObjectsService } from '../../../../core/services/issue-objects.service';
 import { ItemCacheSearchComponent } from '../item-cache-search/item-cache-search.component';
+import { OperationLinesTableComponent } from './operation-lines-table.component';
 import { Item } from '../../../../core/models/nomenclature.models';
+import { IssueObject, IssueObjectType, ISSUE_OBJECT_TYPE_LABELS } from '../../../../core/models/issue-objects.models';
+import { snapshotDraft, isDraftClean } from './operation-draft-mappers';
 
 let LOCAL_ID_COUNTER = 0;
 function nextLocalId(): string {
@@ -21,7 +25,7 @@ function nextLocalId(): string {
 @Component({
   selector: 'app-operation-create-modal',
   standalone: true,
-  imports: [CommonModule, FormsModule, ItemCacheSearchComponent],
+  imports: [CommonModule, FormsModule, ItemCacheSearchComponent, OperationLinesTableComponent],
   template: `
     <div class="wh-modal-overlay modal-overlay" (click)="onOverlayClick($event)">
       <div class="wh-modal modal-container">
@@ -31,19 +35,20 @@ function nextLocalId(): string {
         </div>
 
         <div class="wh-modal__body modal-body">
-          <!-- Type selector -->
-          <div class="form-row">
-            <label>Тип операции</label>
+          <!-- First row: type + warehouse(s) -->
+          <div class="form-row first-row">
+            <!-- Operation type: 40% -->
+            <div class="form-group" [style.flex]="'0 0 40%'">
+              <label>Тип операции</label>
               <select class="wh-form-input input" [value]="localDraft().type" (change)="onTypeChange($event)">
-              @for (t of typeOptions; track t.key) {
-                <option [value]="t.key">{{ t.label }}</option>
-              }
-            </select>
-          </div>
+                @for (t of typeOptions; track t.key) {
+                  <option [value]="t.key">{{ t.label }}</option>
+                }
+              </select>
+            </div>
 
-          <!-- Sites -->
-          <div class="form-row two-col">
-            <div class="form-group">
+            <!-- Source warehouse: 30% for MOVE, 60% for others -->
+            <div class="form-group" [style.flex]="isMove() ? '0 0 30%' : '0 0 60%'">
               <label>{{ sourceLabel() }}</label>
               <select class="wh-form-input input" [ngModel]="localDraft().sourceSiteId" (ngModelChange)="onSourceSiteChange($event)">
                 <option [ngValue]="null">—</option>
@@ -52,18 +57,22 @@ function nextLocalId(): string {
                 }
               </select>
             </div>
-            <div class="form-group">
-              <label>{{ destinationLabel() }}</label>
-              <select class="wh-form-input input" [ngModel]="localDraft().destinationSiteId" (ngModelChange)="onDestinationSiteChange($event)">
-                <option [ngValue]="null">—</option>
-                @for (site of sites(); track site.id) {
-                  <option [value]="site.id">{{ site.name }}</option>
-                }
-              </select>
-            </div>
+
+            <!-- Destination warehouse: 30%, only for MOVE -->
+            @if (isMove()) {
+              <div class="form-group" style="flex: 0 0 30%;">
+                <label>Склад-получатель</label>
+                <select class="wh-form-input input" [ngModel]="localDraft().destinationSiteId" (ngModelChange)="onDestinationSiteChange($event)">
+                  <option [ngValue]="null">—</option>
+                  @for (site of sites(); track site.id) {
+                    <option [value]="site.id">{{ site.name }}</option>
+                  }
+                </select>
+              </div>
+            }
           </div>
 
-          <!-- Person name -->
+          <!-- Person name (EXPENSE only) -->
           @if (showPersonName()) {
             <div class="form-row">
               <label>ФИО получателя / выдачи</label>
@@ -71,95 +80,106 @@ function nextLocalId(): string {
             </div>
           }
 
-          <!-- Comment -->
+          <!-- Issue object search (ISSUE / ISSUE_RETURN / WRITE_OFF when object source) -->
+          @if (showIssueObjectSearch()) {
+            <div class="form-row">
+              <label>Объект выдачи</label>
+              @if (localDraft().issueObjectName) {
+                <div class="issue-object-selected">
+                  <span class="selected-label">{{ localDraft().issueObjectName }}</span>
+                  <button class="wh-btn-icon btn-icon-sm" (click)="clearIssueObject()" title="Изменить">✎</button>
+                </div>
+              } @else {
+                <div class="issue-object-search">
+                  <input
+                    type="text"
+                    class="wh-form-input input"
+                    [ngModel]="issueObjectSearchQuery()"
+                    (ngModelChange)="onIssueObjectSearchChange($event)"
+                    placeholder="Поиск объекта выдачи..."
+                  />
+                  @if (issueObjectSearchResults().length > 0) {
+                    <div class="search-dropdown">
+                      @for (obj of issueObjectSearchResults(); track obj.id) {
+                        <button class="dropdown-item" (click)="selectIssueObject(obj)">
+                          <span class="item-title">{{ obj.display_name }}</span>
+                          <span class="item-subtitle">{{ objectTypeLabel(obj.object_type) }}{{ obj.code ? ' · ' + obj.code : '' }}</span>
+                        </button>
+                      }
+                    </div>
+                  }
+                </div>
+              }
+            </div>
+          }
+
+          <!-- WRITE_OFF source selector -->
+          @if (showWriteOffSource()) {
+            <div class="form-row">
+              <label>Источник списания</label>
+              <div class="radio-group">
+                <label class="radio-item">
+                  <input type="radio" name="writeOffSource" [value]="'warehouse'" [ngModel]="localDraft().writeOffSource" (ngModelChange)="onWriteOffSourceChange('warehouse')" />
+                  <span>Со склада</span>
+                </label>
+                <label class="radio-item">
+                  <input type="radio" name="writeOffSource" [value]="'object'" [ngModel]="localDraft().writeOffSource" (ngModelChange)="onWriteOffSourceChange('object')" />
+                  <span>С объекта выдачи</span>
+                </label>
+              </div>
+            </div>
+          }
+
+          <!-- Comment row: full-width, 2 rows -->
           <div class="form-row">
             <label>Комментарий</label>
-            <textarea class="wh-form-input input" rows="2" [ngModel]="localDraft().comment" (ngModelChange)="onCommentChange($event)" placeholder="Комментарий к операции..."></textarea>
+            <textarea class="wh-form-input input comment-area" rows="2" [ngModel]="localDraft().comment" (ngModelChange)="onCommentChange($event)" placeholder="Комментарий к операции..."></textarea>
           </div>
 
-          <!-- Item search area -->
-          <div class="add-item-search">
-            <app-item-cache-search
-              [placeholder]="'Поиск по названию, SKU или хештегу...'"
-              [sourceSiteId]="localDraft().sourceSiteId ?? null"
-              (itemSelected)="onNewItemSelected($event)"
-            />
+          <!-- Add TMC row: 80% search + 20% disabled button -->
+          <div class="form-row add-tmc-row">
+            <div class="tmc-search-wrapper">
+              <app-item-cache-search
+                [placeholder]="'Поиск по названию, SKU или хештегу...'"
+                [sourceSiteId]="localDraft().sourceSiteId ?? null"
+                (itemSelected)="onNewItemSelected($event)"
+              />
+            </div>
+            <button class="wh-btn wh-btn--secondary btn btn-tmc" disabled title="Создание новой ТМЦ будет добавлено позже">
+              Создать ТМЦ
+            </button>
           </div>
 
-          <!-- Lines table -->
-          <div class="lines-section">
+          <!-- Lines table component -->
+          <div class="form-row lines-section">
             <div class="section-header">
               <h3>Позиции ({{ lines().length }})</h3>
             </div>
-
-            <table class="wh-table lines-table">
-              <thead>
-                <tr>
-                  <th>Позиция</th>
-                  <th>Количество</th>
-                  <th></th>
-                </tr>
-              </thead>
-              <tbody>
-                @for (line of lines(); track line.localId) {
-                  <tr [class.error-row]="line.error">
-                    <td>
-                      @if (line.itemId) {
-                        <div class="item-selected">
-                          <span class="item-name">{{ line.itemName }}</span>
-                          @if (line.categoryName) {
-                            <span class="item-category">{{ line.categoryName }}</span>
-                          }
-                          @if (line.sku) { <span class="item-sku">{{ line.sku }}</span> }
-                          <button class="wh-btn-icon btn-icon-sm" (click)="editItemLine(line.localId)" title="Изменить" aria-label="Изменить номенклатуру">✎</button>
-                          @if (line.isTemporary) {
-                            <span class="temp-badge">временная</span>
-                          }
-                          <span class="item-unit">{{ line.unitName }}</span>
-                        </div>
-                      } @else {
-                        <div class="inline-search-cell">
-                          <app-item-cache-search
-                            [placeholder]="'Начните вводить название...'"
-                            [sourceSiteId]="localDraft().sourceSiteId ?? null"
-                            (itemSelected)="onItemSelected(line.localId, $event)"
-                          />
-                        </div>
-                      }
-                    </td>
-                    <td>
-                      <div class="qty-cell">
-                        <input
-                          type="number"
-                          class="wh-form-input input qty-input"
-                          [ngModel]="line.quantity"
-                          (ngModelChange)="onQuantityChange(line.localId, $event)"
-                          min="0"
-                          step="0.001"
-                        />
-                        @if (line.sourceSiteQuantity != null && line.itemId) {
-                          <span class="source-stock-hint">из ({{ line.sourceSiteQuantity }})</span>
-                        }
-                      </div>
-                    </td>
-                    <td>
-                      <button class="remove-btn" (click)="removeLine(line.localId)" title="Удалить" aria-label="Удалить позицию">×</button>
-                    </td>
-                  </tr>
-                } @empty {
-                  <tr>
-                    <td colspan="3" class="empty-lines">Начните поиск номенклатуры выше, чтобы добавить позиции</td>
-                  </tr>
-                }
-              </tbody>
-            </table>
+            <app-operation-lines-table
+              [lines]="lines()"
+              [warehouseSiteId]="relevantSiteId()"
+              [isBalanceRefreshing]="isBalanceRefreshing()"
+              [operationType]="localDraft().type"
+              (quantityChange)="onQuantityChange($event.localId, $event.quantity)"
+              (removeLine)="removeLine($event)"
+            />
           </div>
         </div>
 
         <div class="wh-modal__footer modal-footer">
-          <button class="wh-btn wh-btn--secondary btn btn-secondary" (click)="cancel.emit()">Отмена</button>
-          <button class="wh-btn wh-btn--primary btn btn-primary" [disabled]="isSaving()" (click)="onSave()">Сохранить черновик</button>
-          <button class="wh-btn wh-btn--success btn btn-submit" [disabled]="!canSubmit() || isSubmitting()" (click)="onSubmit()">Подтвердить</button>
+          <!-- Validation summary -->
+          @if (saveDisabledReason()) {
+            <div class="validation-hint">{{ saveDisabledReason() }}</div>
+          }
+
+          <div class="footer-actions">
+            @if (isEdit()) {
+              <button class="wh-btn wh-btn--danger btn btn-delete" (click)="onDelete()" [disabled]="isSaving()">Удалить черновик</button>
+            }
+            <button class="wh-btn wh-btn--secondary btn btn-secondary" (click)="cancel.emit()">Отмена</button>
+            <button class="wh-btn wh-btn--primary btn btn-primary" [disabled]="isSaving() || !!saveDisabledReason()" (click)="onSave()">Сохранить черновик</button>
+            <button class="wh-btn wh-btn--success btn btn-submit" [disabled]="!canSubmitComputed() || isSubmitting()" [title]="submitDisabledReason()" (click)="onSubmit()">Подтвердить</button>
+          </div>
         </div>
       </div>
     </div>
@@ -179,13 +199,14 @@ function nextLocalId(): string {
       background: #FFFFFF;
       border-radius: 12px;
       width: 100%;
-      max-width: 760px;
-      max-height: 90vh;
+      max-width: 800px;
+      max-height: min(1024px, calc(100vh - 32px));
       display: flex;
       flex-direction: column;
       box-shadow: 0 20px 60px rgba(0,0,0,0.2);
     }
     .modal-header {
+      flex-shrink: 0;
       display: flex;
       align-items: center;
       justify-content: space-between;
@@ -202,15 +223,35 @@ function nextLocalId(): string {
     }
     .btn-close:hover { background: #F1F5F9; color: #374151; }
 
-    .modal-body { flex: 1; overflow: auto; padding: 16px 20px; }
+    .modal-body {
+      flex: 1;
+      overflow-y: auto;
+      padding: 16px 20px;
+      display: flex;
+      flex-direction: column;
+      min-height: 0;
+    }
     .modal-footer {
-      display: flex; justify-content: flex-end; gap: 8px;
-      padding: 12px 20px; border-top: 1px solid #E2E8F0;
+      flex-shrink: 0;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      padding: 12px 20px;
+      border-top: 1px solid #E2E8F0;
+    }
+    .footer-actions {
+      display: flex;
+      gap: 8px;
+      align-items: center;
+      margin-left: auto;
     }
 
-    .form-row { margin-bottom: 12px; }
-    .form-row.two-col { display: flex; gap: 12px; }
-    .form-group { flex: 1; }
+    .form-row { margin-bottom: 12px; flex-shrink: 0; }
+    .first-row {
+      display: flex;
+      gap: 12px;
+    }
+    .form-group { display: flex; flex-direction: column; }
     .form-row label {
       display: block;
       font-size: 12px;
@@ -233,94 +274,41 @@ function nextLocalId(): string {
     }
     .input:focus { outline: none; border-color: #3B82F6; box-shadow: 0 0 0 2px rgba(59,130,246,0.15); }
     textarea.input { height: auto; padding: 8px 10px; resize: vertical; }
+    .comment-area { resize: vertical; }
 
-    .add-item-search { margin-bottom: 12px; }
-    .lines-section { margin-top: 12px; }
+    .add-tmc-row {
+      display: flex;
+      gap: 12px;
+      align-items: flex-start;
+    }
+    .tmc-search-wrapper {
+      flex: 0 0 80%;
+    }
+    .btn-tmc {
+      flex: 0 0 calc(20% - 12px);
+      height: 36px;
+    }
+
+    .lines-section {
+      flex: 1;
+      display: flex;
+      flex-direction: column;
+      min-height: 120px;
+      margin-bottom: 0;
+    }
     .section-header {
-      display: flex; align-items: center; justify-content: space-between;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
       margin-bottom: 8px;
     }
     .section-header h3 { margin: 0; font-size: 14px; font-weight: 600; color: #374151; }
 
-    .lines-table {
-      width: 100%;
-      border-collapse: collapse;
-      font-size: 13px;
-    }
-    .lines-table th, .lines-table td {
-      padding: 6px 8px;
-      border-bottom: 1px solid #E2E8F0;
-      text-align: left;
-    }
-    .lines-table th {
-      font-weight: 600;
-      color: #475569;
-      background: #F8FAFC;
+    .validation-hint {
       font-size: 12px;
+      color: #F97316;
+      flex: 1;
     }
-    .lines-table .qty-input { width: 90px; }
-    .lines-table .empty-lines {
-      text-align: center;
-      padding: 20px;
-      color: #94A3B8;
-      font-size: 13px;
-    }
-    .lines-table .error-row { background: #FEF2F2 !important; }
-    .lines-table .error-row .input { border-color: #EF4444; }
-
-    .item-selected {
-      display: flex;
-      align-items: center;
-      gap: 6px;
-      flex-wrap: wrap;
-    }
-    .item-selected .item-name { font-weight: 500; color: #1F2937; }
-    .item-selected .item-category { font-size: 11px; color: #64748B; font-weight: 400; }
-    .item-selected .item-sku { font-size: 11px; color: #94A3B8; }
-    .item-selected .item-unit { font-size: 11px; color: #6B7280; margin-left: 2px; }
-    .inline-search-cell { min-width: 200px; }
-    .qty-cell {
-      display: flex;
-      flex-direction: column;
-      gap: 2px;
-    }
-    .source-stock-hint {
-      font-size: 11px;
-      color: #6B7280;
-      white-space: nowrap;
-    }
-    .remove-btn {
-      width: 26px; height: 26px;
-      display: inline-flex; align-items: center; justify-content: center;
-      border: 1px solid #E2E8F0; border-radius: 6px;
-      background: #FFFFFF; color: #64748B; cursor: pointer;
-    }
-    .remove-btn:hover { background: #FEE2E2; color: #991B1B; border-color: #FECACA; }
-    .btn-icon-sm {
-      width: 20px; height: 20px;
-      border: none; background: transparent;
-      cursor: pointer; color: #94A3B8;
-      font-size: 14px; padding: 0;
-      display: inline-flex; align-items: center; justify-content: center;
-    }
-    .btn-icon-sm:hover { color: #3B82F6; }
-    .temp-badge {
-      display: inline-block;
-      padding: 1px 6px;
-      border-radius: 4px;
-      background: #FEF9C3;
-      color: #854D0E;
-      font-size: 11px;
-      font-weight: 500;
-    }
-
-    .stock-hint {
-      font-size: 12px;
-      font-weight: 500;
-      color: #059669;
-    }
-    .stock-hint.low-stock { color: #DC2626; }
-    .stock-hint.muted { color: #CBD5E1; }
 
     .btn {
       display: inline-flex; align-items: center; justify-content: center;
@@ -328,6 +316,7 @@ function nextLocalId(): string {
       border-radius: 8px; font-size: 13px; font-weight: 500;
       cursor: pointer; transition: all 0.15s;
       border: 1px solid transparent; font-family: inherit;
+      white-space: nowrap;
     }
     .btn:disabled { opacity: 0.4; cursor: not-allowed; }
     .btn-sm { height: 28px; padding: 0 10px; font-size: 12px; }
@@ -337,8 +326,63 @@ function nextLocalId(): string {
     .btn-secondary:hover:not(:disabled) { background: #F8FAFC; }
     .btn-submit { background: #059669; color: #FFFFFF; border-color: #059669; }
     .btn-submit:hover:not(:disabled) { background: #047857; }
+    .btn-delete { background: #FFFFFF; border-color: #FCA5A5; color: #DC2626; }
+    .btn-delete:hover:not(:disabled) { background: #FEF2F2; }
 
+    .issue-object-search { position: relative; }
+    .search-dropdown {
+      position: absolute;
+      top: 100%;
+      left: 0;
+      right: 0;
+      background: #FFFFFF;
+      border: 1px solid #D1D5DB;
+      border-radius: 8px;
+      box-shadow: 0 8px 24px rgba(0,0,0,0.12);
+      max-height: 240px;
+      overflow-y: auto;
+      z-index: 10;
+      margin-top: 4px;
+    }
+    .dropdown-item {
+      display: flex;
+      flex-direction: column;
+      gap: 1px;
+      width: 100%;
+      padding: 8px 12px;
+      border: none;
+      background: transparent;
+      text-align: left;
+      cursor: pointer;
+      font-family: inherit;
+    }
+    .dropdown-item:hover { background: #F8FAFC; }
+    .dropdown-item + .dropdown-item { border-top: 1px solid #E2E8F0; }
+    .item-title { font-size: 13px; font-weight: 500; color: #1F2937; }
+    .item-subtitle { font-size: 11px; color: #94A3B8; }
 
+    .issue-object-selected {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      padding: 8px 12px;
+      background: #F8FAFC;
+      border: 1px solid #E2E8F0;
+      border-radius: 8px;
+    }
+    .selected-label { font-size: 13px; font-weight: 500; color: #1F2937; flex: 1; }
+    .btn-icon-sm {
+      width: 20px; height: 20px;
+      border: none; background: transparent;
+      cursor: pointer; color: #94A3B8;
+      font-size: 14px; padding: 0;
+      display: inline-flex; align-items: center; justify-content: center;
+    }
+    .btn-icon-sm:hover { color: #3B82F6; }
+
+    .radio-group { display: flex; gap: 16px; }
+    .radio-item { display: flex; align-items: center; gap: 6px; font-size: 13px; color: #374151; cursor: pointer; }
+    .radio-item input { margin: 0; }
   `]
 })
 export class OperationCreateModalComponent implements OnInit {
@@ -349,9 +393,11 @@ export class OperationCreateModalComponent implements OnInit {
   save = output<OperationDraftVm>();
   submit = output<OperationDraftVm>();
   cancel = output<void>();
+  delete = output<OperationDraftVm>();
 
   private readonly service = inject(OperationsService);
   private readonly authContextService = inject(AuthContextService);
+  private readonly issueObjectsService = inject(IssueObjectsService);
 
   readonly localDraft = signal<OperationDraftVm>({
     type: 'MOVE',
@@ -360,59 +406,161 @@ export class OperationCreateModalComponent implements OnInit {
   });
 
   readonly isEdit = computed(() => !!this.localDraft().id);
+  readonly isMove = computed(() => this.localDraft().type === 'MOVE');
   readonly lines = computed(() => this.localDraft().lines);
+
+  readonly savedOperationId = signal<string | null>(null);
+
+  readonly hasUnsavedChanges = computed(() => {
+    const d = this.localDraft();
+    if (!d.lastSavedSnapshot) return d.lines.length > 0;
+    return !isDraftClean(d);
+  });
+
+  readonly isBalanceRefreshing = signal<boolean>(false);
 
   readonly typeOptions = (Object.entries(OPERATION_TYPE_LABELS) as [OperationType, string][])
     .map(([key, label]) => ({ key, label }));
 
+  readonly issueObjectSearchQuery = signal<string>('');
+  readonly issueObjectSearchResults = signal<IssueObject[]>([]);
+  private searchTimer: ReturnType<typeof setTimeout> | null = null;
+
+  readonly relevantSiteId = computed(() => {
+    const d = this.localDraft();
+    if (d.type === 'RECEIVE') return d.destinationSiteId ?? null;
+    return d.sourceSiteId ?? null;
+  });
+
   readonly showPersonName = computed(() => {
+    return this.localDraft().type === 'EXPENSE';
+  });
+
+  readonly showIssueObjectSearch = computed(() => {
     const t = this.localDraft().type;
-    return t === 'ISSUE' || t === 'ISSUE_RETURN' || t === 'WRITE_OFF' || t === 'EXPENSE';
+    if (t === 'ISSUE' || t === 'ISSUE_RETURN') return true;
+    if (t === 'WRITE_OFF' && this.localDraft().writeOffSource === 'object') return true;
+    return false;
+  });
+
+  readonly showWriteOffSource = computed(() => {
+    return this.localDraft().type === 'WRITE_OFF' && !this.localDraft().writeOffSource;
   });
 
   readonly sourceLabel = computed(() => {
     const t = this.localDraft().type;
     if (t === 'RECEIVE') return 'Поставщик / источник';
-    if (t === 'MOVE') return 'Склад-отправитель';
-    return 'Склад / участок';
+    if (t === 'MOVE') return 'Склад-источник';
+    return 'Склад';
   });
 
-  readonly destinationLabel = computed(() => {
-    const t = this.localDraft().type;
-    if (t === 'EXPENSE' || t === 'WRITE_OFF' || t === 'ISSUE') return '—';
-    if (t === 'MOVE') return 'Склад-получатель';
-    return 'Склад-получатель';
-  });
-
-  readonly canSubmit = computed(() => {
+  readonly saveDisabledReason = computed(() => {
     const d = this.localDraft();
-    if (d.lines.length === 0) return false;
-    if (d.lines.some(l => l.quantity == null || l.quantity <= 0)) return false;
-    if (d.type === 'MOVE' && (!d.sourceSiteId || !d.destinationSiteId)) return false;
+    if (d.lines.length === 0) return 'Добавьте минимум одну позицию';
+    if (d.lines.some(l => !l.itemId)) return 'Укажите номенклатуру для всех позиций';
+    if (d.lines.some(l => l.quantity == null || l.quantity <= 0)) return 'Укажите количество для всех позиций';
+    if (d.type === 'MOVE') {
+      if (!d.sourceSiteId) return 'Укажите склад-источник';
+      if (!d.destinationSiteId) return 'Укажите склад-получатель';
+    } else if (d.type === 'RECEIVE') {
+      if (!d.destinationSiteId) return 'Укажите поставщика / источник';
+    } else {
+      if (!d.sourceSiteId) return 'Укажите склад';
+    }
+    if (d.type === 'WRITE_OFF' && !d.writeOffSource) return 'Укажите источник списания';
+    if (d.type === 'WRITE_OFF' && d.writeOffSource === 'object' && !d.issueObjectId) return 'Укажите объект списания';
+    if ((d.type === 'ISSUE' || d.type === 'ISSUE_RETURN') && !d.issueObjectId) return 'Укажите объект выдачи';
+    return null;
+  });
+
+  readonly canSubmitComputed = computed(() => {
+    if (this.saveDisabledReason()) return false;
+    if (!this.savedOperationId() && !this.localDraft().id) return false;
+    if (this.hasUnsavedChanges()) return false;
     return true;
   });
+
+  readonly submitDisabledReason = computed(() => {
+    if (!this.savedOperationId() && !this.localDraft().id) return 'Сначала сохраните черновик';
+    if (this.hasUnsavedChanges()) return 'Сохраните изменения перед подтверждением';
+    return '';
+  });
+
+  private preferredSiteId(): string | null {
+    const authSiteId = this.authContextService.authContext()?.defaultSiteId;
+    if (authSiteId) return authSiteId;
+
+    const availableSites = this.sites();
+    if (availableSites.length === 1) return availableSites[0].id;
+
+    return null;
+  }
+
+  private normalizeDraftForType(type: OperationType, draft: OperationDraftVm): OperationDraftVm {
+    const preferredSiteId = this.preferredSiteId();
+
+    if (type === 'RECEIVE') {
+      return {
+        ...draft,
+        type,
+        sourceSiteId: null,
+        destinationSiteId: draft.destinationSiteId ?? preferredSiteId,
+        writeOffSource: null,
+      };
+    }
+
+    if (type === 'MOVE') {
+      return {
+        ...draft,
+        type,
+        sourceSiteId: draft.sourceSiteId ?? preferredSiteId,
+        writeOffSource: null,
+      };
+    }
+
+    return {
+      ...draft,
+      type,
+      sourceSiteId: draft.sourceSiteId ?? preferredSiteId,
+      destinationSiteId: null,
+      writeOffSource: type === 'WRITE_OFF' ? draft.writeOffSource : null,
+    };
+  }
 
   constructor() {
     effect(() => {
       const d = this.draft();
       if (d) {
-        const defaults: Partial<OperationDraftVm> = {};
-        const defaultSiteId = this.authContextService.authContext()?.defaultSiteId;
-        if (d.type === 'RECEIVE' && !d.destinationSiteId && defaultSiteId) {
-          defaults.destinationSiteId = defaultSiteId;
-        } else if (d.type === 'MOVE' && !d.sourceSiteId && defaultSiteId) {
-          defaults.sourceSiteId = defaultSiteId;
-        } else if ((d.type === 'EXPENSE' || d.type === 'WRITE_OFF' || d.type === 'ISSUE') && !d.sourceSiteId && defaultSiteId) {
-          defaults.sourceSiteId = defaultSiteId;
+        this.localDraft.set(this.normalizeDraftForType(d.type, { ...d, lines: [...d.lines] }));
+        // Track saved operation ID and snapshot
+        if (d.id) {
+          this.savedOperationId.set(d.id);
         }
-        this.localDraft.set({ ...d, lines: [...d.lines], ...defaults });
       }
     });
 
     effect(() => {
-      const siteId = this.localDraft().sourceSiteId;
-      if (siteId) {
-        this.service.loadBalances(siteId);
+      const siteId = this.relevantSiteId();
+      if (siteId && siteId !== 'undefined' && siteId !== 'null') {
+        this.isBalanceRefreshing.set(true);
+        this.service.loadBalances(siteId).then(() => {
+          this.isBalanceRefreshing.set(false);
+          this.refreshSourceQuantities();
+        }).catch(() => {
+          this.isBalanceRefreshing.set(false);
+        });
+      } else {
+        // Clear balances when no site selected
+        this.service.balances.set([]);
+        this.isBalanceRefreshing.set(false);
+        this.localDraft.update(state => ({
+          ...state,
+          lines: state.lines.map(l => ({
+            ...l,
+            availableQuantity: undefined,
+            sourceSiteQuantity: undefined,
+          })),
+        }));
       }
     });
   }
@@ -422,8 +570,7 @@ export class OperationCreateModalComponent implements OnInit {
 
   private updateLineStockHint(line: OperationLineDraftVm): void {
     if (!line.itemId) return;
-    const d = this.localDraft();
-    const siteId = d.sourceSiteId || undefined;
+    const siteId = this.relevantSiteId() || undefined;
     const qty = this.service.getBalanceForItem(line.itemId, siteId);
     this.localDraft.update(state => ({
       ...state,
@@ -434,14 +581,13 @@ export class OperationCreateModalComponent implements OnInit {
   }
 
   private refreshSourceQuantities(): void {
-    const d = this.localDraft();
-    const siteId = d.sourceSiteId || undefined;
+    const siteId = this.relevantSiteId() || undefined;
     this.localDraft.update(state => ({
       ...state,
       lines: state.lines.map(l => {
         if (!l.itemId) return l;
         const qty = this.service.getBalanceForItem(l.itemId, siteId);
-        return { ...l, sourceSiteQuantity: qty, availableQuantity: qty };
+        return { ...l, availableQuantity: qty, sourceSiteQuantity: qty };
       }),
     }));
   }
@@ -454,12 +600,11 @@ export class OperationCreateModalComponent implements OnInit {
 
   onTypeChange(event: Event): void {
     const value = (event.target as HTMLSelectElement).value as OperationType;
-    this.localDraft.update(d => ({ ...d, type: value }));
+    this.localDraft.update(d => this.normalizeDraftForType(value, d));
   }
 
   onSourceSiteChange(value: string | null): void {
     this.localDraft.update(d => ({ ...d, sourceSiteId: value }));
-    this.refreshSourceQuantities();
   }
 
   onDestinationSiteChange(value: string | null): void {
@@ -468,6 +613,45 @@ export class OperationCreateModalComponent implements OnInit {
 
   onPersonNameChange(value: string): void {
     this.localDraft.update(d => ({ ...d, personName: value || undefined }));
+  }
+
+  onWriteOffSourceChange(source: 'warehouse' | 'object'): void {
+    this.localDraft.update(d => ({
+      ...d,
+      writeOffSource: source,
+      sourceSiteId: source === 'warehouse' ? (d.sourceSiteId ?? this.preferredSiteId()) : d.sourceSiteId,
+    }));
+  }
+
+  onIssueObjectSearchChange(value: string): void {
+    this.issueObjectSearchQuery.set(value);
+    if (this.searchTimer) clearTimeout(this.searchTimer);
+    this.searchTimer = setTimeout(async () => {
+      if (!value || value.length < 2) {
+        this.issueObjectSearchResults.set([]);
+        return;
+      }
+      try {
+        await this.issueObjectsService.loadList({ search: value, page_size: 10, is_active: true });
+        this.issueObjectSearchResults.set(this.issueObjectsService.items());
+      } catch {
+        this.issueObjectSearchResults.set([]);
+      }
+    }, 300);
+  }
+
+  selectIssueObject(obj: IssueObject): void {
+    this.localDraft.update(d => ({ ...d, issueObjectId: obj.id, issueObjectName: obj.display_name }));
+    this.issueObjectSearchQuery.set('');
+    this.issueObjectSearchResults.set([]);
+  }
+
+  clearIssueObject(): void {
+    this.localDraft.update(d => ({ ...d, issueObjectId: null, issueObjectName: null }));
+  }
+
+  objectTypeLabel(type: string): string {
+    return ISSUE_OBJECT_TYPE_LABELS[type as IssueObjectType] || type;
   }
 
   onCommentChange(value: string): void {
@@ -564,10 +748,20 @@ export class OperationCreateModalComponent implements OnInit {
   }
 
   onSave(): void {
+    if (this.saveDisabledReason()) return;
     this.save.emit(this.localDraft());
   }
 
+  onSaveComplete(savedId: string): void {
+    this.savedOperationId.set(savedId);
+  }
+
   onSubmit(): void {
+    if (!this.canSubmitComputed()) return;
     this.submit.emit(this.localDraft());
+  }
+
+  onDelete(): void {
+    this.delete.emit(this.localDraft());
   }
 }
