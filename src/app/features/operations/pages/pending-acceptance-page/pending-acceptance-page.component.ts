@@ -45,6 +45,7 @@ import { BffApiService, PaginatedBffResponse } from '../../../../core/api/bff-ap
             (sort)="onSort($event)"
             (pageChange)="onPageChange($event)"
             (pageSizeChange)="onPageSizeChange($event)"
+            (numberClick)="onNumberClick($event)"
             (rowAccept)="onRowAccept($event)"
           />
         }
@@ -227,6 +228,10 @@ export class PendingAcceptancePageComponent implements OnInit {
   }
 
   onRowAccept(row: OperationListRowVm): void {
+    this.router.navigate(['/operations', row.id, 'acceptance']);
+  }
+
+  onNumberClick(row: OperationListRowVm): void {
     this.router.navigate(['/operations', row.id, 'acceptance']);
   }
 }
