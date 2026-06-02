@@ -86,7 +86,7 @@ import { SiteDto } from '../../../../core/models/operations.models';
                   <th class="col-src">Склад-источник</th>
                   <th class="col-status">Статус</th>
                   <th class="col-date">Дата</th>
-                  <th class="col-actions">Действия</th>
+                  <th class="col-actions">Непринятое</th>
                 </tr>
               </thead>
               <tbody>
@@ -99,7 +99,7 @@ import { SiteDto } from '../../../../core/models/operations.models';
                     </td>
                     <td class="col-qty">{{ row.qty }} {{ row.unit_symbol || '' }}</td>
                     <td class="col-operation">
-                      <button class="wh-link op-link" (click)="openOperation(row)">
+                      <button class="wh-link op-link" title="Открыть карточку операции / приёмки" (click)="openOperation(row)">
                         {{ row.operation_id }}
                       </button>
                     </td>
@@ -112,7 +112,7 @@ import { SiteDto } from '../../../../core/models/operations.models';
                     </td>
                     <td class="col-date">{{ row.updated_at ? (row.updated_at | date:'dd.MM.yyyy HH:mm') : '—' }}</td>
                     <td class="col-actions" (click)="$event.stopPropagation()">
-                      <button class="wh-btn wh-btn--secondary btn btn-sm" (click)="openDetail(row)">Подробнее</button>
+                      <button class="wh-btn wh-btn--secondary btn btn-sm" (click)="openDetail(row)">Решить</button>
                     </td>
                   </tr>
                 } @empty {
@@ -293,7 +293,7 @@ export class LostAssetsPageComponent implements OnInit {
   }
 
   openOperation(row: LostAssetRow): void {
-    this.router.navigate(['/operations', row.operation_id]);
+    this.router.navigate(['/operations', row.operation_id, 'acceptance']);
   }
 
   statusLabel(status: string | undefined): string {

@@ -105,71 +105,68 @@ import {
           @if (d.status !== 'resolved') {
             <div class="resolve-panel">
               <h3 class="resolve-title">Подтвердить решение</h3>
+              <p class="resolve-subtitle">Выберите, что сделать с непринятым количеством по этой конкретной строке операции.</p>
 
               <div class="resolve-form">
                 <div class="form-group">
                   <label class="form-label">Действие</label>
-                  <div class="radio-group">
-                    <label class="radio-label">
-                      <input
-                        type="radio"
-                        name="action"
-                        value="found_to_destination"
-                        [checked]="resolveForm().action === 'found_to_destination'"
-                        (change)="onActionChange('found_to_destination')"
-                      />
-                      <span>Найдено — зачислить на склад назначения</span>
-                    </label>
+                  <div class="action-buttons">
+                    <button
+                      type="button"
+                      class="action-choice action-choice--danger"
+                      [class.action-choice--active]="resolveForm().action === 'write_off'"
+                      (click)="onActionChange('write_off')"
+                    >
+                      Списать окончательно
+                    </button>
                     @if (d.source_site_name || d.source_site_id) {
-                      <label class="radio-label">
-                        <input
-                          type="radio"
-                          name="action"
-                          value="return_to_source"
-                          [checked]="resolveForm().action === 'return_to_source'"
-                          (change)="onActionChange('return_to_source')"
-                        />
-                        <span>Вернуть на склад-источник</span>
-                      </label>
+                      <button
+                        type="button"
+                        class="action-choice"
+                        [class.action-choice--active]="resolveForm().action === 'return_to_source'"
+                        (click)="onActionChange('return_to_source')"
+                      >
+                        Вернуть отправителю
+                      </button>
                     }
-                    <label class="radio-label">
-                      <input
-                        type="radio"
-                        name="action"
-                        value="write_off"
-                        [checked]="resolveForm().action === 'write_off'"
-                        (change)="onActionChange('write_off')"
-                      />
-                      <span>Списать навсегда</span>
-                    </label>
+                    <button
+                      type="button"
+                      class="action-choice action-choice--success"
+                      [class.action-choice--active]="resolveForm().action === 'found_to_destination'"
+                      (click)="onActionChange('found_to_destination')"
+                    >
+                      Зачислить на склад
+                    </button>
                   </div>
                 </div>
 
-                <div class="form-group">
-                  <label class="form-label" for="resolve-qty">Количество</label>
-                  <input
-                    id="resolve-qty"
-                    class="wh-input qty-input"
-                    type="number"
-                    step="0.001"
-                    min="0.001"
-                    [max]="maxQty()"
-                    [ngModel]="resolveForm().qty"
-                    (ngModelChange)="onQtyChange($event)"
-                  />
-                  <span class="qty-hint">макс. {{ d.qty }} {{ d.unit_symbol || '' }}</span>
-                </div>
+                <div class="resolve-grid">
+                  <div class="form-group">
+                    <label class="form-label" for="resolve-qty">Количество</label>
+                    <input
+                      id="resolve-qty"
+                      class="wh-input qty-input"
+                      type="number"
+                      step="0.001"
+                      min="0.001"
+                      [max]="maxQty()"
+                      [ngModel]="resolveForm().qty"
+                      (ngModelChange)="onQtyChange($event)"
+                    />
+                    <span class="qty-hint">макс. {{ d.qty }} {{ d.unit_symbol || '' }}</span>
+                  </div>
 
-                <div class="form-group">
-                  <label class="form-label" for="resolve-note">Примечание</label>
-                  <textarea
-                    id="resolve-note"
-                    class="wh-input note-textarea"
-                    rows="3"
-                    placeholder="Необязательно"
-                    [ngModel]="resolveForm().note"
-                    (ngModelChange)="onNoteChange($event)"
-                  ></textarea>
+                  <div class="form-group form-group--note">
+                    <label class="form-label" for="resolve-note">Примечание</label>
+                    <textarea
+                      id="resolve-note"
+                      class="wh-input note-textarea"
+                      rows="3"
+                      placeholder="Необязательно"
+                      [ngModel]="resolveForm().note"
+                      (ngModelChange)="onNoteChange($event)"
+                    ></textarea>
+                  </div>
                 </div>
 
                 @if (resolveError()) {
@@ -193,8 +190,13 @@ import {
           } @else {
             <div class="resolved-panel">
               <h3 class="resolved-title">Решение подтверждено</h3>
+              @if (d.resolution_action) {
+                <p class="resolved-note"><strong>Действие:</strong> {{ actionLabel(d.resolution_action) }}</p>
+              }
               @if (d.note) {
                 <p class="resolved-note"><strong>Примечание:</strong> {{ d.note }}</p>
+              } @else if (d.resolution_note) {
+                <p class="resolved-note"><strong>Примечание:</strong> {{ d.resolution_note }}</p>
               }
             </div>
           }
@@ -232,13 +234,20 @@ import {
     .error-banner { padding: 12px 16px; background: #FEF2F2; color: #DC2626; border: 1px solid #FECACA; border-radius: 8px; font-size: 14px; margin-bottom: 16px; }
     .success-banner { padding: 12px 16px; background: #F0FDF4; color: #166534; border: 1px solid #BBF7D0; border-radius: 8px; font-size: 14px; margin-bottom: 16px; }
     .resolve-panel { background: #FFFFFF; border: 1px solid #E2E8F0; border-radius: 10px; padding: 16px; }
-    .resolve-title { font-size: 16px; font-weight: 600; color: #0F172A; margin: 0 0 12px; }
+    .resolve-title { font-size: 16px; font-weight: 600; color: #0F172A; margin: 0; }
+    .resolve-subtitle { margin: 4px 0 14px; color: #64748B; font-size: 13px; }
     .resolve-form { display: flex; flex-direction: column; gap: 12px; }
     .form-group { display: flex; flex-direction: column; gap: 4px; }
     .form-label { font-size: 13px; font-weight: 500; color: #475569; }
-    .radio-group { display: flex; flex-direction: column; gap: 8px; }
-    .radio-label { display: flex; align-items: center; gap: 8px; font-size: 14px; color: #1F2937; cursor: pointer; }
-    .radio-label input[type="radio"] { accent-color: #334155; }
+    .action-buttons { display: flex; flex-wrap: wrap; gap: 8px; }
+    .action-choice { height: 36px; padding: 0 14px; border: 1px solid #D1D5DB; border-radius: 8px; background: #FFFFFF; color: #334155; font: inherit; font-size: 13px; font-weight: 500; cursor: pointer; }
+    .action-choice:hover { background: #F8FAFC; border-color: #94A3B8; }
+    .action-choice--active { background: #334155; border-color: #334155; color: #FFFFFF; }
+    .action-choice--active:hover { background: #1E293B; border-color: #1E293B; }
+    .action-choice--danger.action-choice--active { background: #DC2626; border-color: #DC2626; }
+    .action-choice--success.action-choice--active { background: #059669; border-color: #059669; }
+    .resolve-grid { display: grid; grid-template-columns: minmax(160px, 220px) 1fr; gap: 12px; align-items: start; }
+    .form-group--note { min-width: 0; }
     .wh-input { height: 36px; padding: 0 10px; border: 1px solid #D1D5DB; border-radius: 6px; font-size: 13px; font-family: inherit; background: #FFFFFF; }
     .qty-input { width: 140px; }
     .qty-hint { font-size: 12px; color: #64748B; }
@@ -359,5 +368,9 @@ export class LostAssetDetailPageComponent implements OnInit {
   statusClass(status: string | undefined): string {
     if (!status) return 'wh-badge--open';
     return `wh-badge--${status}`;
+  }
+
+  actionLabel(action: string): string {
+    return LOST_ASSET_ACTION_LABELS[action] || action;
   }
 }

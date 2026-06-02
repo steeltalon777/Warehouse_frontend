@@ -29,6 +29,9 @@ export interface LostAssetRow {
   unit_symbol?: string;
   qty: string;
   note?: string;
+  resolution_action?: string;
+  resolution_note?: string;
+  resolved_at?: string;
   status?: string;
   updated_at?: string;
   created_at?: string;

@@ -31,6 +31,22 @@ async function openCreateModal(page: Page) {
   await page.waitForTimeout(300);
 }
 
+async function fetchWarehouseBalance(page: Page, siteName: string, itemNamePart: string): Promise<string> {
+  return page.evaluate(async ({ siteName, itemNamePart }) => {
+    const sitesResponse = await fetch('/bff/api/v1/catalog/sites', { credentials: 'include' });
+    const sitesPayload = await sitesResponse.json();
+    const site = (sitesPayload?.data?.sites ?? []).find((s: any) => s.name === siteName);
+    if (!site) throw new Error(`Site not found: ${siteName}`);
+
+    const balancesResponse = await fetch(`/bff/api/v1/balances?site_id=${site.site_id}`, { credentials: 'include' });
+    const balancesPayload = await balancesResponse.json();
+    const rows = Array.isArray(balancesPayload?.data) ? balancesPayload.data : (balancesPayload?.data?.items ?? []);
+    const row = rows.find((b: any) => String(b.item_name ?? '').includes(itemNamePart));
+    if (!row) throw new Error(`Balance row not found for: ${itemNamePart}`);
+    return String(parseFloat(row.qty));
+  }, { siteName, itemNamePart });
+}
+
 test.describe('Operation Create Modal — Layout', () => {
   test('default MOVE layout shows 40/30/30 type/source/destination', async ({ page }) => {
     await login(page);
@@ -73,12 +89,54 @@ test.describe('Operation Create Modal — Layout', () => {
     await login(page);
     await openCreateModal(page);
 
-    const searchInput = page.locator('.modal-overlay input[placeholder*="Поиск по названию"]');
+    await expect(page.locator('.modal-overlay label:has-text("Добавить ТМЦ в операцию")')).toBeVisible();
+    const searchInput = page.locator('.modal-overlay input[placeholder*="Поиск ТМЦ для добавления"]');
     await expect(searchInput).toBeVisible();
 
     const createBtn = page.locator('.modal-overlay button:has-text("Создать ТМЦ")');
     await expect(createBtn).toBeVisible();
     await expect(createBtn).toBeDisabled();
+  });
+
+  test('top add TMC search returns catalog results in create mode', async ({ page }) => {
+    await login(page);
+    await openCreateModal(page);
+
+    await page.locator('.modal-overlay select').first().selectOption('RECEIVE');
+    await page.locator('.modal-overlay select').nth(1).selectOption('Base');
+
+    await expect(page.locator('.modal-overlay input[placeholder*="Фильтр уже добавленных"]')).not.toBeVisible();
+    await page.locator('.modal-overlay input[placeholder*="Поиск ТМЦ для добавления"]').fill('Кабель');
+    await expect(page.locator('.modal-overlay .search-option').first()).toContainText('Кабель');
+  });
+
+  test('available quantity column shows a numeric balance, never dash', async ({ page }) => {
+    await login(page);
+    await openCreateModal(page);
+
+    await page.locator('.modal-overlay select').first().selectOption('RECEIVE');
+    await page.locator('.modal-overlay select').nth(1).selectOption('Base');
+    await page.locator('.modal-overlay input[placeholder*="Поиск ТМЦ для добавления"]').fill('Кабель');
+    await page.locator('.modal-overlay .search-option').first().click();
+
+    const availableCell = page.locator('.modal-overlay tbody tr').first().locator('.col-avail');
+    await expect(availableCell).toContainText(/\d+/);
+    await expect(availableCell).not.toContainText('—');
+    await expect(availableCell).not.toContainText('превышает остаток');
+  });
+
+  test('available quantity uses current warehouse balance for Base', async ({ page }) => {
+    await login(page);
+    await openCreateModal(page);
+
+    const expectedBaseBalance = await fetchWarehouseBalance(page, 'Base', 'Кабель');
+
+    await page.locator('.modal-overlay select').first().selectOption('RECEIVE');
+    await page.locator('.modal-overlay select').nth(1).selectOption('Base');
+    await page.locator('.modal-overlay input[placeholder*="Поиск ТМЦ для добавления"]').fill('Кабель');
+    await page.locator('.modal-overlay .search-option').first().click();
+
+    await expect(page.locator('.modal-overlay tbody tr').first().locator('.col-avail')).toContainText(expectedBaseBalance);
   });
 
   test('modal has comment textarea with 2 rows', async ({ page }) => {
@@ -114,12 +172,20 @@ test.describe('Operation Create Modal — Validation', () => {
     await expect(page.locator('.modal-overlay .validation-hint')).toHaveText('Добавьте минимум одну позицию');
   });
 
-  test('confirm button disabled until saved', async ({ page }) => {
+  test('confirm button is enabled for a valid unsaved draft', async ({ page }) => {
     await login(page);
     await openCreateModal(page);
 
     const confirmBtn = page.locator('.modal-overlay button:has-text("Подтвердить")');
     await expect(confirmBtn).toBeDisabled();
+
+    await page.locator('.modal-overlay select').first().selectOption('RECEIVE');
+    await page.locator('.modal-overlay select').nth(1).selectOption('Base');
+    await page.locator('.modal-overlay input[placeholder*="Поиск ТМЦ для добавления"]').fill('Кабель');
+    await page.locator('.modal-overlay .search-option').first().click();
+    await page.locator('.modal-overlay .qty-input').fill('1');
+
+    await expect(confirmBtn).toBeEnabled();
   });
 });
 
@@ -146,11 +212,12 @@ test.describe('Operation Create Modal — Lines Table', () => {
     await expect(table.locator('th').nth(1)).toContainText('Количество');
   });
 
-  test('lines table has name filter input', async ({ page }) => {
+  test('lines table hides added-lines filter when there are too few positions', async ({ page }) => {
     await login(page);
     await openCreateModal(page);
 
-    const filterInput = page.locator('.modal-overlay input[placeholder*="Фильтр по названию"]');
-    await expect(filterInput).toBeVisible();
+    const filterInput = page.locator('.modal-overlay input[placeholder*="Фильтр уже добавленных"]');
+    await expect(filterInput).not.toBeVisible();
+    await expect(page.locator('.modal-overlay .empty-state')).toContainText('Для добавления используйте поле «Добавить ТМЦ» выше');
   });
 });

@@ -13,24 +13,24 @@ import { OperationDraftVm } from '../../../../core/models/operations.models';
  *  - lines (localId, itemId, quantity)
  *
  * Fields excluded (do not trigger dirty):
- *  - id, status, lastSavedSnapshot, isBalanceRefreshing
+ *  - id, status, createdByUserId, acceptanceState, lastSavedSnapshot, isBalanceRefreshing
  *  - itemName, categoryName, sku, unitName (display snapshots only)
  *  - availableQuantity, sourceSiteQuantity (transient runtime data)
  */
 export function snapshotDraft(draft: OperationDraftVm): string {
   const clean = {
     type: draft.type,
-    sourceSiteId: draft.sourceSiteId,
-    destinationSiteId: draft.destinationSiteId,
-    comment: draft.comment,
-    personName: draft.personName,
-    issueObjectId: draft.issueObjectId,
-    issueObjectName: draft.issueObjectName,
-    writeOffSource: draft.writeOffSource,
+    sourceSiteId: draft.sourceSiteId ?? null,
+    destinationSiteId: draft.destinationSiteId ?? null,
+    comment: draft.comment ?? null,
+    personName: draft.personName ?? null,
+    issueObjectId: draft.issueObjectId ?? null,
+    issueObjectName: draft.issueObjectName ?? null,
+    writeOffSource: draft.writeOffSource ?? null,
     lines: draft.lines.map(l => ({
       localId: l.localId,
-      itemId: l.itemId,
-      quantity: l.quantity,
+      itemId: l.itemId ?? null,
+      quantity: l.quantity ?? null,
     })),
   };
   return JSON.stringify(clean);

@@ -81,12 +81,18 @@ export class LostAssetsService {
     this.error.set(null);
 
     try {
-      await firstValueFrom(
-        this.bff.postData<void>(`/lost-assets/${operationLineId}/resolve`, payload)
+      const result = await firstValueFrom(
+        this.bff.postData<Partial<LostAssetDetailVm>>(`/lost-assets/${operationLineId}/resolve`, payload)
       );
       // Backend does not return resolved lost assets via GET detail.
       // Mark the current detail as resolved locally instead of reloading.
-      this.detail.update(prev => prev ? { ...prev, status: 'resolved' } : null);
+      this.detail.update(prev => prev ? {
+        ...prev,
+        ...(result ?? {}),
+        status: 'resolved',
+        resolution_action: payload.action,
+        resolution_note: payload.note ?? prev.resolution_note,
+      } : null);
     } catch (err: any) {
       const message = err?.message || 'Ошибка при подтверждении решения';
       this.error.set(message);

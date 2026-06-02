@@ -35,134 +35,137 @@ function nextLocalId(): string {
         </div>
 
         <div class="wh-modal__body modal-body">
-          <!-- First row: type + warehouse(s) -->
-          <div class="form-row first-row">
-            <!-- Operation type: 40% -->
-            <div class="form-group" [style.flex]="'0 0 40%'">
-              <label>Тип операции</label>
-              <select class="wh-form-input input" [value]="localDraft().type" (change)="onTypeChange($event)">
-                @for (t of typeOptions; track t.key) {
-                  <option [value]="t.key">{{ t.label }}</option>
-                }
-              </select>
-            </div>
+          <div class="modal-content-shell">
+            <!-- First row: type + warehouse(s) -->
+            <div class="form-row first-row">
+              <!-- Operation type: 40% -->
+              <div class="form-group form-group--type">
+                <label>Тип операции</label>
+                <select class="wh-form-input input" [ngModel]="localDraft().type" (ngModelChange)="onTypeModelChange($event)" [disabled]="isEdit()">
+                  @for (t of typeOptions; track t.key) {
+                    <option [value]="t.key">{{ t.label }}</option>
+                  }
+                </select>
+              </div>
 
-            <!-- Source warehouse: 30% for MOVE, 60% for others -->
-            <div class="form-group" [style.flex]="isMove() ? '0 0 30%' : '0 0 60%'">
-              <label>{{ sourceLabel() }}</label>
-              <select class="wh-form-input input" [ngModel]="localDraft().sourceSiteId" (ngModelChange)="onSourceSiteChange($event)">
-                <option [ngValue]="null">—</option>
-                @for (site of sites(); track site.id) {
-                  <option [value]="site.id">{{ site.name }}</option>
-                }
-              </select>
-            </div>
-
-            <!-- Destination warehouse: 30%, only for MOVE -->
-            @if (isMove()) {
-              <div class="form-group" style="flex: 0 0 30%;">
-                <label>Склад-получатель</label>
-                <select class="wh-form-input input" [ngModel]="localDraft().destinationSiteId" (ngModelChange)="onDestinationSiteChange($event)">
-                  <option [ngValue]="null">—</option>
+              <!-- Source warehouse: 30% for MOVE, 60% for others -->
+              <div class="form-group" [class.form-group--move-source]="isMove()" [class.form-group--single-warehouse]="!isMove()">
+                <label>{{ sourceLabel() }}</label>
+                <select class="wh-form-input input" [ngModel]="isMove() ? (localDraft().sourceSiteId ?? '') : (logicalWarehouseSiteId() ?? '')" (ngModelChange)="isMove() ? onSourceSiteChange($event) : onLogicalWarehouseSiteChange($event)" [disabled]="isEdit()">
+                  <option value="">—</option>
                   @for (site of sites(); track site.id) {
                     <option [value]="site.id">{{ site.name }}</option>
                   }
                 </select>
               </div>
-            }
-          </div>
 
-          <!-- Person name (EXPENSE only) -->
-          @if (showPersonName()) {
-            <div class="form-row">
-              <label>ФИО получателя / выдачи</label>
-              <input type="text" class="wh-form-input input" [ngModel]="localDraft().personName" (ngModelChange)="onPersonNameChange($event)" placeholder="Фамилия Имя Отчество" />
-            </div>
-          }
-
-          <!-- Issue object search (ISSUE / ISSUE_RETURN / WRITE_OFF when object source) -->
-          @if (showIssueObjectSearch()) {
-            <div class="form-row">
-              <label>Объект выдачи</label>
-              @if (localDraft().issueObjectName) {
-                <div class="issue-object-selected">
-                  <span class="selected-label">{{ localDraft().issueObjectName }}</span>
-                  <button class="wh-btn-icon btn-icon-sm" (click)="clearIssueObject()" title="Изменить">✎</button>
-                </div>
-              } @else {
-                <div class="issue-object-search">
-                  <input
-                    type="text"
-                    class="wh-form-input input"
-                    [ngModel]="issueObjectSearchQuery()"
-                    (ngModelChange)="onIssueObjectSearchChange($event)"
-                    placeholder="Поиск объекта выдачи..."
-                  />
-                  @if (issueObjectSearchResults().length > 0) {
-                    <div class="search-dropdown">
-                      @for (obj of issueObjectSearchResults(); track obj.id) {
-                        <button class="dropdown-item" (click)="selectIssueObject(obj)">
-                          <span class="item-title">{{ obj.display_name }}</span>
-                          <span class="item-subtitle">{{ objectTypeLabel(obj.object_type) }}{{ obj.code ? ' · ' + obj.code : '' }}</span>
-                        </button>
-                      }
-                    </div>
-                  }
+              <!-- Destination warehouse: 30%, only for MOVE -->
+              @if (isMove()) {
+                <div class="form-group form-group--move-destination">
+                  <label>Склад-получатель</label>
+                  <select class="wh-form-input input" [ngModel]="localDraft().destinationSiteId ?? ''" (ngModelChange)="onDestinationSiteChange($event)" [disabled]="isEdit()">
+                    <option value="">—</option>
+                    @for (site of sites(); track site.id) {
+                      <option [value]="site.id">{{ site.name }}</option>
+                    }
+                  </select>
                 </div>
               }
             </div>
-          }
+
+          <!-- Person name (EXPENSE only) -->
+            @if (showPersonName()) {
+              <div class="form-row">
+                <label>ФИО получателя / выдачи</label>
+                <input type="text" class="wh-form-input input" [ngModel]="localDraft().personName" (ngModelChange)="onPersonNameChange($event)" placeholder="Фамилия Имя Отчество" />
+              </div>
+            }
+
+          <!-- Issue object search (ISSUE / ISSUE_RETURN / WRITE_OFF when object source) -->
+            @if (showIssueObjectSearch()) {
+              <div class="form-row">
+                <label>Объект выдачи</label>
+                @if (localDraft().issueObjectName) {
+                  <div class="issue-object-selected">
+                    <span class="selected-label">{{ localDraft().issueObjectName }}</span>
+                    <button class="wh-btn-icon btn-icon-sm" (click)="clearIssueObject()" title="Изменить">✎</button>
+                  </div>
+                } @else {
+                  <div class="issue-object-search">
+                    <input
+                      type="text"
+                      class="wh-form-input input"
+                      [ngModel]="issueObjectSearchQuery()"
+                      (ngModelChange)="onIssueObjectSearchChange($event)"
+                      placeholder="Поиск объекта выдачи..."
+                    />
+                    @if (issueObjectSearchResults().length > 0) {
+                      <div class="search-dropdown">
+                        @for (obj of issueObjectSearchResults(); track obj.id) {
+                          <button class="dropdown-item" (click)="selectIssueObject(obj)">
+                            <span class="item-title">{{ obj.display_name }}</span>
+                            <span class="item-subtitle">{{ objectTypeLabel(obj.object_type) }}{{ obj.code ? ' · ' + obj.code : '' }}</span>
+                          </button>
+                        }
+                      </div>
+                    }
+                  </div>
+                }
+              </div>
+            }
 
           <!-- WRITE_OFF source selector -->
-          @if (showWriteOffSource()) {
-            <div class="form-row">
-              <label>Источник списания</label>
-              <div class="radio-group">
-                <label class="radio-item">
-                  <input type="radio" name="writeOffSource" [value]="'warehouse'" [ngModel]="localDraft().writeOffSource" (ngModelChange)="onWriteOffSourceChange('warehouse')" />
-                  <span>Со склада</span>
-                </label>
-                <label class="radio-item">
-                  <input type="radio" name="writeOffSource" [value]="'object'" [ngModel]="localDraft().writeOffSource" (ngModelChange)="onWriteOffSourceChange('object')" />
-                  <span>С объекта выдачи</span>
-                </label>
+            @if (showWriteOffSource()) {
+              <div class="form-row">
+                <label>Источник списания</label>
+                <div class="radio-group">
+                  <label class="radio-item">
+                    <input type="radio" name="writeOffSource" [value]="'warehouse'" [ngModel]="localDraft().writeOffSource" (ngModelChange)="onWriteOffSourceChange('warehouse')" />
+                    <span>Со склада</span>
+                  </label>
+                  <label class="radio-item">
+                    <input type="radio" name="writeOffSource" [value]="'object'" [ngModel]="localDraft().writeOffSource" (ngModelChange)="onWriteOffSourceChange('object')" />
+                    <span>С объекта выдачи</span>
+                  </label>
+                </div>
               </div>
-            </div>
-          }
+            }
 
           <!-- Comment row: full-width, 2 rows -->
-          <div class="form-row">
-            <label>Комментарий</label>
-            <textarea class="wh-form-input input comment-area" rows="2" [ngModel]="localDraft().comment" (ngModelChange)="onCommentChange($event)" placeholder="Комментарий к операции..."></textarea>
-          </div>
+            <div class="form-row">
+              <label>Комментарий</label>
+              <textarea class="wh-form-input input comment-area" rows="2" [ngModel]="localDraft().comment" (ngModelChange)="onCommentChange($event)" placeholder="Комментарий к операции..."></textarea>
+            </div>
 
           <!-- Add TMC row: 80% search + 20% disabled button -->
-          <div class="form-row add-tmc-row">
-            <div class="tmc-search-wrapper">
-              <app-item-cache-search
-                [placeholder]="'Поиск по названию, SKU или хештегу...'"
-                [sourceSiteId]="localDraft().sourceSiteId ?? null"
-                (itemSelected)="onNewItemSelected($event)"
-              />
+            <div class="form-row add-tmc-row">
+              <div class="tmc-search-wrapper">
+                <label>Добавить ТМЦ в операцию</label>
+                <app-item-cache-search
+                  [placeholder]="'Поиск ТМЦ для добавления: название, SKU или хештег...'"
+                  [sourceSiteId]="relevantSiteId()"
+                  (itemSelected)="onNewItemSelected($event)"
+                />
+              </div>
+              <button class="wh-btn wh-btn--secondary btn btn-tmc" disabled title="Создание новой ТМЦ будет добавлено позже">
+                Создать ТМЦ
+              </button>
             </div>
-            <button class="wh-btn wh-btn--secondary btn btn-tmc" disabled title="Создание новой ТМЦ будет добавлено позже">
-              Создать ТМЦ
-            </button>
-          </div>
 
           <!-- Lines table component -->
-          <div class="form-row lines-section">
-            <div class="section-header">
-              <h3>Позиции ({{ lines().length }})</h3>
+            <div class="form-row lines-section">
+              <div class="section-header">
+                <h3>Позиции ({{ lines().length }})</h3>
+              </div>
+              <app-operation-lines-table
+                [lines]="lines()"
+                [warehouseSiteId]="relevantSiteId()"
+                [isBalanceRefreshing]="isBalanceRefreshing()"
+                [operationType]="localDraft().type"
+                (quantityChange)="onQuantityChange($event.localId, $event.quantity)"
+                (removeLine)="removeLine($event)"
+              />
             </div>
-            <app-operation-lines-table
-              [lines]="lines()"
-              [warehouseSiteId]="relevantSiteId()"
-              [isBalanceRefreshing]="isBalanceRefreshing()"
-              [operationType]="localDraft().type"
-              (quantityChange)="onQuantityChange($event.localId, $event.quantity)"
-              (removeLine)="removeLine($event)"
-            />
           </div>
         </div>
 
@@ -175,6 +178,12 @@ function nextLocalId(): string {
           <div class="footer-actions">
             @if (isEdit()) {
               <button class="wh-btn wh-btn--danger btn btn-delete" (click)="onDelete()" [disabled]="isSaving()">Удалить черновик</button>
+              @if (canCancelOperation()) {
+                <button class="wh-btn wh-btn--danger btn btn-cancel-operation" (click)="onCancelOperation()" [disabled]="isSubmitting()">Отменить операцию</button>
+              }
+              @if (canAcceptOperation()) {
+                <button class="wh-btn wh-btn--secondary btn btn-accept" (click)="onAcceptOperation()">Приёмка</button>
+              }
             }
             <button class="wh-btn wh-btn--secondary btn btn-secondary" (click)="cancel.emit()">Отмена</button>
             <button class="wh-btn wh-btn--primary btn btn-primary" [disabled]="isSaving() || !!saveDisabledReason()" (click)="onSave()">Сохранить черновик</button>
@@ -199,7 +208,7 @@ function nextLocalId(): string {
       background: #FFFFFF;
       border-radius: 12px;
       width: 100%;
-      max-width: 800px;
+      max-width: 900px;
       max-height: min(1024px, calc(100vh - 32px));
       display: flex;
       flex-direction: column;
@@ -231,6 +240,15 @@ function nextLocalId(): string {
       flex-direction: column;
       min-height: 0;
     }
+    .modal-content-shell {
+      width: 100%;
+      max-width: 840px;
+      margin: 0 auto;
+      display: flex;
+      flex-direction: column;
+      flex: 1;
+      min-height: 0;
+    }
     .modal-footer {
       flex-shrink: 0;
       display: flex;
@@ -246,12 +264,27 @@ function nextLocalId(): string {
       margin-left: auto;
     }
 
-    .form-row { margin-bottom: 12px; flex-shrink: 0; }
+    .form-row {
+      width: 100%;
+      margin-bottom: 12px;
+      flex-shrink: 0;
+      box-sizing: border-box;
+    }
     .first-row {
       display: flex;
       gap: 12px;
+      align-items: flex-start;
     }
-    .form-group { display: flex; flex-direction: column; }
+    .form-group {
+      display: flex;
+      flex-direction: column;
+      min-width: 0;
+      box-sizing: border-box;
+    }
+    .form-group--type { flex: 0 0 calc(40% - 4.8px); }
+    .form-group--move-source { flex: 0 0 calc(30% - 4px); }
+    .form-group--move-destination { flex: 0 0 calc(30% - 4px); }
+    .form-group--single-warehouse { flex: 0 0 calc(60% - 7.2px); }
     .form-row label {
       display: block;
       font-size: 12px;
@@ -272,6 +305,11 @@ function nextLocalId(): string {
       color: #1F2937;
       box-sizing: border-box;
     }
+    .input:disabled {
+      background: #F8FAFC;
+      color: #64748B;
+      cursor: not-allowed;
+    }
     .input:focus { outline: none; border-color: #3B82F6; box-shadow: 0 0 0 2px rgba(59,130,246,0.15); }
     textarea.input { height: auto; padding: 8px 10px; resize: vertical; }
     .comment-area { resize: vertical; }
@@ -280,13 +318,16 @@ function nextLocalId(): string {
       display: flex;
       gap: 12px;
       align-items: flex-start;
+      width: 100%;
     }
     .tmc-search-wrapper {
-      flex: 0 0 80%;
+      flex: 0 0 calc(80% - 9.6px);
+      min-width: 0;
     }
     .btn-tmc {
-      flex: 0 0 calc(20% - 12px);
+      flex: 0 0 calc(20% - 2.4px);
       height: 36px;
+      align-self: flex-end;
     }
 
     .lines-section {
@@ -328,6 +369,10 @@ function nextLocalId(): string {
     .btn-submit:hover:not(:disabled) { background: #047857; }
     .btn-delete { background: #FFFFFF; border-color: #FCA5A5; color: #DC2626; }
     .btn-delete:hover:not(:disabled) { background: #FEF2F2; }
+    .btn-cancel-operation { background: #FFFFFF; border-color: #FDBA74; color: #C2410C; }
+    .btn-cancel-operation:hover:not(:disabled) { background: #FFF7ED; }
+    .btn-accept { background: #FFFFFF; border-color: #A7F3D0; color: #047857; }
+    .btn-accept:hover:not(:disabled) { background: #ECFDF5; }
 
     .issue-object-search { position: relative; }
     .search-dropdown {
@@ -394,6 +439,8 @@ export class OperationCreateModalComponent implements OnInit {
   submit = output<OperationDraftVm>();
   cancel = output<void>();
   delete = output<OperationDraftVm>();
+  cancelOperation = output<OperationDraftVm>();
+  acceptOperation = output<OperationDraftVm>();
 
   private readonly service = inject(OperationsService);
   private readonly authContextService = inject(AuthContextService);
@@ -432,6 +479,11 @@ export class OperationCreateModalComponent implements OnInit {
     return d.sourceSiteId ?? null;
   });
 
+  readonly logicalWarehouseSiteId = computed(() => {
+    const d = this.localDraft();
+    return d.type === 'RECEIVE' ? (d.destinationSiteId ?? null) : (d.sourceSiteId ?? null);
+  });
+
   readonly showPersonName = computed(() => {
     return this.localDraft().type === 'EXPENSE';
   });
@@ -449,7 +501,6 @@ export class OperationCreateModalComponent implements OnInit {
 
   readonly sourceLabel = computed(() => {
     const t = this.localDraft().type;
-    if (t === 'RECEIVE') return 'Поставщик / источник';
     if (t === 'MOVE') return 'Склад-источник';
     return 'Склад';
   });
@@ -463,7 +514,7 @@ export class OperationCreateModalComponent implements OnInit {
       if (!d.sourceSiteId) return 'Укажите склад-источник';
       if (!d.destinationSiteId) return 'Укажите склад-получатель';
     } else if (d.type === 'RECEIVE') {
-      if (!d.destinationSiteId) return 'Укажите поставщика / источник';
+      if (!d.destinationSiteId) return 'Укажите склад';
     } else {
       if (!d.sourceSiteId) return 'Укажите склад';
     }
@@ -475,15 +526,35 @@ export class OperationCreateModalComponent implements OnInit {
 
   readonly canSubmitComputed = computed(() => {
     if (this.saveDisabledReason()) return false;
-    if (!this.savedOperationId() && !this.localDraft().id) return false;
-    if (this.hasUnsavedChanges()) return false;
     return true;
   });
 
   readonly submitDisabledReason = computed(() => {
-    if (!this.savedOperationId() && !this.localDraft().id) return 'Сначала сохраните черновик';
-    if (this.hasUnsavedChanges()) return 'Сохраните изменения перед подтверждением';
+    if (this.saveDisabledReason()) return this.saveDisabledReason() ?? '';
     return '';
+  });
+
+  readonly canCancelOperation = computed(() => {
+    const d = this.localDraft();
+    if (!d.id) return false;
+    if (d.status === 'cancelled' || d.status === 'rejected') return false;
+
+    const auth = this.authContextService.authContext();
+    const role = auth?.role ?? 'observer';
+    if (role === 'observer') return false;
+
+    const isBeforeSubmit = d.status === 'draft' || d.status === 'created' || d.status === 'pending';
+    if (role === 'root') return isBeforeSubmit || d.status === 'submitted';
+    if (role === 'chief_storekeeper') return isBeforeSubmit;
+    if (role === 'storekeeper') return isBeforeSubmit && !!d.createdByUserId && d.createdByUserId === auth?.userId;
+    return false;
+  });
+
+  readonly canAcceptOperation = computed(() => {
+    const d = this.localDraft();
+    if (!d.id) return false;
+    if (d.type !== 'MOVE' && d.type !== 'RECEIVE') return false;
+    return d.status === 'submitted' || d.status === 'pending';
   });
 
   private preferredSiteId(): string | null {
@@ -533,9 +604,7 @@ export class OperationCreateModalComponent implements OnInit {
       if (d) {
         this.localDraft.set(this.normalizeDraftForType(d.type, { ...d, lines: [...d.lines] }));
         // Track saved operation ID and snapshot
-        if (d.id) {
-          this.savedOperationId.set(d.id);
-        }
+        this.savedOperationId.set(d.id ?? null);
       }
     });
 
@@ -557,8 +626,8 @@ export class OperationCreateModalComponent implements OnInit {
           ...state,
           lines: state.lines.map(l => ({
             ...l,
-            availableQuantity: undefined,
-            sourceSiteQuantity: undefined,
+            availableQuantity: 0,
+            sourceSiteQuantity: 0,
           })),
         }));
       }
@@ -582,12 +651,20 @@ export class OperationCreateModalComponent implements OnInit {
 
   private refreshSourceQuantities(): void {
     const siteId = this.relevantSiteId() || undefined;
+    const balances = this.service.balances();
     this.localDraft.update(state => ({
       ...state,
       lines: state.lines.map(l => {
         if (!l.itemId) return l;
         const qty = this.service.getBalanceForItem(l.itemId, siteId);
-        return { ...l, availableQuantity: qty, sourceSiteQuantity: qty };
+        const balanceRow = balances.find(b => String(b.item_id) === String(l.itemId));
+        return {
+          ...l,
+          itemName: l.itemName || balanceRow?.item_name || '',
+          unitName: l.unitName && l.unitName !== 'шт' ? l.unitName : (balanceRow?.unit_symbol || l.unitName),
+          availableQuantity: qty,
+          sourceSiteQuantity: qty,
+        };
       }),
     }));
   }
@@ -598,17 +675,24 @@ export class OperationCreateModalComponent implements OnInit {
     }
   }
 
-  onTypeChange(event: Event): void {
-    const value = (event.target as HTMLSelectElement).value as OperationType;
+  onTypeModelChange(value: OperationType | null): void {
+    if (!value) return;
     this.localDraft.update(d => this.normalizeDraftForType(value, d));
   }
 
   onSourceSiteChange(value: string | null): void {
-    this.localDraft.update(d => ({ ...d, sourceSiteId: value }));
+    this.localDraft.update(d => ({ ...d, sourceSiteId: value || null }));
+  }
+
+  onLogicalWarehouseSiteChange(value: string | null): void {
+    this.localDraft.update(d => d.type === 'RECEIVE'
+      ? { ...d, destinationSiteId: value || null }
+      : { ...d, sourceSiteId: value || null }
+    );
   }
 
   onDestinationSiteChange(value: string | null): void {
-    this.localDraft.update(d => ({ ...d, destinationSiteId: value }));
+    this.localDraft.update(d => ({ ...d, destinationSiteId: value || null }));
   }
 
   onPersonNameChange(value: string): void {
@@ -706,6 +790,7 @@ export class OperationCreateModalComponent implements OnInit {
   }
 
   onNewItemSelected(item: Item): void {
+    const availableQuantity = this.service.getBalanceForItem(item.id, this.relevantSiteId() || undefined);
     this.localDraft.update(d => ({
       ...d,
       lines: [
@@ -719,7 +804,8 @@ export class OperationCreateModalComponent implements OnInit {
           unitId: item.unit_id,
           unitName: item.unit_symbol,
           quantity: null,
-          sourceSiteQuantity: item.source_site_qty ? parseFloat(item.source_site_qty) : null,
+          availableQuantity,
+          sourceSiteQuantity: availableQuantity,
           isTemporary: false,
           fromBalances: false,
         },
@@ -763,5 +849,13 @@ export class OperationCreateModalComponent implements OnInit {
 
   onDelete(): void {
     this.delete.emit(this.localDraft());
+  }
+
+  onCancelOperation(): void {
+    this.cancelOperation.emit(this.localDraft());
+  }
+
+  onAcceptOperation(): void {
+    this.acceptOperation.emit(this.localDraft());
   }
 }

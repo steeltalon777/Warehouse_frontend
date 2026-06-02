@@ -47,10 +47,16 @@ export interface OperationLineDto {
   id?: string;
   operation_id?: string;
   item_id?: string | null;
+  resolved_item_id?: string | null;
   item_name?: string;
+  resolved_item_name?: string;
+  item_name_snapshot?: string;
+  item_sku_snapshot?: string | null;
   sku?: string | null;
   unit_id?: string;
   unit_symbol?: string;
+  unit_symbol_snapshot?: string;
+  category_name_snapshot?: string;
   qty: string;
   accepted_qty?: string;
   lost_qty?: string;
@@ -112,12 +118,14 @@ export interface OperationDraftVm {
   id?: string;
   type: OperationType;
   status: OperationStatus;
+  createdByUserId?: string | null;
   sourceSiteId?: string | null;
   destinationSiteId?: string | null;
   personName?: string | null;
   issueObjectId?: string | null;
   issueObjectName?: string | null;
   writeOffSource?: 'warehouse' | 'object' | null;
+  acceptanceState?: string | null;
   comment?: string | null;
   lines: OperationLineDraftVm[];
   /** Serialized clean state for dirty-check */

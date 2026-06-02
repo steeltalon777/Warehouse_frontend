@@ -50,7 +50,8 @@ function toItem(searchItem: CatalogSearchItem): Item {
               <div
                 class="search-option"
                 [class.highlighted]="idx === highlightedIndex()"
-                (mousedown)="selectItem(item)"
+                (mousedown)="$event.preventDefault()"
+                (click)="selectItem(item, $event)"
               >
                 <span class="option-name">{{ item.name }}</span>
                 @if (item.category_name) {
@@ -266,7 +267,8 @@ export class ItemCacheSearchComponent implements OnDestroy {
     }
   }
 
-  selectItem(item: Item): void {
+  selectItem(item: Item, event?: Event): void {
+    event?.stopPropagation();
     this.selectedItem.set(item);
     this.searchText.set(item.name);
     this.highlightedIndex.set(-1);

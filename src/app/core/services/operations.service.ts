@@ -206,27 +206,39 @@ export class OperationsService {
   mapDtoToDraftVm(dto: OperationDto): OperationDraftVm {
     const lines: OperationLineDraftVm[] = (dto.lines ?? []).map((l, idx) => ({
       localId: `line-${l.id ?? idx}`,
-      itemId: l.item_id ?? null,
-      itemName: l.item_name ?? '',
-      sku: l.sku ?? null,
+      itemId: l.item_id ?? l.resolved_item_id ?? null,
+      itemName: l.item_name ?? l.item_name_snapshot ?? l.resolved_item_name ?? '',
+      categoryName: l.category_name_snapshot ?? undefined,
+      sku: l.sku ?? l.item_sku_snapshot ?? null,
       unitId: l.unit_id ?? null,
-      unitName: l.unit_symbol ?? 'шт',
+      unitName: l.unit_symbol ?? l.unit_symbol_snapshot ?? 'шт',
       quantity: l.qty ? parseFloat(l.qty) : null,
       lineNumber: idx + 1,
       isTemporary: l.is_temporary ?? false,
       fromBalances: false,
     }));
 
+    const type = dto.type;
+    const fallbackSiteId = dto.site_id != null ? String(dto.site_id) : null;
+    const mappedSourceSiteId = dto.source_site_id != null
+      ? String(dto.source_site_id)
+      : (type !== 'MOVE' && type !== 'RECEIVE' ? fallbackSiteId : null);
+    const mappedDestinationSiteId = dto.destination_site_id != null
+      ? String(dto.destination_site_id)
+      : (type === 'RECEIVE' ? fallbackSiteId : null);
+
     return {
       id: dto.id,
       type: dto.type,
       status: dto.status,
-      sourceSiteId: dto.source_site_id ?? null,
-      destinationSiteId: dto.destination_site_id ?? null,
+      createdByUserId: dto.created_by_user_id ?? null,
+      sourceSiteId: mappedSourceSiteId,
+      destinationSiteId: mappedDestinationSiteId,
       personName: dto.person_name ?? null,
       issueObjectId: dto.issue_object_id ?? null,
       issueObjectName: dto.issue_object_name_snapshot ?? null,
-      comment: dto.comment ?? null,
+      acceptanceState: dto.acceptance_state ?? null,
+      comment: dto.comment ?? (dto as any).notes ?? null,
       lines,
     };
   }
@@ -239,10 +251,16 @@ export class OperationsService {
 
   async loadSites(): Promise<void> {
     try {
-      const result = await firstValueFrom(
-        this.bff.getData<{ sites?: SiteDto[] }>('/catalog/sites')
+      const result: any = await firstValueFrom(
+        this.bff.getData('/catalog/sites')
       );
-      this.sites.set(result?.sites ?? []);
+      const rawSites: any[] = result?.sites ?? [];
+      // BFF returns site_id (number), map to id (string) for SiteDto
+      const mapped: SiteDto[] = rawSites.map(s => ({
+        id: String(s.site_id ?? ''),
+        name: String(s.name ?? ''),
+      }));
+      this.sites.set(mapped);
     } catch {
       this.sites.set([]);
     }
@@ -253,9 +271,10 @@ export class OperationsService {
       const params: Record<string, string> = {};
       if (siteId) params['site_id'] = siteId;
       const result = await firstValueFrom(
-        this.bff.getData<BalanceDto[]>('/balances', params)
+        this.bff.getData<BalanceDto[] | { items?: BalanceDto[] }>('/balances', params)
       );
-      this.balances.set(result ?? []);
+      const rows = Array.isArray(result) ? result : (result?.items ?? []);
+      this.balances.set(rows);
     } catch {
       this.balances.set([]);
     }
@@ -263,8 +282,9 @@ export class OperationsService {
 
   getBalanceForItem(itemId: string, siteId?: string): number {
     const list = this.balances();
+    const normalizedSiteId = siteId == null ? null : String(siteId);
     const row = list.find(
-      b => b.item_id === itemId && (!siteId || b.site_id === siteId)
+      b => String(b.item_id) === String(itemId) && (!normalizedSiteId || String(b.site_id) === normalizedSiteId)
     );
     if (!row) return 0;
     const qty = parseFloat(row.qty);
@@ -429,9 +449,7 @@ export class OperationsService {
 
   private isAcceptanceApplicable(op: OperationDto): boolean {
     return (op.type === 'MOVE' || op.type === 'RECEIVE')
-      && (op.status === 'submitted' || op.status === 'pending')
-      && (op.acceptance_state === 'pending' || op.acceptance_state === 'in_progress'
-        || (op.status === 'pending' && (!op.acceptance_state || op.acceptance_state === 'not_required')));
+      && (op.status === 'submitted' || op.status === 'pending');
   }
 
   private isDeleteAllowed(op: OperationDto): boolean {

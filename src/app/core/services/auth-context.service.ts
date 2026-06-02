@@ -8,6 +8,32 @@ export interface AuthContext {
   defaultSiteId: string | null;
 }
 
+interface AuthMeResponse {
+  user_id?: string;
+  role?: string;
+  default_site_id?: string | number | null;
+  user?: {
+    id?: string;
+    role?: string;
+    is_root?: boolean;
+    default_site_id?: string | number | null;
+  };
+  device?: {
+    site_id?: string | number | null;
+  };
+  data?: {
+    user?: {
+      id?: string;
+      role?: string;
+      is_root?: boolean;
+      default_site_id?: string | number | null;
+    };
+    device?: {
+      site_id?: string | number | null;
+    };
+  };
+}
+
 @Injectable({
   providedIn: 'root'
 })
@@ -18,13 +44,17 @@ export class AuthContextService {
 
   async load(): Promise<void> {
     try {
-      const data = await firstValueFrom(
-        this.bff.getData<{ user_id: string; role: string; default_site_id?: string | null }>('/auth/me')
-      );
+      const data = await firstValueFrom(this.bff.getData<AuthMeResponse>('/auth/me'));
+      const user = data.user ?? data.data?.user;
+      const device = data.device ?? data.data?.device;
+      const defaultSiteId = data.default_site_id
+        ?? user?.default_site_id
+        ?? device?.site_id
+        ?? null;
       this.authContext.set({
-        userId: data.user_id,
-        role: data.role,
-        defaultSiteId: data.default_site_id ?? null,
+        userId: data.user_id ?? user?.id ?? '',
+        role: data.role ?? user?.role ?? (user?.is_root ? 'root' : 'observer'),
+        defaultSiteId: defaultSiteId == null ? null : String(defaultSiteId),
       });
     } catch {
       // Blocker: BFF auth endpoint not implemented yet.

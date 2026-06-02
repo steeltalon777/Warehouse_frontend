@@ -480,20 +480,46 @@ export class OperationAcceptancePageComponent implements OnInit {
   }
 
   private buildEditLines(): void {
-    const lines = this.svc.lines();
+    const lines = this.acceptanceLinesForDisplay();
     const editLines: LineEditVm[] = lines.map(line => {
       const qty = parseFloat(line.qty);
-      const factQty = isNaN(qty) ? '0' : line.qty;
-      const lostQty = '0';
+      const acceptedQty = line.accepted_qty ?? '';
+      const lostQty = line.lost_qty ?? '';
+      const factQty = acceptedQty || (isNaN(qty) ? '0' : line.qty);
       return {
         line,
         factQty,
-        note: '',
-        lostQty,
+        note: line.note ?? '',
+        lostQty: lostQty || '0',
         validationError: null,
       };
     });
     this.editLines.set(editLines);
+  }
+
+  private acceptanceLinesForDisplay(): PendingAcceptanceLineVm[] {
+    const pending = this.svc.lines();
+    if (pending.length > 0) return pending;
+
+    const op = this.svc.operation();
+    const opLines = op?.lines ?? [];
+    return opLines.map((line, idx) => ({
+      operation_line_id: line.id ?? idx,
+      operation_id: op?.id ?? '',
+      item_id: String(line.item_id ?? line.resolved_item_id ?? ''),
+      item_name: line.item_name ?? line.item_name_snapshot ?? line.resolved_item_name ?? '',
+      display_name: line.item_name ?? line.item_name_snapshot ?? line.resolved_item_name ?? '',
+      sku: line.sku ?? line.item_sku_snapshot ?? undefined,
+      unit_symbol: line.unit_symbol ?? line.unit_symbol_snapshot ?? undefined,
+      qty: String(line.qty ?? '0'),
+      accepted_qty: line.accepted_qty ?? '0',
+      lost_qty: line.lost_qty ?? '0',
+      note: line.note ?? null,
+      destination_site_id: op?.destination_site_id ? Number(op.destination_site_id) : undefined,
+      destination_site_name: op?.destination_site_name ?? op?.site_name ?? undefined,
+      source_site_id: op?.source_site_id ? Number(op.source_site_id) : undefined,
+      source_site_name: op?.source_site_name ?? undefined,
+    }));
   }
 
   onFactChange(index: number, value: string): void {
@@ -558,6 +584,7 @@ export class OperationAcceptancePageComponent implements OnInit {
     try {
       const result = await this.svc.submitAcceptLines(operationId, payloads);
       this.successMessage.set('Приёмка успешно проведена.');
+      await this.loadData(operationId);
       this.buildEditLines();
 
       if (result.operation?.acceptance_state === 'resolved') {

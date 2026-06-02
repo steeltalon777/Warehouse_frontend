@@ -112,6 +112,7 @@ import { firstValueFrom } from 'rxjs';
         (cancel)="onDraftCancel()"
         (delete)="onDraftDelete($event)"
         (cancelOperation)="onDraftOperationCancel($event)"
+        (acceptOperation)="onDraftAccept($event)"
       />
     }
 
@@ -628,7 +629,10 @@ export class OperationsPageComponent implements OnInit, OnDestroy {
         result = await this.service.createOperation(draft);
       }
       if (result) {
-        const savedDraft = this.service.mapDtoToDraftVm(result);
+        const savedDraft = this.restoreDraftDisplayFields(
+          this.service.mapDtoToDraftVm(result),
+          draft,
+        );
         savedDraft.lastSavedSnapshot = snapshotDraft(savedDraft);
         this.editingDraft.set(savedDraft);
       }
@@ -639,38 +643,45 @@ export class OperationsPageComponent implements OnInit, OnDestroy {
   }
 
   async onDraftSubmit(draft: OperationDraftVm): Promise<void> {
-    if (draft.id) {
-      let row = this.rows().find(r => r.id === draft.id);
-      if (!row) {
-        const dto = await this.service.getOperation(draft.id);
-        if (dto) row = this.buildRowFromDto(dto);
-      }
-      if (row) {
-        this.confirmingOperation.set(row);
-        this.showConfirmModal.set(true);
-      }
-      return;
-    }
-
-    // New unsaved draft: save first, then open confirm modal
     try {
-      const result = await this.service.createOperation(draft);
+      const result = draft.id
+        ? await this.service.updateOperation(draft.id, draft)
+        : await this.service.createOperation(draft);
       if (!result) return;
-
-      const savedDraft = this.service.mapDtoToDraftVm(result);
-      savedDraft.lastSavedSnapshot = snapshotDraft(savedDraft);
-      this.editingDraft.set(savedDraft);
-
-      // Refresh list in background
+      await this.service.submitOperation(result.id);
+      this.showCreateModal.set(false);
+      this.editingDraft.set(null);
       void this.loadList();
-
-      // Open confirm modal with the newly created operation
-      const row = this.buildRowFromDto(result);
-      this.confirmingOperation.set(row);
-      this.showConfirmModal.set(true);
     } catch {
       // error already in service.error
     }
+  }
+
+  private restoreDraftDisplayFields(savedDraft: OperationDraftVm, previousDraft: OperationDraftVm): OperationDraftVm {
+    const previousByItemId = new Map(
+      previousDraft.lines
+        .filter(line => !!line.itemId)
+        .map(line => [String(line.itemId), line]),
+    );
+
+    return {
+      ...savedDraft,
+      lines: savedDraft.lines.map((line, index) => {
+        const previous = (line.itemId ? previousByItemId.get(String(line.itemId)) : null)
+          ?? previousDraft.lines[index]
+          ?? null;
+        if (!previous) return line;
+
+        return {
+          ...line,
+          itemName: line.itemName || previous.itemName,
+          categoryName: line.categoryName || previous.categoryName,
+          sku: line.sku ?? previous.sku,
+          unitId: line.unitId ?? previous.unitId,
+          unitName: line.unitName && line.unitName !== 'шт' ? line.unitName : previous.unitName,
+        };
+      }),
+    };
   }
 
   onDraftCancel(): void {
@@ -702,6 +713,11 @@ export class OperationsPageComponent implements OnInit, OnDestroy {
     } catch {
       // error already in service.error
     }
+  }
+
+  onDraftAccept(draft: OperationDraftVm): void {
+    if (!draft.id) return;
+    void this.router.navigate(['/operations', draft.id, 'acceptance']);
   }
 
   async onRowDelete(row: OperationListRowVm): Promise<void> {

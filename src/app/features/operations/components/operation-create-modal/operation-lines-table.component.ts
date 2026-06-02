@@ -17,16 +17,20 @@ export interface LineQuantityChange {
   imports: [CommonModule, FormsModule],
   template: `
     <div class="lines-container">
-      <!-- Table-local name filter -->
-      <div class="table-filter-row">
-        <input
-          type="text"
-          class="wh-form-input filter-input"
-          [ngModel]="nameFilter()"
-          (ngModelChange)="nameFilter.set($event)"
-          placeholder="Фильтр по названию..."
-        />
-      </div>
+      <!-- Table-local filter is useful only for longer added-position lists. -->
+      @if (showTableFilter()) {
+        <div class="table-filter-row">
+          <label class="filter-label">Фильтр добавленных позиций</label>
+          <input
+            type="text"
+            class="wh-form-input filter-input"
+            [ngModel]="nameFilter()"
+            (ngModelChange)="nameFilter.set($event)"
+            placeholder="Фильтр уже добавленных ТМЦ..."
+            aria-label="Фильтр добавленных позиций"
+          />
+        </div>
+      }
 
       <div class="table-scroll">
         <table class="wh-table lines-data-table">
@@ -55,7 +59,7 @@ export interface LineQuantityChange {
           </thead>
           <tbody>
             @for (line of filteredSortedLines(); track line.localId) {
-              <tr [class.warning-row]="line.error || (line.availableQuantity != null && line.quantity != null && line.quantity > line.availableQuantity)">
+              <tr>
                 <td class="col-name">
                   <div class="item-info">
                     <span class="item-name">{{ line.itemName }}</span>
@@ -81,15 +85,10 @@ export interface LineQuantityChange {
                 <td class="col-avail">
                   @if (isBalanceRefreshing()) {
                     <span class="avail-loading">…</span>
-                  } @else if (line.availableQuantity != null) {
-                    <span class="avail-value" [class.avail-warn]="line.quantity != null && line.quantity > line.availableQuantity">
-                      {{ line.availableQuantity }}
-                    </span>
                   } @else {
-                    <span class="avail-na">—</span>
-                  }
-                  @if (line.quantity != null && line.availableQuantity != null && line.quantity > line.availableQuantity) {
-                    <span class="qty-warning">превышает остаток</span>
+                    <span class="avail-value">
+                      {{ availableQuantity(line) }}
+                    </span>
                   }
                 </td>
                 <td class="col-del">
@@ -104,7 +103,11 @@ export interface LineQuantityChange {
             } @empty {
               <tr>
                 <td colspan="4" class="empty-state">
-                  Начните поиск номенклатуры выше, чтобы добавить позиции
+                  @if (lines().length === 0) {
+                    Для добавления используйте поле «Добавить ТМЦ» выше
+                  } @else {
+                    По фильтру добавленных позиций ничего не найдено
+                  }
                 </td>
               </tr>
             }
@@ -123,6 +126,13 @@ export interface LineQuantityChange {
     .table-filter-row {
       flex-shrink: 0;
       margin-bottom: 6px;
+    }
+    .filter-label {
+      display: block;
+      font-size: 12px;
+      font-weight: 500;
+      color: #64748B;
+      margin-bottom: 4px;
     }
     .filter-input {
       width: 100%;
@@ -214,18 +224,8 @@ export interface LineQuantityChange {
     }
 
     .avail-value { font-weight: 500; color: #059669; }
-    .avail-warn { color: #DC2626; font-weight: 600; }
     .avail-loading { color: #94A3B8; }
     .avail-na { color: #CBD5E1; }
-
-    .qty-warning {
-      display: block;
-      font-size: 11px;
-      color: #DC2626;
-      margin-top: 2px;
-    }
-    .warning-row { background: #FFF7ED !important; }
-    .warning-row .qty-input { border-color: #F97316; }
 
     .remove-btn {
       width: 26px; height: 26px;
@@ -257,6 +257,8 @@ export class OperationLinesTableComponent {
   readonly sortColumn = signal<SortColumn>('itemName');
   readonly sortDirection = signal<SortDirection>('asc');
   readonly nameFilter = signal<string>('');
+
+  readonly showTableFilter = computed(() => this.lines().length > 3);
 
   readonly qtyLabel = computed(() => {
     const t = this.operationType();
@@ -302,5 +304,9 @@ export class OperationLinesTableComponent {
 
   onQtyChange(localId: string, value: number | null): void {
     this.quantityChange.emit({ localId, quantity: value });
+  }
+
+  availableQuantity(line: OperationLineDraftVm): number {
+    return line.availableQuantity ?? 0;
   }
 }

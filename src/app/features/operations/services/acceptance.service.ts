@@ -14,6 +14,7 @@ export interface PendingAcceptanceLineVm {
   qty: string;
   accepted_qty?: string;
   lost_qty?: string;
+  note?: string | null;
   destination_site_id?: number;
   destination_site_name?: string;
   source_site_id?: number;

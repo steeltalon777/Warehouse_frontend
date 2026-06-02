@@ -169,7 +169,7 @@ import {
       table-layout: fixed;
     }
     .data-table th, .data-table td {
-      padding: 8px 10px;
+      padding: 8px 8px;
       text-align: left;
       border-bottom: 1px solid #E2E8F0;
       white-space: nowrap;
@@ -190,14 +190,14 @@ import {
     .data-table tbody tr { cursor: pointer; transition: background 0.1s; }
     .data-table tbody tr:hover { background: #F8FAFC; }
 
-    .col-number { width: 10%; min-width: 80px; }
-    .col-type { width: 10%; min-width: 90px; }
-    .col-status { width: 8%; min-width: 80px; }
-    .col-direction { width: 15%; min-width: 120px; }
-    .col-positions { width: 5%; min-width: 50px; text-align: center; }
-    .col-author { width: auto; min-width: 100px; }
-    .col-date { width: auto; min-width: 100px; }
-    .col-actions { width: 36px; min-width: 36px; }
+    .col-number { width: 9%; min-width: 80px; }
+    .col-type { width: 8%; min-width: 80px; }
+    .col-status { width: 7%; min-width: 70px; }
+    .col-direction { width: 18%; min-width: 130px; }
+    .col-positions { width: 4%; min-width: 40px; text-align: center; }
+    .col-author { width: auto; min-width: 120px; }
+    .col-date { width: auto; min-width: 80px; white-space: nowrap; }
+    .col-actions { width: 160px; min-width: 160px; text-align: center; }
 
     .number-link {
       background: none;
@@ -238,9 +238,11 @@ import {
 
     .action-stack {
       display: flex;
-      flex-direction: column;
-      gap: 2px;
+      flex-direction: row;
+      flex-wrap: nowrap;
+      gap: 6px;
       align-items: center;
+      justify-content: center;
     }
     .btn-icon {
       width: 24px;
