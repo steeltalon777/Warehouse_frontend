@@ -23,6 +23,10 @@ export const routes: Routes = [
     loadComponent: () => import('./features/operations/pages/operation-acceptance-page/operation-acceptance-page.component').then(m => m.OperationAcceptancePageComponent),
   },
   {
+    path: 'operations/pending-acceptance',
+    loadComponent: () => import('./features/operations/pages/pending-acceptance-page/pending-acceptance-page.component').then(m => m.PendingAcceptancePageComponent),
+  },
+  {
     path: 'operations/lost-assets',
     loadComponent: () => import('./features/lost-assets/pages/lost-assets-page/lost-assets-page.component').then(m => m.LostAssetsPageComponent),
   },
