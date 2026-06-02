@@ -38,9 +38,9 @@ import {
                 <span class="sort-arrow">{{ sortDirection() === 'asc' ? '▲' : '▼' }}</span>
               }
             </th>
-            <th class="col-date" (click)="sort.emit('createdAt')">
-              Дата создания
-              @if (sortColumn() === 'createdAt') {
+            <th class="col-positions" (click)="sort.emit('linesCount')">
+              Поз.
+              @if (sortColumn() === 'linesCount') {
                 <span class="sort-arrow">{{ sortDirection() === 'asc' ? '▲' : '▼' }}</span>
               }
             </th>
@@ -50,9 +50,9 @@ import {
                 <span class="sort-arrow">{{ sortDirection() === 'asc' ? '▲' : '▼' }}</span>
               }
             </th>
-            <th class="col-lines" (click)="sort.emit('linesCount')">
-              Позиций
-              @if (sortColumn() === 'linesCount') {
+            <th class="col-date" (click)="sort.emit('createdAt')">
+              Дата
+              @if (sortColumn() === 'createdAt') {
                 <span class="sort-arrow">{{ sortDirection() === 'asc' ? '▲' : '▼' }}</span>
               }
             </th>
@@ -61,42 +61,64 @@ import {
         </thead>
         <tbody>
           @for (row of rows(); track row.id) {
-            <tr class="row" (click)="rowClick.emit(row)">
-              <td class="col-number">{{ row.number }}</td>
+            <tr class="row">
+              <td class="col-number">
+                @if (row.displayNumber || row.number) {
+                  <button class="wh-link number-link" (click)="numberClick.emit(row)" title="Открыть операцию">
+                    {{ row.displayNumber || row.number }}
+                  </button>
+                }
+              </td>
               <td class="col-type">
                 <span class="badge type-badge wh-badge {{ typeClass(row.type) }}">
                   {{ row.typeLabel }}
                 </span>
               </td>
               <td class="col-status">
-                <span class="badge status-badge wh-badge {{ statusClass(row.status) }}">
-                  {{ row.statusLabel }}
-                </span>
+                <div class="status-stack">
+                  @for (line of row.statusLines; track $index) {
+                    <span class="status-line {{ statusClass(row.status) }}">{{ line }}</span>
+                  }
+                </div>
               </td>
-              <td class="col-direction">{{ row.directionLabel }}</td>
+              <td class="col-direction" [title]="row.directionLabel">{{ row.directionLabel }}</td>
+              <td class="col-positions">{{ row.positionCount }}</td>
+              <td class="col-author" [title]="row.createdByUserId">{{ row.createdByLabel }}</td>
               <td class="col-date">{{ row.createdAt | date:'dd.MM.yyyy HH:mm' }}</td>
-              <td class="col-author">{{ row.createdByLabel }}</td>
-              <td class="col-lines">{{ row.linesCount }}</td>
               <td class="col-actions" (click)="$event.stopPropagation()">
-                <div class="action-buttons">
+                <div class="action-stack">
+                  @if (row.canInvoice) {
+                    <button class="wh-btn-icon btn-icon" title="Накладная" aria-label="Накладная" (click)="rowInvoice.emit(row)">
+                      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="6 9 6 2 18 2 18 9"/><path d="M6 18H4a2 2 0 01-2-2v-5a2 2 0 012-2h16a2 2 0 012 2v5a2 2 0 01-2 2h-2"/><rect x="6" y="14" width="12" height="8"/></svg>
+                    </button>
+                  } @else {
+                    <button class="wh-btn-icon btn-icon" disabled title="Накладная будет реализована отдельно" aria-label="Накладная (недоступно)">
+                      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="6 9 6 2 18 2 18 9"/><path d="M6 18H4a2 2 0 01-2-2v-5a2 2 0 012-2h16a2 2 0 012 2v5a2 2 0 01-2 2h-2"/><rect x="6" y="14" width="12" height="8"/></svg>
+                    </button>
+                  }
                   @if (row.canEdit) {
                     <button class="wh-btn-icon btn-icon" title="Редактировать" aria-label="Редактировать операцию" (click)="rowEdit.emit(row)">
-                      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M11 4H4a2 2 0 00-2 2v14a2 2 0 002 2h14a2 2 0 002-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 013 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>
+                      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M11 4H4a2 2 0 00-2 2v14a2 2 0 002 2h14a2 2 0 002-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 013 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>
                     </button>
                   }
                   @if (row.canSubmit) {
                     <button class="wh-btn-icon wh-btn-icon--success btn-icon success" title="Подтвердить" aria-label="Подтвердить операцию" (click)="rowSubmit.emit(row)">
-                      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="20 6 9 17 4 12"/></svg>
+                      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="20 6 9 17 4 12"/></svg>
                     </button>
                   }
                   @if (row.canCancel) {
                     <button class="wh-btn-icon wh-btn-icon--danger btn-icon danger" title="Отменить" aria-label="Отменить операцию" (click)="rowCancel.emit(row)">
-                      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+                      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
                     </button>
                   }
-                  @if (row.canPrint) {
-                    <button class="wh-btn-icon btn-icon" title="Печать" disabled>
-                      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="6 9 6 2 18 2 18 9"/><path d="M6 18H4a2 2 0 01-2-2v-5a2 2 0 012-2h16a2 2 0 012 2v5a2 2 0 01-2 2h-2"/><rect x="6" y="14" width="12" height="8"/></svg>
+                  @if (row.canAccept) {
+                    <button class="wh-btn-icon btn-icon" title="Приёмка" aria-label="Приёмка" (click)="rowAccept.emit(row)">
+                      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 11l3 3L22 4"/><path d="M21 12v7a2 2 0 01-2 2H5a2 2 0 01-2-2V5a2 2 0 012-2h11"/></svg>
+                    </button>
+                  }
+                  @if (row.canDelete) {
+                    <button class="wh-btn-icon wh-btn-icon--danger btn-icon" title="Удалить" aria-label="Удалить операцию" (click)="rowDelete.emit(row)">
+                      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 01-2 2H7a2 2 0 01-2-2V6m3 0V4a2 2 0 012-2h4a2 2 0 012 2v2"/></svg>
                     </button>
                   }
                 </div>
@@ -147,7 +169,7 @@ import {
       table-layout: fixed;
     }
     .data-table th, .data-table td {
-      padding: 10px 12px;
+      padding: 8px 10px;
       text-align: left;
       border-bottom: 1px solid #E2E8F0;
       white-space: nowrap;
@@ -168,14 +190,26 @@ import {
     .data-table tbody tr { cursor: pointer; transition: background 0.1s; }
     .data-table tbody tr:hover { background: #F8FAFC; }
 
-    .col-number { width: 90px; }
-    .col-type { width: 110px; }
-    .col-status { width: 130px; }
-    .col-direction { width: auto; }
-    .col-date { width: 140px; }
-    .col-author { width: 130px; }
-    .col-lines { width: 80px; text-align: center; }
-    .col-actions { width: 130px; }
+    .col-number { width: 10%; min-width: 80px; }
+    .col-type { width: 10%; min-width: 90px; }
+    .col-status { width: 8%; min-width: 80px; }
+    .col-direction { width: 15%; min-width: 120px; }
+    .col-positions { width: 5%; min-width: 50px; text-align: center; }
+    .col-author { width: auto; min-width: 100px; }
+    .col-date { width: auto; min-width: 100px; }
+    .col-actions { width: 36px; min-width: 36px; }
+
+    .number-link {
+      background: none;
+      border: none;
+      padding: 0;
+      font: inherit;
+      color: #2563EB;
+      cursor: pointer;
+      text-decoration: underline;
+      text-underline-offset: 2px;
+    }
+    .number-link:hover { color: #1D4ED8; }
 
     .sort-arrow { margin-left: 4px; font-size: 10px; color: #94A3B8; }
 
@@ -188,13 +222,29 @@ import {
       line-height: 1.4;
     }
 
-    .action-buttons {
+    .status-stack {
       display: flex;
-      gap: 4px;
+      flex-direction: column;
+      gap: 2px;
+    }
+    .status-line {
+      display: inline-block;
+      padding: 1px 6px;
+      border-radius: 4px;
+      font-size: 11px;
+      font-weight: 500;
+      line-height: 1.3;
+    }
+
+    .action-stack {
+      display: flex;
+      flex-direction: column;
+      gap: 2px;
+      align-items: center;
     }
     .btn-icon {
-      width: 28px;
-      height: 28px;
+      width: 24px;
+      height: 24px;
       display: inline-flex;
       align-items: center;
       justify-content: center;
@@ -204,6 +254,7 @@ import {
       color: #64748B;
       cursor: pointer;
       transition: all 0.15s;
+      padding: 0;
     }
     .btn-icon:hover:not(:disabled) { background: #F1F5F9; color: #374151; border-color: #CBD5E1; }
     .btn-icon.success:hover:not(:disabled) { background: #DCFCE7; color: #166534; border-color: #BBF7D0; }
@@ -267,9 +318,13 @@ export class OperationsTableComponent {
   pageChange = output<number>();
   pageSizeChange = output<number>();
   rowClick = output<OperationListRowVm>();
+  numberClick = output<OperationListRowVm>();
   rowEdit = output<OperationListRowVm>();
   rowSubmit = output<OperationListRowVm>();
   rowCancel = output<OperationListRowVm>();
+  rowInvoice = output<OperationListRowVm>();
+  rowAccept = output<OperationListRowVm>();
+  rowDelete = output<OperationListRowVm>();
 
   onPageSizeChange(event: Event): void {
     const value = parseInt((event.target as HTMLSelectElement).value, 10);
