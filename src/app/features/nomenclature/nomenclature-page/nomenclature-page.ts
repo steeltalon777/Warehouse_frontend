@@ -38,11 +38,28 @@ import { PendingChangesBarComponent } from '../pending-changes-bar/pending-chang
         <div class="wh-workspace workspace">
           <!-- Left panel: tree -->
           <div class="wh-panel left-panel">
+            <div class="tabs">
+              <button
+                class="tab-btn"
+                [class.active]="activeTab() === 'catalog'"
+                (click)="onTabChange('catalog')"
+              >
+                Категории и ТМЦ
+              </button>
+              <button
+                class="tab-btn"
+                [class.active]="activeTab() === 'units'"
+                (click)="onTabChange('units')"
+              >
+                Единицы измерения
+              </button>
+            </div>
             <app-search-input
               [value]="searchQuery()"
               (valueChange)="onSearchChange($event)"
             />
             <app-action-buttons
+              [mode]="activeTab()"
               (createCategory)="onCreateCategory()"
               (createItem)="onCreateItem()"
               (createUnit)="onCreateUnit()"
@@ -50,8 +67,10 @@ import { PendingChangesBarComponent } from '../pending-changes-bar/pending-chang
             />
             <div class="tree-wrapper">
               <app-catalog-tree
-                [nodes]="unifiedTree()"
-                [visibleCount]="visibleNodeCount()"
+                [nodes]="currentTreeNodes()"
+                [visibleCount]="currentVisibleCount()"
+                [title]="activeTab() === 'catalog' ? 'Категории и ТМЦ' : 'Единицы измерения'"
+                [subtitle]="activeTab() === 'catalog' ? 'Дерево с inline-редактированием' : 'Список единиц измерения'"
                 (select)="onSelectNode($event)"
                 (toggle)="onToggleExpand($event.id)"
               />
@@ -118,6 +137,31 @@ import { PendingChangesBarComponent } from '../pending-changes-bar/pending-chang
       flex: 1;
       overflow: hidden;
       min-height: 0;
+    }
+
+    .tabs {
+      display: flex;
+      gap: 4px;
+      margin-bottom: 12px;
+      border-bottom: 1px solid #E5E7EB;
+      padding-bottom: 0;
+    }
+    .tab-btn {
+      padding: 8px 16px;
+      font-size: 13px;
+      font-weight: 500;
+      color: #6B7280;
+      background: none;
+      border: none;
+      border-bottom: 2px solid transparent;
+      cursor: pointer;
+      transition: color 0.15s, border-color 0.15s;
+      margin-bottom: -1px;
+    }
+    .tab-btn:hover { color: #374151; }
+    .tab-btn.active {
+      color: #2563EB;
+      border-bottom-color: #2563EB;
     }
 
     .right-panel-wrapper {
@@ -191,10 +235,25 @@ export class NomenclaturePageComponent implements OnInit {
   readonly pendingCount = computed(() => this.changeBuffer.count());
   readonly applyDisabled = computed(() => this.changeBuffer.isEmpty());
 
+  readonly activeTab = signal<'catalog' | 'units'>('catalog');
+  readonly currentTreeNodes = computed(() =>
+    this.activeTab() === 'catalog' ? this.service.unifiedTree() : this.service.unitListNodes()
+  );
+  readonly currentVisibleCount = computed(() =>
+    this.activeTab() === 'catalog' ? this.service.visibleNodeCount() : this.service.unitListNodes().length
+  );
+
   readonly createModeEntity = signal<{ type: 'category' | 'item' | 'unit'; entity: unknown } | null>(null);
 
   onSearchChange(query: string): void {
     this.service.setSearch(query);
+  }
+
+  onTabChange(tab: 'catalog' | 'units'): void {
+    this.activeTab.set(tab);
+    this.service.clearSelection();
+    this.createModeEntity.set(null);
+    this.service.setSearch('');
   }
 
   onSelectNode(node: { id: string; type: string }): void {
@@ -207,7 +266,9 @@ export class NomenclaturePageComponent implements OnInit {
   }
 
   onExpandAll(): void {
-    this.service.expandAll();
+    if (this.activeTab() === 'catalog') {
+      this.service.expandAll();
+    }
   }
 
   onCreateCategory(): void {
@@ -239,12 +300,12 @@ export class NomenclaturePageComponent implements OnInit {
       return;
     }
 
-    const node = this.selectedNode();
-    if (!node) return;
+    const sel = this.service.selectedEntity();
+    if (!sel) return;
 
     this.changeBuffer.addChange({
-      localId: `${node.type}-${event.id}`,
-      entityType: node.type,
+      localId: `${sel.type}-${event.id}`,
+      entityType: sel.type,
       entityId: event.id,
       action: 'update',
       payload: event.payload,
@@ -259,12 +320,12 @@ export class NomenclaturePageComponent implements OnInit {
     const cm = this.createModeEntity();
     if (cm) return;
 
-    const node = this.selectedNode();
-    if (!node) return;
+    const sel = this.service.selectedEntity();
+    if (!sel) return;
 
     this.changeBuffer.addChange({
-      localId: `${node.type}-${id}-deactivate`,
-      entityType: node.type,
+      localId: `${sel.type}-${id}-deactivate`,
+      entityType: sel.type,
       entityId: id,
       action: 'deactivate',
       payload: { is_active: false },
@@ -295,12 +356,12 @@ export class NomenclaturePageComponent implements OnInit {
       return;
     }
 
-    const node = this.selectedNode();
-    if (!node) return;
+    const sel = this.service.selectedEntity();
+    if (!sel) return;
 
     this.changeBuffer.addChange({
-      localId: `${node.type}-${id}-delete`,
-      entityType: node.type,
+      localId: `${sel.type}-${id}-delete`,
+      entityType: sel.type,
       entityId: id,
       action: 'delete',
       payload: {},

@@ -151,59 +151,48 @@ export class NomenclatureService {
       }
     }
     
-    // Add unit section with staged and existing units
-    const hasUnits = this.units().length > 0 || pendingCreates.some(c => c.entityType === 'unit');
-    if (hasUnits) {
-      const unitSectionId = '__units__';
-      tree.push({
-        id: unitSectionId,
-        type: 'category',
-        name: 'Единицы измерения',
-        isActive: true,
-        level: 0,
-        expanded: expanded.has(unitSectionId),
-        selected: false,
-        dirty: false,
-        children: undefined,
-      });
-      
-      for (const u of this.units()) {
-        tree.push({
-          id: u.id,
-          type: 'unit',
-          name: `${u.name} (${u.symbol})`,
-          meta: u.is_active ? undefined : 'неактивно',
-          parentId: unitSectionId,
-          isActive: u.is_active,
-          level: 1,
-          expanded: false,
-          selected: selected?.id === u.id && selected?.type === 'unit',
-          dirty: this.changeBuffer.hasPending(u.id, 'unit'),
-        });
-      }
-      
-      for (const u of this.stagedUnits()) {
-        tree.push({
-          id: u.id,
-          type: 'unit',
-          name: `${u.name} (${u.symbol})`,
-          parentId: unitSectionId,
-          isActive: u.is_active,
-          level: 1,
-          expanded: false,
-          selected: selected?.id === u.id && selected?.type === 'unit',
-          dirty: true,
-          pendingAction: 'create' as const,
-        });
-      }
-    }
-
     if (!query) return tree;
     return this.filterTree(tree, query);
   });
 
   readonly visibleNodeCount = computed(() => {
     return this.countVisible(this.unifiedTree());
+  });
+
+  /** Flat list of unit nodes for the separate "Units" tab */
+  readonly unitListNodes = computed<CatalogTreeNodeVm[]>(() => {
+    const selected = this.selectedEntity();
+    const result: CatalogTreeNodeVm[] = [];
+
+    for (const u of this.units()) {
+      result.push({
+        id: u.id,
+        type: 'unit',
+        name: `${u.name} (${u.symbol})`,
+        meta: u.is_active ? undefined : 'неактивно',
+        isActive: u.is_active,
+        level: 0,
+        expanded: false,
+        selected: selected?.id === u.id && selected?.type === 'unit',
+        dirty: this.changeBuffer.hasPending(u.id, 'unit'),
+      });
+    }
+
+    for (const u of this.stagedUnits()) {
+      result.push({
+        id: u.id,
+        type: 'unit',
+        name: `${u.name} (${u.symbol})`,
+        isActive: u.is_active,
+        level: 0,
+        expanded: false,
+        selected: selected?.id === u.id && selected?.type === 'unit',
+        dirty: true,
+        pendingAction: 'create',
+      });
+    }
+
+    return result;
   });
 
   readonly selectedNode = computed<CatalogTreeNodeVm | null>(() => {

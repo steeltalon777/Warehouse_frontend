@@ -10,8 +10,8 @@ import { CatalogTreeNodeComponent } from '../catalog-tree-node/catalog-tree-node
     <div class="catalog-tree-panel">
       <div class="tree-header">
         <div>
-          <h2 class="tree-title">Категории и ТМЦ</h2>
-          <p class="tree-subtitle">Дерево с inline-редактированием</p>
+          <h2 class="tree-title">{{ title() }}</h2>
+          <p class="tree-subtitle">{{ subtitle() }}</p>
         </div>
         <span class="tree-count">{{ visibleCount() }} элементов</span>
       </div>
@@ -81,6 +81,8 @@ import { CatalogTreeNodeComponent } from '../catalog-tree-node/catalog-tree-node
 export class CatalogTreeComponent {
   readonly nodes = input<CatalogTreeNodeVm[]>([]);
   readonly visibleCount = input<number>(0);
+  readonly title = input<string>('Категории и ТМЦ');
+  readonly subtitle = input<string>('Дерево с inline-редактированием');
   readonly select = output<CatalogTreeNodeVm>();
   readonly toggle = output<CatalogTreeNodeVm>();
 }
