@@ -408,8 +408,6 @@ export class ItemEditFormComponent {
   onDelete(): void {
     const it = this.item();
     if (!it) return;
-    if (confirm('Удалить ТМЦ? Это действие нельзя отменить.')) {
-      this.delete.emit(it.id);
-    }
+    this.delete.emit(it.id);
   }
 }

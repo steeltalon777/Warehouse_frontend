@@ -165,6 +165,7 @@ export class NomenclatureService {
     const result: CatalogTreeNodeVm[] = [];
 
     for (const u of this.units()) {
+      if (this.changeBuffer.hasPendingDelete(u.id, 'unit')) continue;
       result.push({
         id: u.id,
         type: 'unit',
@@ -179,6 +180,7 @@ export class NomenclatureService {
     }
 
     for (const u of this.stagedUnits()) {
+      if (this.changeBuffer.hasPendingDelete(u.id, 'unit')) continue;
       result.push({
         id: u.id,
         type: 'unit',
@@ -289,6 +291,8 @@ export class NomenclatureService {
     const itemMap = this.buildItemMap(items);
 
     for (const cat of cats) {
+      if (buffer.hasPendingDelete(cat.id, 'category')) continue;
+
       const node: CatalogTreeNodeVm = {
         id: cat.id,
         type: 'category',
@@ -307,6 +311,7 @@ export class NomenclatureService {
 
       const catItems = itemMap.get(cat.id) ?? [];
       for (const item of catItems) {
+        if (buffer.hasPendingDelete(item.id, 'item')) continue;
         result.push({
           id: item.id,
           type: 'item',

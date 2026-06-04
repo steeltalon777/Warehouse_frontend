@@ -322,8 +322,6 @@ export class UnitEditFormComponent {
   onDelete(): void {
     const u = this.unit();
     if (!u) return;
-    if (confirm('Удалить единицу измерения? Это действие нельзя отменить.')) {
-      this.delete.emit(u.id);
-    }
+    this.delete.emit(u.id);
   }
 }

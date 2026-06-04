@@ -340,6 +340,12 @@ export class NomenclaturePageComponent implements OnInit {
     const changes = this.changeBuffer.changes();
     if (changes.length === 0) return;
 
+    const count = changes.length;
+    const msg = count === 1
+      ? 'Применить 1 изменение? Это действие нельзя отменить.'
+      : `Применить ${count} изменений? Это действие нельзя отменить.`;
+    if (!confirm(msg)) return;
+
     try {
       await this.service.applyBatch(changes);
       this.changeBuffer.clearAll();

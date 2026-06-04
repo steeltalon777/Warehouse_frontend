@@ -367,8 +367,6 @@ export class CategoryEditFormComponent {
   onDelete(): void {
     const cat = this.category();
     if (!cat) return;
-    if (confirm('Удалить категорию? Это действие нельзя отменить.')) {
-      this.delete.emit(cat.id);
-    }
+    this.delete.emit(cat.id);
   }
 }

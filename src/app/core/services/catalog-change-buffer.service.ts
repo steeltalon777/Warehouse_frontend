@@ -48,6 +48,13 @@ export class CatalogChangeBufferService {
     ) ?? null;
   }
 
+  /** Check if entity has a pending delete change */
+  hasPendingDelete(entityId: string, entityType: string): boolean {
+    return this._changes().some(
+      c => c.entityId === entityId && c.entityType === entityType && c.action === 'delete'
+    );
+  }
+
   /** Get all changes for an entity type */
   getChangesForType(entityType: string): CatalogPendingChange[] {
     return this._changes().filter(c => c.entityType === entityType);
