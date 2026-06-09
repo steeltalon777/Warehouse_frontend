@@ -49,7 +49,7 @@ export interface LineQuantityChange {
                 }
               </th>
               <th class="col-avail" (click)="toggleSort('availableQuantity')">
-                Имеется
+                {{ availLabel() }}
                 @if (sortColumn() === 'availableQuantity') {
                   <span class="sort-indicator">{{ sortDirection() === 'asc' ? '▲' : '▼' }}</span>
                 }
@@ -76,17 +76,27 @@ export interface LineQuantityChange {
                   <input
                     type="number"
                     class="wh-form-input qty-input"
+                    [class.qty-input--invalid]="!!line.error"
                     [ngModel]="line.quantity"
                     (ngModelChange)="onQtyChange(line.localId, $event)"
                     min="0"
                     step="0.001"
                   />
+                  @if (line.error) {
+                    <div class="qty-error">{{ line.error }}</div>
+                  } @else if (isObjectSourceFlow() && line.availableQuantity != null) {
+                    <div class="qty-hint">Имеется на объекте: {{ line.availableQuantity }}</div>
+                  }
                 </td>
                 <td class="col-avail">
-                  @if (isBalanceRefreshing()) {
+                  @if (line.inlineItem) {
+                    <span class="avail-inline">будет создана при подтверждении</span>
+                  } @else if (isBalanceRefreshing()) {
                     <span class="avail-loading">…</span>
+                  } @else if (isObjectSourceFlow() && line.availableQuantity == null) {
+                    <span class="avail-na">—</span>
                   } @else {
-                    <span class="avail-value">
+                    <span class="avail-value" [class.avail-value--object]="isObjectSourceFlow()">
                       {{ availableQuantity(line) }}
                     </span>
                   }
@@ -222,10 +232,31 @@ export interface LineQuantityChange {
       border-color: #3B82F6;
       box-shadow: 0 0 0 2px rgba(59,130,246,0.15);
     }
+    .qty-input--invalid {
+      border-color: #DC2626;
+      background: #FEF2F2;
+    }
+    .qty-input--invalid:focus {
+      border-color: #DC2626;
+      box-shadow: 0 0 0 2px rgba(220,38,38,0.15);
+    }
+    .qty-error {
+      font-size: 11px;
+      color: #DC2626;
+      margin-top: 2px;
+      max-width: 220px;
+    }
+    .qty-hint {
+      font-size: 11px;
+      color: #94A3B8;
+      margin-top: 2px;
+    }
 
     .avail-value { font-weight: 500; color: #059669; }
+    .avail-value--object { color: #2563EB; }
     .avail-loading { color: #94A3B8; }
     .avail-na { color: #CBD5E1; }
+    .avail-inline { font-size: 11px; color: #64748B; font-style: italic; }
 
     .remove-btn {
       width: 26px; height: 26px;
@@ -249,6 +280,7 @@ export class OperationLinesTableComponent {
   warehouseSiteId = input<string | null>(null);
   isBalanceRefreshing = input<boolean>(false);
   operationType = input<OperationType | null>(null);
+  isObjectSourceFlow = input<boolean>(false);
 
   quantityChange = output<LineQuantityChange>();
   removeLine = output<string>();
@@ -264,6 +296,10 @@ export class OperationLinesTableComponent {
     const t = this.operationType();
     if (t === 'RECEIVE') return 'Количество';
     return 'Отправляемое количество';
+  });
+
+  readonly availLabel = computed(() => {
+    return this.isObjectSourceFlow() ? 'Имеется на объекте' : 'Имеется';
   });
 
   readonly filteredSortedLines = computed(() => {

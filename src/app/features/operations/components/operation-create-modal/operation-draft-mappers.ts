@@ -8,6 +8,7 @@ import { OperationDraftVm } from '../../../../core/models/operations.models';
  * Fields included:
  *  - type
  *  - sourceSiteId / destinationSiteId
+ *  - effectiveAt
  *  - comment
  *  - personName / issueObjectId / issueObjectName / writeOffSource
  *  - lines (localId, itemId, quantity)
@@ -22,6 +23,7 @@ export function snapshotDraft(draft: OperationDraftVm): string {
     type: draft.type,
     sourceSiteId: draft.sourceSiteId ?? null,
     destinationSiteId: draft.destinationSiteId ?? null,
+    effectiveAt: draft.effectiveAt ?? null,
     comment: draft.comment ?? null,
     personName: draft.personName ?? null,
     issueObjectId: draft.issueObjectId ?? null,
@@ -30,6 +32,7 @@ export function snapshotDraft(draft: OperationDraftVm): string {
     lines: draft.lines.map(l => ({
       localId: l.localId,
       itemId: l.itemId ?? null,
+      inlineItem: l.inlineItem ? { clientKey: l.inlineItem.clientKey } : null,
       quantity: l.quantity ?? null,
     })),
   };

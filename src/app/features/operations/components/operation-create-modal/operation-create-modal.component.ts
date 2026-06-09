@@ -1,4 +1,4 @@
-import { Component, input, output, signal, computed, effect, inject, OnInit } from '@angular/core';
+import { Component, input, output, signal, computed, effect, inject, OnInit, ViewChild } from '@angular/core';
 import { AuthContextService } from '../../../../core/services/auth-context.service';
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
@@ -6,6 +6,7 @@ import {
   OperationDraftVm,
   OperationType,
   OperationLineDraftVm,
+  OperationInlineItemDraftVm,
   SiteDto,
   OPERATION_TYPE_LABELS,
 } from '../../../../core/models/operations.models';
@@ -13,6 +14,7 @@ import { OperationsService } from '../../../../core/services/operations.service'
 import { IssueObjectsService } from '../../../../core/services/issue-objects.service';
 import { ItemCacheSearchComponent } from '../item-cache-search/item-cache-search.component';
 import { OperationLinesTableComponent } from './operation-lines-table.component';
+import { InlineItemCreateModalComponent } from '../inline-item-create-modal/inline-item-create-modal.component';
 import { Item } from '../../../../core/models/nomenclature.models';
 import { IssueObject, IssueObjectType, ISSUE_OBJECT_TYPE_LABELS } from '../../../../core/models/issue-objects.models';
 import { snapshotDraft, isDraftClean } from './operation-draft-mappers';
@@ -22,12 +24,22 @@ function nextLocalId(): string {
   return `local-${++LOCAL_ID_COUNTER}`;
 }
 
+function currentDateTimeLocal(): string {
+  const now = new Date();
+  const pad = (num: number) => String(num).padStart(2, '0');
+  return [
+    now.getFullYear(),
+    pad(now.getMonth() + 1),
+    pad(now.getDate()),
+  ].join('-') + `T${pad(now.getHours())}:${pad(now.getMinutes())}`;
+}
+
 @Component({
   selector: 'app-operation-create-modal',
   standalone: true,
-  imports: [CommonModule, FormsModule, ItemCacheSearchComponent, OperationLinesTableComponent],
+  imports: [CommonModule, FormsModule, ItemCacheSearchComponent, OperationLinesTableComponent, InlineItemCreateModalComponent],
   template: `
-    <div class="wh-modal-overlay modal-overlay" (click)="onOverlayClick($event)">
+    <div class="wh-modal-overlay modal-overlay" [class.modal-overlay--pair]="isInlineModalOpen()" (click)="onOverlayClick($event)">
       <div class="wh-modal modal-container">
         <div class="wh-modal__header modal-header">
           <h2>{{ isEdit() ? 'Редактирование операции' : 'Новая операция' }}</h2>
@@ -41,7 +53,7 @@ function nextLocalId(): string {
               <!-- Operation type: 40% -->
               <div class="form-group form-group--type">
                 <label>Тип операции</label>
-                <select class="wh-form-input input" [ngModel]="localDraft().type" (ngModelChange)="onTypeModelChange($event)" [disabled]="isEdit()">
+                <select class="wh-form-input input" [ngModel]="localDraft().type" (ngModelChange)="onTypeModelChange($event)" [disabled]="isEdit() || isLockedFromAssetRow()">
                   @for (t of typeOptions; track t.key) {
                     <option [value]="t.key">{{ t.label }}</option>
                   }
@@ -88,7 +100,9 @@ function nextLocalId(): string {
                 @if (localDraft().issueObjectName) {
                   <div class="issue-object-selected">
                     <span class="selected-label">{{ localDraft().issueObjectName }}</span>
-                    <button class="wh-btn-icon btn-icon-sm" (click)="clearIssueObject()" title="Изменить">✎</button>
+                    @if (!isLockedFromAssetRow()) {
+                      <button class="wh-btn-icon btn-icon-sm" (click)="clearIssueObject()" title="Изменить">✎</button>
+                    }
                   </div>
                 } @else {
                   <div class="issue-object-search">
@@ -115,7 +129,7 @@ function nextLocalId(): string {
             }
 
           <!-- WRITE_OFF source selector -->
-            @if (showWriteOffSource()) {
+            @if (showWriteOffSource() && !isLockedFromAssetRow()) {
               <div class="form-row">
                 <label>Источник списания</label>
                 <div class="radio-group">
@@ -132,25 +146,55 @@ function nextLocalId(): string {
             }
 
           <!-- Comment row: full-width, 2 rows -->
+            <div class="form-row effective-at-row">
+              <label>Дата проведения</label>
+              <input
+                type="datetime-local"
+                class="wh-form-input input effective-at-input"
+                [ngModel]="localDraft().effectiveAt"
+                (ngModelChange)="onEffectiveAtChange($event)"
+              />
+            </div>
+
             <div class="form-row">
               <label>Комментарий</label>
               <textarea class="wh-form-input input comment-area" rows="2" [ngModel]="localDraft().comment" (ngModelChange)="onCommentChange($event)" placeholder="Комментарий к операции..."></textarea>
             </div>
 
           <!-- Add TMC row: 80% search + 20% disabled button -->
-            <div class="form-row add-tmc-row">
-              <div class="tmc-search-wrapper">
-                <label>Добавить ТМЦ в операцию</label>
-                <app-item-cache-search
-                  [placeholder]="'Поиск ТМЦ для добавления: название, SKU или хештег...'"
-                  [sourceSiteId]="relevantSiteId()"
-                  (itemSelected)="onNewItemSelected($event)"
-                />
+            @if (!isObjectSourceFlow()) {
+              <div class="form-row add-tmc-row">
+                <div class="tmc-search-wrapper">
+                  <label>Добавить ТМЦ в операцию</label>
+                  <app-item-cache-search
+                    #itemSearch
+                    [placeholder]="'Поиск ТМЦ для добавления: название, SKU или хештег...'"
+                    [sourceSiteId]="relevantSiteId()"
+                    (itemSelected)="onNewItemSelected($event)"
+                  />
+                  @if (inlineItemsForSearch().length > 0) {
+                    <div class="inline-search-hint">
+                      <span class="hint-label">Временные позиции в операции:</span>
+                      @for (inline of inlineItemsForSearch(); track inline.clientKey) {
+                        <button class="inline-item-chip" (click)="onInlineSearchSelected(inline)">
+                          {{ inline.name }} ({{ inline.unitName }})
+                        </button>
+                      }
+                    </div>
+                  }
+                </div>
+                <button class="wh-btn wh-btn--secondary btn btn-tmc" title="Создать новую ТМЦ для операции" (click)="openInlineModal()">
+                  Создать ТМЦ
+                </button>
               </div>
-              <button class="wh-btn wh-btn--secondary btn btn-tmc" disabled title="Создание новой ТМЦ будет добавлено позже">
-                Создать ТМЦ
-              </button>
-            </div>
+            } @else {
+              <div class="form-row object-source-hint">
+                <div class="hint-card">
+                  <span class="hint-icon" aria-hidden="true">ⓘ</span>
+                  <span>Позиция зафиксирована за объектом выдачи. Дополнительные позиции добавлять нельзя — доступно только то, что уже назначено на «{{ localDraft().issueObjectName || 'объект' }}».</span>
+                </div>
+              </div>
+            }
 
           <!-- Lines table component -->
             <div class="form-row lines-section">
@@ -162,6 +206,7 @@ function nextLocalId(): string {
                 [warehouseSiteId]="relevantSiteId()"
                 [isBalanceRefreshing]="isBalanceRefreshing()"
                 [operationType]="localDraft().type"
+                [isObjectSourceFlow]="isObjectSourceFlow()"
                 (quantityChange)="onQuantityChange($event.localId, $event.quantity)"
                 (removeLine)="removeLine($event)"
               />
@@ -191,6 +236,14 @@ function nextLocalId(): string {
           </div>
         </div>
       </div>
+      @if (isInlineModalOpen()) {
+        <div class="wh-modal modal-container modal-container--inline">
+          <app-inline-item-create-modal
+            (create)="onInlineItemCreated($event)"
+            (cancel)="closeInlineModal()"
+          />
+        </div>
+      }
     </div>
   `,
   styles: [`
@@ -270,6 +323,23 @@ function nextLocalId(): string {
       flex-shrink: 0;
       box-sizing: border-box;
     }
+    .object-source-hint .hint-card {
+      display: flex;
+      gap: 8px;
+      align-items: flex-start;
+      padding: 10px 12px;
+      background: #EFF6FF;
+      border: 1px solid #BFDBFE;
+      border-radius: 8px;
+      color: #1E3A8A;
+      font-size: 12px;
+      line-height: 1.4;
+    }
+    .object-source-hint .hint-icon {
+      font-size: 14px;
+      color: #2563EB;
+      line-height: 1.2;
+    }
     .first-row {
       display: flex;
       gap: 12px;
@@ -311,6 +381,7 @@ function nextLocalId(): string {
       cursor: not-allowed;
     }
     .input:focus { outline: none; border-color: #3B82F6; box-shadow: 0 0 0 2px rgba(59,130,246,0.15); }
+    .effective-at-row { max-width: 280px; }
     textarea.input { height: auto; padding: 8px 10px; resize: vertical; }
     .comment-area { resize: vertical; }
 
@@ -442,6 +513,8 @@ export class OperationCreateModalComponent implements OnInit {
   cancelOperation = output<OperationDraftVm>();
   acceptOperation = output<OperationDraftVm>();
 
+  @ViewChild('itemSearch') private itemSearch?: ItemCacheSearchComponent;
+
   private readonly service = inject(OperationsService);
   private readonly authContextService = inject(AuthContextService);
   private readonly issueObjectsService = inject(IssueObjectsService);
@@ -449,12 +522,24 @@ export class OperationCreateModalComponent implements OnInit {
   readonly localDraft = signal<OperationDraftVm>({
     type: 'MOVE',
     status: 'draft',
+    effectiveAt: currentDateTimeLocal(),
     lines: [],
   });
 
   readonly isEdit = computed(() => !!this.localDraft().id);
+  readonly isLockedFromAssetRow = computed(() => !!this.localDraft().lockedFromAssetRow);
+  readonly hasPrefilledAssetLine = computed(() => !!this.localDraft().prefilledAssetLine);
   readonly isMove = computed(() => this.localDraft().type === 'MOVE');
-  readonly lines = computed(() => this.localDraft().lines);
+  readonly isObjectSourceFlow = computed(() => {
+    const d = this.localDraft();
+    if (d.type === 'ISSUE_RETURN') return true;
+    if (d.type === 'WRITE_OFF' && d.writeOffSource === 'object') return true;
+    return false;
+  });
+  readonly lines = computed(() => {
+    const draftLines = this.localDraft().lines;
+    return draftLines.map(l => ({ ...l, error: this.lineAvailableQtyError(l) }));
+  });
 
   readonly savedOperationId = signal<string | null>(null);
 
@@ -508,19 +593,30 @@ export class OperationCreateModalComponent implements OnInit {
   readonly saveDisabledReason = computed(() => {
     const d = this.localDraft();
     if (d.lines.length === 0) return 'Добавьте минимум одну позицию';
-    if (d.lines.some(l => !l.itemId)) return 'Укажите номенклатуру для всех позиций';
+    if (d.lines.some(l => !l.itemId && !l.inlineItem)) return 'Укажите номенклатуру для всех позиций';
+    if (d.lines.some(l => l.inlineItem && (!l.inlineItem.name || !l.inlineItem.unitId))) return 'Укажите название и единицу измерения для всех временных позиций';
     if (d.lines.some(l => l.quantity == null || l.quantity <= 0)) return 'Укажите количество для всех позиций';
     if (d.type === 'MOVE') {
       if (!d.sourceSiteId) return 'Укажите склад-источник';
       if (!d.destinationSiteId) return 'Укажите склад-получатель';
     } else if (d.type === 'RECEIVE') {
       if (!d.destinationSiteId) return 'Укажите склад';
+    } else if (this.isObjectSourceFlow()) {
+      // ISSUE_RETURN and object-source WRITE_OFF still require a target
+      // warehouse site (site_id on the server) — the object is the logical
+      // source for register math, but the physical return / write-off must
+      // land on a real warehouse.
+      if (!d.sourceSiteId) return 'Укажите склад-получатель';
     } else {
       if (!d.sourceSiteId) return 'Укажите склад';
     }
     if (d.type === 'WRITE_OFF' && !d.writeOffSource) return 'Укажите источник списания';
     if (d.type === 'WRITE_OFF' && d.writeOffSource === 'object' && !d.issueObjectId) return 'Укажите объект списания';
     if ((d.type === 'ISSUE' || d.type === 'ISSUE_RETURN') && !d.issueObjectId) return 'Укажите объект выдачи';
+    for (const line of d.lines) {
+      const lineErr = this.lineAvailableQtyError(line);
+      if (lineErr) return lineErr;
+    }
     return null;
   });
 
@@ -537,16 +633,15 @@ export class OperationCreateModalComponent implements OnInit {
   readonly canCancelOperation = computed(() => {
     const d = this.localDraft();
     if (!d.id) return false;
-    if (d.status === 'cancelled' || d.status === 'rejected') return false;
+    if (d.status === 'cancelled') return false;
 
     const auth = this.authContextService.authContext();
     const role = auth?.role ?? 'observer';
     if (role === 'observer') return false;
 
-    const isBeforeSubmit = d.status === 'draft' || d.status === 'created' || d.status === 'pending';
-    if (role === 'root') return isBeforeSubmit || d.status === 'submitted';
-    if (role === 'chief_storekeeper') return isBeforeSubmit;
-    if (role === 'storekeeper') return isBeforeSubmit && !!d.createdByUserId && d.createdByUserId === auth?.userId;
+    if (role === 'root') return d.status === 'draft' || d.status === 'submitted';
+    if (role === 'chief_storekeeper') return d.status === 'draft';
+    if (role === 'storekeeper') return d.status === 'draft' && !!d.createdByUserId && d.createdByUserId === auth?.userId;
     return false;
   });
 
@@ -554,8 +649,82 @@ export class OperationCreateModalComponent implements OnInit {
     const d = this.localDraft();
     if (!d.id) return false;
     if (d.type !== 'MOVE' && d.type !== 'RECEIVE') return false;
-    return d.status === 'submitted' || d.status === 'pending';
+    return d.status === 'submitted' && (d.acceptanceState === 'pending' || d.acceptanceState === 'in_progress');
   });
+
+  readonly isInlineModalOpen = signal(false);
+
+  readonly inlineItemsForSearch = computed(() => {
+    const seen = new Set<string>();
+    const result: OperationInlineItemDraftVm[] = [];
+    for (const line of this.localDraft().lines) {
+      if (line.inlineItem && !seen.has(line.inlineItem.clientKey)) {
+        seen.add(line.inlineItem.clientKey);
+        result.push(line.inlineItem);
+      }
+    }
+    return result;
+  });
+
+  openInlineModal(): void {
+    this.isInlineModalOpen.set(true);
+  }
+
+  closeInlineModal(): void {
+    this.isInlineModalOpen.set(false);
+  }
+
+  onInlineItemCreated(inlineItem: OperationInlineItemDraftVm): void {
+    this.localDraft.update(d => ({
+      ...d,
+      lines: [
+        ...d.lines,
+        {
+          localId: nextLocalId(),
+          itemId: null,
+          itemName: inlineItem.name,
+          categoryName: inlineItem.categoryName || undefined,
+          sku: inlineItem.sku,
+          unitId: inlineItem.unitId,
+          unitName: inlineItem.unitName,
+          quantity: null,
+          availableQuantity: null,
+          sourceSiteQuantity: null,
+          isTemporary: false,
+          fromBalances: false,
+          inlineItem,
+        },
+      ],
+    }));
+    this.closeInlineModal();
+  }
+
+  onInlineSearchSelected(inlineItem: OperationInlineItemDraftVm): void {
+    this.localDraft.update(d => ({
+      ...d,
+      lines: [
+        ...d.lines,
+        {
+          localId: nextLocalId(),
+          itemId: null,
+          itemName: inlineItem.name,
+          categoryName: inlineItem.categoryName || undefined,
+          sku: inlineItem.sku,
+          unitId: inlineItem.unitId,
+          unitName: inlineItem.unitName,
+          quantity: null,
+          availableQuantity: null,
+          sourceSiteQuantity: null,
+          isTemporary: false,
+          fromBalances: false,
+          inlineItem: {
+            ...inlineItem,
+            // reuse same clientKey so backend groups lines by client_key
+          },
+        },
+      ],
+    }));
+  }
 
   private preferredSiteId(): string | null {
     const authSiteId = this.authContextService.authContext()?.defaultSiteId;
@@ -598,11 +767,32 @@ export class OperationCreateModalComponent implements OnInit {
     };
   }
 
+  private lineAvailableQtyError(line: OperationLineDraftVm): string | null {
+    if (line.quantity == null || line.quantity <= 0) {
+      return 'Количество должно быть больше 0';
+    }
+    const d = this.localDraft();
+    const isObjectFlow = d.type === 'ISSUE_RETURN'
+      || (d.type === 'WRITE_OFF' && d.writeOffSource === 'object');
+    if (isObjectFlow) {
+      // Object-source flows must use only the qty that was prefilled from the
+      // assigned-asset row. If availableQuantity is missing or non-positive,
+      // there is nothing to return / write off from this object.
+      if (line.availableQuantity == null || line.availableQuantity <= 0) {
+        return 'На объекте нет назначенного имущества для этой операции';
+      }
+      if (line.quantity > line.availableQuantity) {
+        return `Количество не может превышать имеющееся на объекте (${line.availableQuantity})`;
+      }
+    }
+    return null;
+  }
+
   constructor() {
     effect(() => {
       const d = this.draft();
       if (d) {
-        this.localDraft.set(this.normalizeDraftForType(d.type, { ...d, lines: [...d.lines] }));
+        this.localDraft.set(this.normalizeDraftForType(d.type, { ...d, effectiveAt: d.effectiveAt ?? currentDateTimeLocal(), lines: [...d.lines] }));
         // Track saved operation ID and snapshot
         this.savedOperationId.set(d.id ?? null);
       }
@@ -610,6 +800,16 @@ export class OperationCreateModalComponent implements OnInit {
 
     effect(() => {
       const siteId = this.relevantSiteId();
+      const isObjectSourceFlow = this.isObjectSourceFlow();
+      const hasPrefilledAssetLine = this.hasPrefilledAssetLine();
+      // For object-source flows (ISSUE_RETURN, WRITE_OFF from object), the
+      // availableQuantity is the qty assigned to the issue object, not the
+      // warehouse balance. Skip the warehouse balance refresh so prefilled
+      // object qty is not overwritten.
+      if (isObjectSourceFlow || hasPrefilledAssetLine) {
+        this.isBalanceRefreshing.set(false);
+        return;
+      }
       if (siteId && siteId !== 'undefined' && siteId !== 'null') {
         this.isBalanceRefreshing.set(true);
         this.service.loadBalances(siteId).then(() => {
@@ -622,6 +822,10 @@ export class OperationCreateModalComponent implements OnInit {
         // Clear balances when no site selected
         this.service.balances.set([]);
         this.isBalanceRefreshing.set(false);
+        const hasNonZeroStockHints = this.localDraft().lines.some(l => (l.availableQuantity ?? 0) !== 0 || (l.sourceSiteQuantity ?? 0) !== 0);
+        if (!hasNonZeroStockHints) {
+          return;
+        }
         this.localDraft.update(state => ({
           ...state,
           lines: state.lines.map(l => ({
@@ -639,6 +843,9 @@ export class OperationCreateModalComponent implements OnInit {
 
   private updateLineStockHint(line: OperationLineDraftVm): void {
     if (!line.itemId) return;
+    // Do not overwrite object-assigned qty with warehouse balance for
+    // object-source flows or prefilled-from-object lines.
+    if (this.isObjectSourceFlow() || this.hasPrefilledAssetLine()) return;
     const siteId = this.relevantSiteId() || undefined;
     const qty = this.service.getBalanceForItem(line.itemId, siteId);
     this.localDraft.update(state => ({
@@ -650,6 +857,8 @@ export class OperationCreateModalComponent implements OnInit {
   }
 
   private refreshSourceQuantities(): void {
+    // Do not overwrite object-assigned qty for object-source flows.
+    if (this.isObjectSourceFlow() || this.hasPrefilledAssetLine()) return;
     const siteId = this.relevantSiteId() || undefined;
     const balances = this.service.balances();
     this.localDraft.update(state => ({
@@ -677,6 +886,9 @@ export class OperationCreateModalComponent implements OnInit {
 
   onTypeModelChange(value: OperationType | null): void {
     if (!value) return;
+    // Locked-from-row drafts must keep the type that was determined by the
+    // assigned-asset row; otherwise the line/qty cap becomes meaningless.
+    if (this.isLockedFromAssetRow()) return;
     this.localDraft.update(d => this.normalizeDraftForType(value, d));
   }
 
@@ -731,11 +943,17 @@ export class OperationCreateModalComponent implements OnInit {
   }
 
   clearIssueObject(): void {
+    // Locked-from-row drafts must keep the issue object that the row determined.
+    if (this.isLockedFromAssetRow()) return;
     this.localDraft.update(d => ({ ...d, issueObjectId: null, issueObjectName: null }));
   }
 
   objectTypeLabel(type: string): string {
     return ISSUE_OBJECT_TYPE_LABELS[type as IssueObjectType] || type;
+  }
+
+  onEffectiveAtChange(value: string): void {
+    this.localDraft.update(d => ({ ...d, effectiveAt: value || null }));
   }
 
   onCommentChange(value: string): void {
@@ -790,7 +1008,10 @@ export class OperationCreateModalComponent implements OnInit {
   }
 
   onNewItemSelected(item: Item): void {
-    const availableQuantity = this.service.getBalanceForItem(item.id, this.relevantSiteId() || undefined);
+    const isObjectFlow = this.isObjectSourceFlow() || this.localDraft().prefilledAssetLine === true;
+    const availableQuantity = isObjectFlow
+      ? null
+      : this.service.getBalanceForItem(item.id, this.relevantSiteId() || undefined);
     this.localDraft.update(d => ({
       ...d,
       lines: [
@@ -811,6 +1032,7 @@ export class OperationCreateModalComponent implements OnInit {
         },
       ],
     }));
+    this.itemSearch?.reset();
   }
 
   editItemLine(localId: string): void {

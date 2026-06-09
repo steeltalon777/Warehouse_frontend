@@ -5,6 +5,7 @@ import { Router } from '@angular/router';
 import { OperationsService } from '../../../../core/services/operations.service';
 import { AuthContextService } from '../../../../core/services/auth-context.service';
 import { CatalogSearchService } from '../../../../core/services/catalog-search.service';
+import { DocumentsService } from '../../../../core/services/documents.service';
 import { snapshotDraft } from '../../components/operation-create-modal/operation-draft-mappers';
 import {
   OperationsFilterVm,
@@ -23,6 +24,16 @@ import { OperationsTableComponent } from '../../components/operations-table/oper
 import { OperationCreateModalComponent } from '../../components/operation-create-modal/operation-create-modal.component';
 import { OperationConfirmModalComponent } from '../../components/operation-confirm-modal/operation-confirm-modal.component';
 import { firstValueFrom } from 'rxjs';
+
+function currentDateTimeLocal(): string {
+  const now = new Date();
+  const pad = (num: number) => String(num).padStart(2, '0');
+  return [
+    now.getFullYear(),
+    pad(now.getMonth() + 1),
+    pad(now.getDate()),
+  ].join('-') + `T${pad(now.getHours())}:${pad(now.getMinutes())}`;
+}
 
 @Component({
   selector: 'app-operations-page',
@@ -84,6 +95,7 @@ import { firstValueFrom } from 'rxjs';
             [pageSize]="pageSize()"
             [page]="page()"
             [totalCount]="totalCount()"
+            [invoiceLoadingOperationId]="invoiceLoadingOperationId()"
             (sort)="onSort($event)"
             (pageChange)="onPageChange($event)"
             (pageSizeChange)="onPageSizeChange($event)"
@@ -253,6 +265,7 @@ export class OperationsPageComponent implements OnInit, OnDestroy {
   readonly service = inject(OperationsService);
   private authContextService = inject(AuthContextService);
   private catalogSearchService = inject(CatalogSearchService);
+  private documentsService = inject(DocumentsService);
   private router = inject(Router);
   private searchTimer: ReturnType<typeof setTimeout> | null = null;
   private loadSequence = 0;
@@ -274,6 +287,7 @@ export class OperationsPageComponent implements OnInit, OnDestroy {
     search: '',
     type: null,
     status: null,
+    acceptanceState: null,
     siteId: null,
     createdAfter: null,
     createdBefore: null,
@@ -294,6 +308,7 @@ export class OperationsPageComponent implements OnInit, OnDestroy {
   readonly showConfirmModal = signal<boolean>(false);
   readonly editingDraft = signal<OperationDraftVm | null>(null);
   readonly confirmingOperation = signal<OperationListRowVm | null>(null);
+  readonly invoiceLoadingOperationId = signal<string | null>(null);
 
   // ─── Derived data ────────────────────────────────────────────
   readonly isLoading = this.service.isLoading;
@@ -380,6 +395,7 @@ export class OperationsPageComponent implements OnInit, OnDestroy {
     const filtersWithStatus: OperationsFilterVm = {
       ...f,
       status: tab?.status ?? null,
+      acceptanceState: tab?.acceptanceState ?? null,
       itemIds,
       page: f.page,
     };
@@ -392,6 +408,7 @@ export class OperationsPageComponent implements OnInit, OnDestroy {
     this.editingDraft.set({
       type: 'MOVE',
       status: 'draft',
+      effectiveAt: currentDateTimeLocal(),
       lines: [],
     });
     this.showCreateModal.set(true);
@@ -413,6 +430,7 @@ export class OperationsPageComponent implements OnInit, OnDestroy {
       search: '',
       type: null,
       status: null,
+      acceptanceState: null,
       siteId: null,
       createdAfter: null,
       createdBefore: null,
@@ -490,9 +508,39 @@ export class OperationsPageComponent implements OnInit, OnDestroy {
     }
   }
 
-  onRowInvoice(row: OperationListRowVm): void {
-    // Invoice button — will be implemented when PDF endpoint is ready
-    // For now, the button is disabled with tooltip
+  async onRowInvoice(row: OperationListRowVm): Promise<void> {
+    if (!row.canInvoice || this.invoiceLoadingOperationId()) {
+      return;
+    }
+
+    const pendingWindow = window.open('', '_blank');
+    this.invoiceLoadingOperationId.set(row.id);
+    this.service.error.set(null);
+
+    try {
+      const result = await firstValueFrom(this.documentsService.openOperationWaybill(row.id));
+      if (!result?.pdf_url) {
+        throw new Error('Django BFF не вернул ссылку на PDF накладной.');
+      }
+
+      if (pendingWindow) {
+        pendingWindow.location.href = result.pdf_url;
+        pendingWindow.focus();
+      } else {
+        window.location.assign(result.pdf_url);
+      }
+    } catch (err: any) {
+      if (pendingWindow && !pendingWindow.closed) {
+        pendingWindow.close();
+      }
+      const message = err?.message || 'Не удалось сформировать или открыть накладную.';
+      this.service.error.set(message);
+      window.alert(message);
+    } finally {
+      if (this.invoiceLoadingOperationId() === row.id) {
+        this.invoiceLoadingOperationId.set(null);
+      }
+    }
   }
 
   onRowAccept(row: OperationListRowVm): void {
@@ -531,7 +579,7 @@ export class OperationsPageComponent implements OnInit, OnDestroy {
       linesCount: dto.lines_count ?? (dto.lines?.length ?? 0),
       positionCount: dto.lines_count ?? (dto.lines?.length ?? 0),
       acceptanceStateLabel: dto.acceptance_state_label || '',
-      canInvoice: dto.status === 'submitted' || dto.status === 'pending',
+      canInvoice: dto.status === 'draft' || dto.status === 'submitted',
       canOpen: true,
       canEdit: false,
       canSubmit: false,
@@ -629,10 +677,7 @@ export class OperationsPageComponent implements OnInit, OnDestroy {
         result = await this.service.createOperation(draft);
       }
       if (result) {
-        const savedDraft = this.restoreDraftDisplayFields(
-          this.service.mapDtoToDraftVm(result),
-          draft,
-        );
+        const savedDraft = this.mergeDraftAfterSuccessfulSave(this.service.mapDtoToDraftVm(result), draft);
         savedDraft.lastSavedSnapshot = snapshotDraft(savedDraft);
         this.editingDraft.set(savedDraft);
       }
@@ -657,28 +702,45 @@ export class OperationsPageComponent implements OnInit, OnDestroy {
     }
   }
 
-  private restoreDraftDisplayFields(savedDraft: OperationDraftVm, previousDraft: OperationDraftVm): OperationDraftVm {
-    const previousByItemId = new Map(
-      previousDraft.lines
+  private mergeDraftAfterSuccessfulSave(serverDraft: OperationDraftVm, currentDraft: OperationDraftVm): OperationDraftVm {
+    const serverByItemId = new Map(
+      serverDraft.lines
         .filter(line => !!line.itemId)
         .map(line => [String(line.itemId), line]),
     );
 
     return {
-      ...savedDraft,
-      lines: savedDraft.lines.map((line, index) => {
-        const previous = (line.itemId ? previousByItemId.get(String(line.itemId)) : null)
-          ?? previousDraft.lines[index]
+      ...currentDraft,
+      id: serverDraft.id ?? currentDraft.id,
+      status: serverDraft.status ?? currentDraft.status,
+      createdByUserId: serverDraft.createdByUserId ?? currentDraft.createdByUserId ?? null,
+      acceptanceState: serverDraft.acceptanceState ?? currentDraft.acceptanceState ?? null,
+      effectiveAt: serverDraft.effectiveAt ?? currentDraft.effectiveAt ?? null,
+      lines: currentDraft.lines.map((line, index) => {
+        const serverLine = serverDraft.lines[index]
+          ?? (line.itemId ? serverByItemId.get(String(line.itemId)) : null)
           ?? null;
-        if (!previous) return line;
+
+        if (!serverLine) {
+          return { ...line, lineNumber: line.lineNumber ?? index + 1 };
+        }
 
         return {
           ...line,
-          itemName: line.itemName || previous.itemName,
-          categoryName: line.categoryName || previous.categoryName,
-          sku: line.sku ?? previous.sku,
-          unitId: line.unitId ?? previous.unitId,
-          unitName: line.unitName && line.unitName !== 'шт' ? line.unitName : previous.unitName,
+          itemId: line.itemId ?? serverLine.itemId,
+          itemName: line.itemName || serverLine.itemName,
+          categoryName: line.categoryName || serverLine.categoryName,
+          sku: line.sku ?? serverLine.sku,
+          unitId: line.unitId ?? serverLine.unitId,
+          unitName: line.unitName && line.unitName !== 'шт' ? line.unitName : serverLine.unitName,
+          quantity: line.quantity ?? serverLine.quantity,
+          availableQuantity: line.availableQuantity ?? serverLine.availableQuantity,
+          sourceSiteQuantity: line.sourceSiteQuantity ?? serverLine.sourceSiteQuantity,
+          destinationSiteQuantity: line.destinationSiteQuantity ?? serverLine.destinationSiteQuantity,
+          isTemporary: line.isTemporary || serverLine.isTemporary,
+          fromBalances: line.fromBalances || serverLine.fromBalances,
+          inlineItem: line.inlineItem ?? serverLine.inlineItem ?? null,
+          lineNumber: serverLine.lineNumber ?? line.lineNumber ?? index + 1,
         };
       }),
     };
