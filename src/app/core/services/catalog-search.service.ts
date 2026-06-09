@@ -30,8 +30,21 @@ export interface CatalogSearchCategory {
   source: 'cache' | 'remote';
 }
 
+export interface CatalogSearchUnit {
+  id: string;
+  name: string;
+  symbol: string;
+  is_active: boolean;
+}
+
 export interface CatalogSearchResults<T> {
   results: T[];
+}
+
+export interface CatalogUnitsResponse {
+  units: CatalogSearchUnit[];
+  server_time?: string;
+  next_updated_after?: string;
 }
 
 @Injectable({
@@ -47,18 +60,25 @@ export class CatalogSearchService implements OnDestroy {
   // State signals
   readonly itemSearchQuery = signal<string>('');
   readonly categorySearchQuery = signal<string>('');
+  readonly unitSearchQuery = signal<string>('');
 
   readonly isSearchingItems = signal<boolean>(false);
   readonly isSearchingCategories = signal<boolean>(false);
+  readonly isSearchingUnits = signal<boolean>(false);
 
   readonly itemSearchError = signal<string | null>(null);
   readonly categorySearchError = signal<string | null>(null);
+  readonly unitSearchError = signal<string | null>(null);
 
   readonly itemResults = signal<CatalogSearchItem[]>([]);
   readonly categoryResults = signal<CatalogSearchCategory[]>([]);
+  readonly unitResults = signal<CatalogSearchUnit[]>([]);
+
+  // Unit cache for client-side filtering and reuse across components
+  private readonly unitCache = signal<CatalogSearchUnit[]>([]);
 
   // Loading state computed
-  readonly isLoading = computed(() => this.isSearchingItems() || this.isSearchingCategories());
+  readonly isLoading = computed(() => this.isSearchingItems() || this.isSearchingCategories() || this.isSearchingUnits());
 
   constructor(private bff: BffApiService) {
     this.initItemSearch();
@@ -171,6 +191,81 @@ export class CatalogSearchService implements OnDestroy {
     this.categorySearchError.set(null);
   }
 
+  // ─── Unit Search ────────────────────────────────────────────────
+
+  loadUnits(limit: number = 1000): Observable<CatalogSearchUnit[]> {
+    this.isSearchingUnits.set(true);
+    this.unitSearchError.set(null);
+    return this.bff.getData<CatalogUnitsResponse>('/catalog/units', { limit }).pipe(
+      map(response => {
+        const rawUnits = response?.units || [];
+        const mapped = rawUnits.map(u => ({
+          id: String(u.id),
+          name: u.name,
+          symbol: u.symbol,
+          is_active: u.is_active ?? true,
+        } as CatalogSearchUnit));
+        this.unitCache.set(mapped);
+        this.isSearchingUnits.set(false);
+        return mapped;
+      }),
+      catchError(err => {
+        console.error('Unit load error:', err);
+        this.unitSearchError.set(err.message || 'Ошибка загрузки единиц измерения');
+        this.isSearchingUnits.set(false);
+        return of([]);
+      })
+    );
+  }
+
+  searchUnits(query: string, limit: number = this.defaultLimit): void {
+    this.unitSearchQuery.set(query);
+
+    if (!query || query.trim().length < 1) {
+      this.unitResults.set([]);
+      this.isSearchingUnits.set(false);
+      return;
+    }
+
+    const q = query.trim().toLowerCase();
+    const filterUnits = (units: CatalogSearchUnit[]) => {
+      return units
+        .filter(u => u.is_active)
+        .filter(u => u.name.toLowerCase().includes(q) || u.symbol.toLowerCase().includes(q))
+        .slice(0, limit);
+    };
+
+    if (this.unitCache().length > 0) {
+      this.isSearchingUnits.set(true);
+      this.unitSearchError.set(null);
+      this.unitResults.set(filterUnits(this.unitCache()));
+      this.isSearchingUnits.set(false);
+      return;
+    }
+
+    this.isSearchingUnits.set(true);
+    this.unitSearchError.set(null);
+    this.loadUnits(1000).pipe(
+      takeUntil(this.destroy$),
+      catchError(err => {
+        console.error('Unit search error:', err);
+        this.unitSearchError.set(err.message || 'Ошибка поиска единиц измерения');
+        this.unitResults.set([]);
+        this.isSearchingUnits.set(false);
+        return of([]);
+      })
+    ).subscribe(units => {
+      this.unitResults.set(filterUnits(units));
+      this.isSearchingUnits.set(false);
+    });
+  }
+
+  clearUnitSearch(): void {
+    this.unitSearchQuery.set('');
+    this.unitResults.set([]);
+    this.unitSearchError.set(null);
+  }
+
   // ─── Direct Search Methods (for one-off calls) ─────────────────
 
   searchItemsOnce(query: string, limit: number = this.defaultLimit, sourceSiteId?: string, includeBalance?: boolean): Observable<CatalogSearchItem[]> {
@@ -197,6 +292,27 @@ export class CatalogSearchService implements OnDestroy {
       { q: query, limit }
     ).pipe(
       map(response => response.results || [])
+    );
+  }
+
+  searchUnitsOnce(query: string, limit: number = this.defaultLimit): Observable<CatalogSearchUnit[]> {
+    if (!query || query.trim().length < 1) {
+      return of([]);
+    }
+    const q = query.trim().toLowerCase();
+    const filterUnits = (units: CatalogSearchUnit[]) => {
+      return units
+        .filter(u => u.is_active)
+        .filter(u => u.name.toLowerCase().includes(q) || u.symbol.toLowerCase().includes(q))
+        .slice(0, limit);
+    };
+
+    if (this.unitCache().length > 0) {
+      return of(filterUnits(this.unitCache()));
+    }
+
+    return this.loadUnits(1000).pipe(
+      map(units => filterUnits(units))
     );
   }
 }
