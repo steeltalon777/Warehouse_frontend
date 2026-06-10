@@ -11,7 +11,7 @@ import {
   standalone: true,
   imports: [CommonModule],
   template: `
-    <div class="wh-modal-overlay modal-overlay" (click)="onOverlayClick($event)">
+    <div class="wh-modal-overlay modal-overlay" data-testid="operation-confirm-modal" (click)="onOverlayClick($event)">
       <div class="wh-modal modal-container">
         <div class="wh-modal__header modal-header">
           <h2>Подтверждение операции</h2>
@@ -60,8 +60,8 @@ import {
         </div>
 
         <div class="wh-modal__footer modal-footer">
-          <button class="wh-btn wh-btn--secondary btn btn-secondary" (click)="cancel.emit()">Отмена</button>
-          <button class="wh-btn wh-btn--success btn btn-submit" [disabled]="isSubmitting()" (click)="confirm.emit()">Подтвердить</button>
+          <button class="wh-btn wh-btn--secondary btn btn-secondary" data-testid="operation-confirm-cancel-button" (click)="cancel.emit()">Отмена</button>
+          <button class="wh-btn wh-btn--success btn btn-submit" data-testid="operation-confirm-submit-button" [disabled]="isSubmitting()" (click)="confirm.emit()">Подтвердить</button>
         </div>
       </div>
     </div>

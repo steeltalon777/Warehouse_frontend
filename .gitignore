@@ -51,4 +51,9 @@ repo_map_*.json
 
 # Local AI tooling
 .opencode/
-.playwright-mcp/
+  .playwright-mcp/
+
+/playwright-report
+/test-results
+/.playwright
+/blob-report

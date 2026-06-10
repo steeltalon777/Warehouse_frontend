@@ -19,6 +19,7 @@ import {
           <input
             type="text"
             class="wh-form-input input"
+            data-testid="operations-search-input"
             placeholder="Поиск: номер, участок, создатель, ТМЦ, SKU, #хештег..."
             [ngModel]="filters().search"
             (ngModelChange)="onSearchChange($event)"
@@ -28,6 +29,7 @@ import {
         <div class="filter-group">
           <select
             class="wh-form-input input"
+            data-testid="operations-type-filter"
             [ngModel]="filters().type"
             (ngModelChange)="onTypeChange($event)"
           >
@@ -41,6 +43,7 @@ import {
         <div class="filter-group">
           <select
             class="wh-form-input input"
+            data-testid="operations-site-filter"
             [ngModel]="filters().siteId"
             (ngModelChange)="onSiteChange($event)"
           >
@@ -55,6 +58,7 @@ import {
           <input
             type="date"
             class="wh-form-input input"
+            data-testid="operations-date-from"
             [ngModel]="filters().createdAfter"
             (ngModelChange)="onDateAfterChange($event)"
           />
@@ -62,6 +66,7 @@ import {
           <input
             type="date"
             class="wh-form-input input"
+            data-testid="operations-date-to"
             [ngModel]="filters().createdBefore"
             (ngModelChange)="onDateBeforeChange($event)"
           />
@@ -71,6 +76,7 @@ import {
           <label class="checkbox-label">
             <input
               type="checkbox"
+              data-testid="operations-only-mine-checkbox"
               [ngModel]="filters().onlyMine"
               (ngModelChange)="onOnlyMineChange($event)"
             />
@@ -78,7 +84,7 @@ import {
           </label>
         </div>
 
-        <button class="wh-btn wh-btn--secondary btn btn-reset" (click)="onReset()">Сбросить</button>
+        <button class="wh-btn wh-btn--secondary btn btn-reset" data-testid="operations-reset-filters-button" (click)="onReset()">Сбросить</button>
       </div>
     </div>
   `,

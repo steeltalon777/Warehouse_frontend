@@ -11,7 +11,7 @@ import {
   imports: [CommonModule, MinPipe],
   template: `
       <div class="table-wrapper">
-        <table class="wh-table data-table">
+        <table class="wh-table data-table" data-testid="operations-table">
         <thead class="sticky-header">
           <tr>
             <th class="col-number" (click)="sort.emit('number')">
@@ -61,53 +61,60 @@ import {
         </thead>
         <tbody>
           @for (row of rows(); track row.id) {
-            <tr class="row">
-              <td class="col-number">
+            <tr class="row" data-testid="operation-row">
+              <td class="col-number" data-testid="operation-number-link">
                 @if (row.displayNumber || row.number) {
                   <button class="wh-link number-link" (click)="numberClick.emit(row)" title="Открыть операцию">
                     {{ row.displayNumber || row.number }}
                   </button>
                 }
               </td>
-              <td class="col-type">
+              <td class="col-type" data-testid="operation-type-cell">
                 <span class="badge type-badge wh-badge {{ typeClass(row.type) }}">
                   {{ row.typeLabel }}
                 </span>
               </td>
-              <td class="col-status">
+              <td class="col-status" data-testid="operation-status-cell">
                 <div class="status-stack">
                   @for (line of row.statusLines; track $index) {
                     <span class="status-line {{ statusClass(row.status) }}">{{ line }}</span>
                   }
                 </div>
               </td>
-              <td class="col-direction" [title]="row.directionLabel">{{ row.directionLabel }}</td>
-              <td class="col-positions">{{ row.positionCount }}</td>
-              <td class="col-author" [title]="row.createdByUserId">{{ row.createdByLabel }}</td>
-              <td class="col-date">{{ row.createdAt | date:'dd.MM.yyyy HH:mm' }}</td>
+              <td class="col-direction" data-testid="operation-direction-cell" [title]="row.directionLabel">{{ row.directionLabel }}</td>
+              <td class="col-positions" data-testid="operation-items-count-cell">{{ row.positionCount }}</td>
+              <td class="col-author" data-testid="operation-author-cell" [title]="row.createdByUserId">{{ row.createdByLabel }}</td>
+              <td class="col-date" data-testid="operation-date-cell">{{ row.createdAt | date:'dd.MM.yyyy HH:mm' }}</td>
               <td class="col-actions" (click)="$event.stopPropagation()">
                 <div class="action-stack">
                   @if (row.canInvoice) {
-                    <button class="wh-btn-icon btn-icon" title="Накладная" aria-label="Накладная" (click)="rowInvoice.emit(row)">
+                    <button
+                      class="wh-btn-icon btn-icon"
+                      data-testid="operation-action-pdf"
+                      [disabled]="invoiceLoadingOperationId() === row.id"
+                      [title]="invoiceLoadingOperationId() === row.id ? 'Формируется накладная...' : 'Накладная'"
+                      [attr.aria-label]="invoiceLoadingOperationId() === row.id ? 'Накладная (формируется)' : 'Накладная'"
+                      (click)="rowInvoice.emit(row)"
+                    >
                       <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="6 9 6 2 18 2 18 9"/><path d="M6 18H4a2 2 0 01-2-2v-5a2 2 0 012-2h16a2 2 0 012 2v5a2 2 0 01-2 2h-2"/><rect x="6" y="14" width="12" height="8"/></svg>
                     </button>
                   } @else {
-                    <button class="wh-btn-icon btn-icon" disabled title="Накладная будет реализована отдельно" aria-label="Накладная (недоступно)">
+                    <button class="wh-btn-icon btn-icon" disabled title="Накладная доступна для черновиков и проведённых операций" aria-label="Накладная (недоступно)">
                       <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="6 9 6 2 18 2 18 9"/><path d="M6 18H4a2 2 0 01-2-2v-5a2 2 0 012-2h16a2 2 0 012 2v5a2 2 0 01-2 2h-2"/><rect x="6" y="14" width="12" height="8"/></svg>
                     </button>
                   }
                   @if (row.canEdit) {
-                    <button class="wh-btn-icon btn-icon" title="Редактировать" aria-label="Редактировать операцию" (click)="rowEdit.emit(row)">
+                    <button class="wh-btn-icon btn-icon" data-testid="operation-action-edit" title="Редактировать" aria-label="Редактировать операцию" (click)="rowEdit.emit(row)">
                       <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M11 4H4a2 2 0 00-2 2v14a2 2 0 002 2h14a2 2 0 002-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 013 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>
                     </button>
                   }
                   @if (row.canSubmit) {
-                    <button class="wh-btn-icon wh-btn-icon--success btn-icon success" title="Подтвердить" aria-label="Подтвердить операцию" (click)="rowSubmit.emit(row)">
+                    <button class="wh-btn-icon wh-btn-icon--success btn-icon success" data-testid="operation-action-submit" title="Подтвердить" aria-label="Подтвердить операцию" (click)="rowSubmit.emit(row)">
                       <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="20 6 9 17 4 12"/></svg>
                     </button>
                   }
                   @if (row.canCancel) {
-                    <button class="wh-btn-icon wh-btn-icon--danger btn-icon danger" title="Отменить" aria-label="Отменить операцию" (click)="rowCancel.emit(row)">
+                    <button class="wh-btn-icon wh-btn-icon--danger btn-icon danger" data-testid="operation-action-cancel" title="Отменить" aria-label="Отменить операцию" (click)="rowCancel.emit(row)">
                       <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
                     </button>
                   }
@@ -117,7 +124,7 @@ import {
                     </button>
                   }
                   @if (row.canDelete) {
-                    <button class="wh-btn-icon wh-btn-icon--danger btn-icon" title="Удалить" aria-label="Удалить операцию" (click)="rowDelete.emit(row)">
+                    <button class="wh-btn-icon wh-btn-icon--danger btn-icon" data-testid="operation-action-delete" title="Удалить" aria-label="Удалить операцию" (click)="rowDelete.emit(row)">
                       <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 01-2 2H7a2 2 0 01-2-2V6m3 0V4a2 2 0 012-2h4a2 2 0 012 2v2"/></svg>
                     </button>
                   }
@@ -126,7 +133,7 @@ import {
             </tr>
           } @empty {
             <tr>
-              <td colspan="8" class="empty-state">Операции не найдены</td>
+              <td colspan="8" class="empty-state" data-testid="operations-empty-state">Операции не найдены</td>
             </tr>
           }
         </tbody>
@@ -134,10 +141,10 @@ import {
 
       <!-- Pagination -->
       @if (totalCount() > 0) {
-        <div class="pagination-bar">
+        <div class="pagination-bar" data-testid="operations-pagination">
           <div class="page-size">
             <span>На странице:</span>
-            <select [value]="pageSize()" (change)="onPageSizeChange($event)">
+            <select [value]="pageSize()" data-testid="operations-page-size-select" (change)="onPageSizeChange($event)">
               <option [value]="10">10</option>
               <option [value]="20">20</option>
               <option [value]="50">50</option>
@@ -315,6 +322,7 @@ export class OperationsTableComponent {
   pageSize = input.required<number>();
   page = input.required<number>();
   totalCount = input.required<number>();
+  invoiceLoadingOperationId = input<string | null>(null);
 
   sort = output<string>();
   pageChange = output<number>();

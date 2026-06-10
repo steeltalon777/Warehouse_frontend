@@ -8,3 +8,8 @@ dist
 e2e
 docs
 *.md
+playwright-report
+test-results
+blob-report
+.playwright
+playwright.config.*

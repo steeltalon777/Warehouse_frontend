@@ -7,25 +7,15 @@
  * 3. Save/confirm button gating
  * 4. Balance display
  *
- * Run: npx playwright test e2e/operations-create-modal.spec.ts
+ * Run: npx playwright test e2e/operations/operations-create-modal.spec.ts
  * Requires: docker stand running with test_spa_user/user logged out.
  */
 import { test, expect, Page } from '@playwright/test';
-
-const BASE_URL = 'http://localhost:8001';
-const TEST_USER = process.env.TEST_USERNAME || 'test_spa_user';
-const TEST_PASS = process.env.TEST_PASSWORD || 'test_spa_password';
-
-async function login(page: Page) {
-  await page.goto(`${BASE_URL}/users/login/`, { waitUntil: 'networkidle' });
-  await page.fill('input[name="username"]', TEST_USER);
-  await page.fill('input[name="password"]', TEST_PASS);
-  await page.click('button[type="submit"]');
-  await page.waitForLoadState('networkidle');
-}
+import { loginAsRole } from '../helpers/login';
+import { installNetworkGuard } from '../helpers/network-guard';
 
 async function openCreateModal(page: Page) {
-  await page.goto(`${BASE_URL}/operations/`, { waitUntil: 'networkidle' });
+  await page.goto('/operations/', { waitUntil: 'networkidle' });
   await page.click('button:has-text("Создать операцию")');
   await page.waitForSelector('.modal-overlay');
   await page.waitForTimeout(300);
@@ -47,9 +37,59 @@ async function fetchWarehouseBalance(page: Page, siteName: string, itemNamePart:
   }, { siteName, itemNamePart });
 }
 
+async function addVisibleItemToDraft(page: Page, query: string, quantity: string, usedNames: Set<string>): Promise<string | null> {
+  const modal = page.locator('.modal-overlay');
+  const search = modal.locator('input[placeholder*="Поиск ТМЦ для добавления"]');
+  await search.fill('');
+  await expect(search).toHaveValue('');
+  await search.fill(query);
+
+  const optionNames = modal.locator('.search-option .option-name');
+  await expect(optionNames.first()).toBeVisible({ timeout: 5000 });
+  const names = (await optionNames.allTextContents()).map(name => name.trim()).filter(Boolean);
+  const itemName = names.find(name => !usedNames.has(name));
+  if (!itemName) return null;
+
+  const option = modal.locator('.search-option', { hasText: itemName }).first();
+  await option.click();
+  await expect(search).toHaveValue('');
+
+  const row = modal.locator('tbody tr', { hasText: itemName }).first();
+  await expect(row).toBeVisible();
+  await row.locator('.qty-input').fill(quantity);
+  usedNames.add(itemName);
+  return itemName;
+}
+
+async function addThreeVisibleItemsToDraft(page: Page): Promise<string[]> {
+  const usedNames = new Set<string>();
+  const names: string[] = [];
+  const queries = ['ка', 'со', 'бф', 'тм', 'др', 'ма', 'те', 'тр', 'ин', 'ро', 'кабель', 'солярка'];
+  const quantities = ['10', '2', '100'];
+
+  for (const query of queries) {
+    const addedName = await addVisibleItemToDraft(page, query, quantities[names.length] ?? '1', usedNames).catch(() => null);
+    if (addedName) names.push(addedName);
+    if (names.length >= 3) break;
+  }
+
+  return names;
+}
+
+async function expectDraftItemNames(page: Page, expectedNames: string[]): Promise<void> {
+  await expect(page.locator('.modal-overlay tbody tr')).toHaveCount(expectedNames.length);
+  await expect.poll(async () => {
+    return page.locator('.modal-overlay .item-name').allTextContents();
+  }).toEqual(expect.arrayContaining(expectedNames));
+}
+
 test.describe('Operation Create Modal — Layout', () => {
+  test.beforeEach(async ({ page }) => {
+    installNetworkGuard(page);
+    await loginAsRole(page, 'spa_user');
+  });
+
   test('default MOVE layout shows 40/30/30 type/source/destination', async ({ page }) => {
-    await login(page);
     await openCreateModal(page);
 
     // Should have three selects: type, source, destination
@@ -63,7 +103,6 @@ test.describe('Operation Create Modal — Layout', () => {
   });
 
   test('switching to non-MOVE hides destination and shows 40/60', async ({ page }) => {
-    await login(page);
     await openCreateModal(page);
 
     // Change type to EXPENSE (Расход)
@@ -86,7 +125,6 @@ test.describe('Operation Create Modal — Layout', () => {
   });
 
   test('add TMC row has 80% search and 20% disabled button', async ({ page }) => {
-    await login(page);
     await openCreateModal(page);
 
     await expect(page.locator('.modal-overlay label:has-text("Добавить ТМЦ в операцию")')).toBeVisible();
@@ -99,7 +137,6 @@ test.describe('Operation Create Modal — Layout', () => {
   });
 
   test('top add TMC search returns catalog results in create mode', async ({ page }) => {
-    await login(page);
     await openCreateModal(page);
 
     await page.locator('.modal-overlay select').first().selectOption('RECEIVE');
@@ -111,7 +148,6 @@ test.describe('Operation Create Modal — Layout', () => {
   });
 
   test('available quantity column shows a numeric balance, never dash', async ({ page }) => {
-    await login(page);
     await openCreateModal(page);
 
     await page.locator('.modal-overlay select').first().selectOption('RECEIVE');
@@ -126,7 +162,6 @@ test.describe('Operation Create Modal — Layout', () => {
   });
 
   test('available quantity uses current warehouse balance for Base', async ({ page }) => {
-    await login(page);
     await openCreateModal(page);
 
     const expectedBaseBalance = await fetchWarehouseBalance(page, 'Base', 'Кабель');
@@ -140,18 +175,32 @@ test.describe('Operation Create Modal — Layout', () => {
   });
 
   test('modal has comment textarea with 2 rows', async ({ page }) => {
-    await login(page);
     await openCreateModal(page);
+
+    const effectiveAt = page.locator('.modal-overlay input[type="datetime-local"]');
+    await expect(page.locator('.modal-overlay label:has-text("Дата проведения")')).toBeVisible();
+    await expect(effectiveAt).toBeVisible();
+    await expect(effectiveAt).not.toHaveValue('');
+    await effectiveAt.fill('2026-01-15T10:30');
+    await expect(effectiveAt).toHaveValue('2026-01-15T10:30');
 
     const comment = page.locator('.modal-overlay textarea');
     await expect(comment).toBeVisible();
     await expect(comment).toHaveAttribute('rows', '2');
+
+    const dateBox = await effectiveAt.boundingBox();
+    const commentBox = await comment.boundingBox();
+    expect(dateBox?.y ?? 0).toBeLessThan(commentBox?.y ?? 0);
   });
 });
 
 test.describe('Operation Create Modal — Validation', () => {
+  test.beforeEach(async ({ page }) => {
+    installNetworkGuard(page);
+    await loginAsRole(page, 'spa_user');
+  });
+
   test('save disabled state changes based on validation reasons', async ({ page }) => {
-    await login(page);
     await openCreateModal(page);
 
     const saveBtn = page.locator('.modal-overlay button:has-text("Сохранить черновик")');
@@ -173,7 +222,6 @@ test.describe('Operation Create Modal — Validation', () => {
   });
 
   test('confirm button is enabled for a valid unsaved draft', async ({ page }) => {
-    await login(page);
     await openCreateModal(page);
 
     const confirmBtn = page.locator('.modal-overlay button:has-text("Подтвердить")');
@@ -190,8 +238,12 @@ test.describe('Operation Create Modal — Validation', () => {
 });
 
 test.describe('Operation Create Modal — Lines Table', () => {
+  test.beforeEach(async ({ page }) => {
+    installNetworkGuard(page);
+    await loginAsRole(page, 'spa_user');
+  });
+
   test('lines table shows correct columns for MOVE (Отправляемое количество)', async ({ page }) => {
-    await login(page);
     await openCreateModal(page);
 
     const table = page.locator('.modal-overlay table');
@@ -201,7 +253,6 @@ test.describe('Operation Create Modal — Lines Table', () => {
   });
 
   test('lines table shows correct columns for RECEIVE (Количество)', async ({ page }) => {
-    await login(page);
     await openCreateModal(page);
 
     // Change to RECEIVE
@@ -213,11 +264,40 @@ test.describe('Operation Create Modal — Lines Table', () => {
   });
 
   test('lines table hides added-lines filter when there are too few positions', async ({ page }) => {
-    await login(page);
     await openCreateModal(page);
 
     const filterInput = page.locator('.modal-overlay input[placeholder*="Фильтр уже добавленных"]');
     await expect(filterInput).not.toBeVisible();
     await expect(page.locator('.modal-overlay .empty-state')).toContainText('Для добавления используйте поле «Добавить ТМЦ» выше');
+  });
+
+  test('saved long draft keeps all item names after repeated save and reopen', async ({ page }) => {
+    await openCreateModal(page);
+
+    await page.locator('.modal-overlay select').first().selectOption('RECEIVE');
+    await page.locator('.modal-overlay select').nth(1).selectOption('Base');
+
+    const itemNames = await addThreeVisibleItemsToDraft(page);
+    expect(itemNames.length).toBe(3);
+
+    const saveBtn = page.locator('.modal-overlay button:has-text("Сохранить черновик")');
+    await Promise.all([
+      page.waitForResponse(response => response.url().includes('/bff/api/v1/operations') && response.request().method() === 'POST' && response.status() === 200),
+      saveBtn.click(),
+    ]);
+    await expectDraftItemNames(page, itemNames);
+
+    await page.locator('.modal-overlay tbody tr', { hasText: itemNames[0] }).locator('.qty-input').fill('11');
+    await Promise.all([
+      page.waitForResponse(response => response.url().includes('/bff/api/v1/operations/') && response.request().method() === 'PATCH' && response.status() === 200),
+      saveBtn.click(),
+    ]);
+    await expectDraftItemNames(page, itemNames);
+
+    await page.locator('.modal-overlay .btn-close').click();
+    await expect(page.locator('.modal-overlay')).not.toBeVisible();
+    await page.locator('tbody tr').filter({ hasText: 'Черновик' }).first().locator('button.number-link').click();
+    await expect(page.locator('.modal-overlay')).toBeVisible();
+    await expectDraftItemNames(page, itemNames);
   });
 });

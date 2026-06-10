@@ -192,7 +192,7 @@ export class PendingAcceptancePageComponent implements OnInit {
       linesCount: op.lines_count ?? (op.lines?.length ?? 0),
       positionCount: op.lines_count ?? (op.lines?.length ?? 0),
       acceptanceStateLabel: accLabel,
-      canInvoice: op.status === 'submitted' || op.status === 'pending',
+      canInvoice: op.status === 'submitted',
       canOpen: true,
       canEdit: false,
       canSubmit: false,
@@ -205,7 +205,7 @@ export class PendingAcceptancePageComponent implements OnInit {
 
   private isAcceptanceApplicable(op: OperationDto): boolean {
     return (op.type === 'MOVE' || op.type === 'RECEIVE')
-      && (op.status === 'submitted' || op.status === 'pending')
+      && op.status === 'submitted'
       && (op.acceptance_state === 'pending' || op.acceptance_state === 'in_progress');
   }
 

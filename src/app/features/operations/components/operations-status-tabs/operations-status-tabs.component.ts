@@ -12,6 +12,7 @@ import { AuthContextService } from '../../../../core/services/auth-context.servi
       @for (tab of tabs(); track tab.key) {
         <button
           class="tab"
+          [attr.data-testid]="'operations-tab-' + tab.key"
           [class.active]="activeTab() === tab.key"
           (click)="tabChange.emit(tab.key)"
         >

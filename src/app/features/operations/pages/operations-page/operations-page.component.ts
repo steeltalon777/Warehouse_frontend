@@ -48,19 +48,19 @@ function currentDateTimeLocal(): string {
     OperationConfirmModalComponent,
   ],
   template: `
-    <div class="wh-page operations-page">
+    <div class="wh-page operations-page" data-testid="operations-page">
       <!-- Page Header -->
       <div class="wh-page-header page-header">
         <div class="header-info">
-          <h1 class="page-title">Операции</h1>
+          <h1 class="page-title" data-testid="operations-title">Операции</h1>
           <p class="page-subtitle">
             Журнал складских операций: черновики, подтверждение и проведённые документы.
           </p>
         </div>
         <div class="header-actions">
-          <button class="wh-btn wh-btn--primary btn btn-primary" (click)="onCreateClick()">+ Создать операцию</button>
-          <button class="wh-btn wh-btn--secondary btn btn-secondary" disabled>Приёмка</button>
-          <button class="wh-btn wh-btn--secondary btn btn-secondary" disabled>Экспорт</button>
+          <button class="wh-btn wh-btn--primary btn btn-primary" data-testid="operations-create-button" (click)="onCreateClick()">+ Создать операцию</button>
+          <button class="wh-btn wh-btn--secondary btn btn-secondary" data-testid="operations-acceptance-button" disabled>Приёмка</button>
+          <button class="wh-btn wh-btn--secondary btn btn-secondary" data-testid="operations-export-button" disabled>Экспорт</button>
         </div>
       </div>
 
@@ -81,12 +81,12 @@ function currentDateTimeLocal(): string {
       <!-- Table -->
       <div class="wh-card table-card">
         @if (isLoading()) {
-          <div class="wh-state wh-state--loading loading-overlay">
+          <div class="wh-state wh-state--loading loading-overlay" data-testid="operations-loading-state">
             <div class="spinner"></div>
             <span>Загрузка операций...</span>
           </div>
         } @else if (error()) {
-          <div class="wh-state wh-state--error error-banner">{{ error() }}</div>
+          <div class="wh-state wh-state--error error-banner" data-testid="operations-error-message">{{ error() }}</div>
         } @else {
           <app-operations-table
             [rows]="sortedRows()"
