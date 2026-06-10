@@ -18,31 +18,31 @@ interface LineEditVm {
   standalone: true,
   imports: [CommonModule, FormsModule],
   template: `
-    <div class="wh-page acceptance-page">
+    <div class="wh-page acceptance-page" [attr.data-testid]="'acceptance-detail-page'">
       <!-- Header -->
       <div class="wh-page-header page-header">
         <div class="header-left">
           <a class="wh-link back-link" (click)="goBack()">← Назад к операциям</a>
-          <h1 class="page-title">Приёмка</h1>
+          <h1 class="page-title" [attr.data-testid]="'acceptance-detail-title'">Приёмка</h1>
           <div class="operation-meta">
-            <span class="op-number">{{ displayNumber() }}</span>
+            <span class="op-number" [attr.data-testid]="'acceptance-detail-operation-number'">{{ displayNumber() }}</span>
             <span class="op-type">{{ typeLabel() }}</span>
             @if (directionLabel()) {
-              <span class="op-direction">{{ directionLabel() }}</span>
+              <span class="op-direction" [attr.data-testid]="'acceptance-detail-direction'">{{ directionLabel() }}</span>
             }
-            <span class="wh-badge acceptance-badge {{ acceptanceBadgeClass() }}">{{ acceptanceLabel() }}</span>
+            <span class="wh-badge acceptance-badge {{ acceptanceBadgeClass() }}" [attr.data-testid]="'acceptance-detail-status'">{{ acceptanceLabel() }}</span>
           </div>
         </div>
       </div>
 
       <!-- Error banner -->
       @if (svc.error()) {
-        <div class="wh-state wh-state--error error-banner">{{ svc.error() }}</div>
+        <div class="wh-state wh-state--error error-banner" [attr.data-testid]="'acceptance-error-message'">{{ svc.error() }}</div>
       }
 
       <!-- Success banner -->
       @if (successMessage()) {
-        <div class="wh-state wh-state--success success-banner">
+        <div class="wh-state wh-state--success success-banner" [attr.data-testid]="'acceptance-success-message'">
           {{ successMessage() }}
           @if (showLostLink()) {
             <a class="wh-link lost-link" (click)="goToLostAssets()">Перейти к ненайденным ТМЦ</a>
@@ -52,7 +52,7 @@ interface LineEditVm {
 
       <!-- Loading -->
       @if (svc.isLoading()) {
-        <div class="wh-state wh-state--loading loading-overlay">
+        <div class="wh-state wh-state--loading loading-overlay" [attr.data-testid]="'acceptance-loading-state'">
           <div class="spinner"></div>
           <span>Загрузка данных приёмки...</span>
         </div>
@@ -67,19 +67,20 @@ interface LineEditVm {
               class="wh-btn wh-btn--primary btn btn-primary"
               [disabled]="!canSubmit() || svc.isSubmitting() || isResolved()"
               (click)="onSubmit()"
+              [attr.data-testid]="'acceptance-complete-button'"
             >
               @if (svc.isSubmitting()) {
                 <span class="spinner-small"></span>
               }
               Принять
             </button>
-            <button class="wh-btn wh-btn--secondary btn btn-secondary" (click)="goBack()">Назад</button>
+            <button class="wh-btn wh-btn--secondary btn btn-secondary" (click)="goBack()" [attr.data-testid]="'acceptance-cancel-button'">Назад</button>
             <button class="wh-btn wh-btn--secondary btn btn-secondary" (click)="reload()" [disabled]="svc.isLoading()">Обновить</button>
           </div>
 
           <!-- Table -->
           <div class="table-wrapper">
-            <table class="wh-table data-table">
+            <table class="wh-table data-table" [attr.data-testid]="'acceptance-detail-lines-table'">
               <thead>
                 <tr>
                   <th class="col-num">№</th>
@@ -92,7 +93,7 @@ interface LineEditVm {
               </thead>
               <tbody>
                 @for (el of editLines(); track el.line.operation_line_id; let idx = $index) {
-                  <tr>
+                  <tr [attr.data-testid]="'acceptance-line-row'">
                     <td class="col-num">{{ idx + 1 }}</td>
                     <td class="col-item">
                       <span class="item-name">{{ el.line.display_name || el.line.item_name }}</span>
@@ -100,7 +101,7 @@ interface LineEditVm {
                         <span class="item-sku">{{ el.line.sku }}</span>
                       }
                     </td>
-                    <td class="col-qty qty-readonly">{{ el.line.qty }}{{ unitSymbol(el.line) }}</td>
+                    <td class="col-qty qty-readonly" [attr.data-testid]="'acceptance-line-expected-qty'">{{ el.line.qty }}{{ unitSymbol(el.line) }}</td>
                     <td class="col-fact">
                       @if (!isResolved()) {
                         <input
@@ -111,16 +112,17 @@ interface LineEditVm {
                           step="0.001"
                           min="0"
                           [class.input-error]="!!el.validationError"
+                          [attr.data-testid]="'acceptance-line-accepted-qty-input'"
                         />
                         @if (el.validationError) {
-                          <span class="validation-msg">{{ el.validationError }}</span>
+                          <span class="validation-msg" [attr.data-testid]="'acceptance-validation-error'">{{ el.validationError }}</span>
                         }
                       } @else {
                         <span class="qty-readonly">{{ el.factQty }}{{ unitSymbol(el.line) }}</span>
                       }
                     </td>
                     <td class="col-lost">
-                      <span class="qty-lost">{{ el.lostQty }}{{ unitSymbol(el.line) }}</span>
+                      <span class="qty-lost" [attr.data-testid]="'acceptance-line-missing-qty'">{{ el.lostQty }}{{ unitSymbol(el.line) }}</span>
                     </td>
                     <td class="col-note">
                       @if (!isResolved()) {
@@ -130,6 +132,7 @@ interface LineEditVm {
                           [ngModel]="el.note"
                           (ngModelChange)="onNoteChange(idx, $event)"
                           placeholder="—"
+                          [attr.data-testid]="'acceptance-line-comment-input'"
                         />
                       } @else {
                         <span class="note-display">{{ el.note || '—' }}</span>

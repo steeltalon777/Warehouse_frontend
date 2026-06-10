@@ -16,11 +16,11 @@ import { BffApiService, PaginatedBffResponse } from '../../../../core/api/bff-ap
   standalone: true,
   imports: [CommonModule, OperationsTableComponent],
   template: `
-    <div class="wh-page operations-page">
+    <div class="wh-page operations-page" [attr.data-testid]="'acceptance-page'">
       <div class="wh-page-header page-header">
         <div class="header-info">
-          <h1 class="page-title">Операции к приёмке</h1>
-          <p class="page-subtitle">
+          <h1 class="page-title" [attr.data-testid]="'acceptance-title'">Операции к приёмке</h1>
+          <p class="page-subtitle" [attr.data-testid]="'acceptance-description'">
             Операции, ожидающие приёмки на складе назначения.
           </p>
         </div>
@@ -28,12 +28,12 @@ import { BffApiService, PaginatedBffResponse } from '../../../../core/api/bff-ap
 
       <div class="wh-card table-card">
         @if (isLoading()) {
-          <div class="wh-state wh-state--loading loading-overlay">
+          <div class="wh-state wh-state--loading loading-overlay" [attr.data-testid]="'acceptance-loading-state'">
             <div class="spinner"></div>
             <span>Загрузка...</span>
           </div>
         } @else if (error()) {
-          <div class="wh-state wh-state--error error-banner">{{ error() }}</div>
+          <div class="wh-state wh-state--error error-banner" [attr.data-testid]="'acceptance-error-message'">{{ error() }}</div>
         } @else {
           <app-operations-table
             [rows]="filteredRows()"
