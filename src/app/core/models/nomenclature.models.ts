@@ -90,6 +90,7 @@ export interface CatalogTreeNodeVm {
   name: string;
 
   sku?: string;
+  hashtags?: string[];
   meta?: string;
 
   parentId?: string | null;

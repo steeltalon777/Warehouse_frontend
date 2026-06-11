@@ -131,12 +131,17 @@ export class NomenclatureService {
         const catLocalId = change.payload['category_local_id'] as string | undefined;
         const catId = change.payload['category_id'] as string | undefined;
         const parentId = catLocalId || catId || '';
+        const hashtagsArr = change.payload['hashtags'];
+        const hashtags: string[] | undefined = Array.isArray(hashtagsArr) && hashtagsArr.length > 0
+          ? (hashtagsArr as string[])
+          : undefined;
         
         const newNode: CatalogTreeNodeVm = {
           id: change.localId,
           type: 'item',
           name,
           sku: (change.payload['sku'] as string) || undefined,
+          hashtags,
           parentId,
           isActive: (change.payload['is_active'] as boolean) ?? true,
           level: 1,
@@ -324,6 +329,7 @@ export class NomenclatureService {
           type: 'item',
           name: item.name,
           sku: item.sku || undefined,
+          hashtags: item.hashtags?.length ? item.hashtags : undefined,
           parentId: cat.id,
           categoryId: item.category_id,
           unitId: item.unit_id,
@@ -381,6 +387,7 @@ export class NomenclatureService {
   private nodeMatchesQuery(node: CatalogTreeNodeVm, query: string): boolean {
     if (node.name.toLowerCase().includes(query)) return true;
     if (node.sku?.toLowerCase().includes(query)) return true;
+    if (node.hashtags?.some(tag => tag.toLowerCase().includes(query))) return true;
     return false;
   }
 
@@ -599,14 +606,165 @@ export class NomenclatureService {
     return true;
   }
 
-  private async reloadBootstrapAfterBatch(response?: CatalogBatchResponse | null): Promise<void> {
+  private materializeCreatedRecords(
+    changes: CatalogPendingChange[],
+    response?: CatalogBatchResponse | null,
+  ): void {
+    const records = response?.records ?? [];
+    if (records.length === 0) {
+      return;
+    }
+
+      const successfulCreates = records.filter(record => (
+        record.action === 'create' && record.status === 'applied' && record.entity_id != null
+      ));
+    if (successfulCreates.length === 0) {
+      return;
+    }
+
+    const changeMap = new Map(changes.map(change => [`${change.entityType}:${change.localId}`, change]));
+    const createdIdMap = new Map(successfulCreates.map(record => [record.local_id, String(record.entity_id!)]));
+
+    let categories = this.categories().map(category => this.cloneCategory(category));
+    let items = [...this.allItems()];
+    let units = [...this.units()];
+    let changed = false;
+
+    for (const record of successfulCreates) {
+      if (this.hasEntityInState(record.entity_type, record.entity_id!)) {
+        continue;
+      }
+
+      const change = changeMap.get(`${record.entity_type}:${record.local_id}`);
+      if (!change) {
+        continue;
+      }
+
+      const entityId = String(record.entity_id);
+
+      if (record.entity_type === 'unit') {
+        units = [
+          ...units,
+          {
+            id: entityId,
+            name: String(change.payload['name'] ?? ''),
+            symbol: String(change.payload['symbol'] ?? ''),
+            sort_order: change.payload['sort_order'] != null ? Number(change.payload['sort_order']) : 0,
+            is_active: change.payload['is_active'] !== false,
+          },
+        ];
+        changed = true;
+        continue;
+      }
+
+      if (record.entity_type === 'category') {
+        const resolvedParentId = this.resolveCreatedReference(change.payload['parent_local_id'], change.payload['parent_id'], createdIdMap);
+        categories = this.insertCategoryIntoTree(categories, {
+          id: entityId,
+          name: String(change.payload['name'] ?? ''),
+          code: String(change.payload['code'] ?? ''),
+          parent_id: resolvedParentId,
+          sort_order: change.payload['sort_order'] != null ? Number(change.payload['sort_order']) : 0,
+          is_active: change.payload['is_active'] !== false,
+          children_count: 0,
+          items_count: 0,
+          children: [],
+        });
+        changed = true;
+        continue;
+      }
+
+      if (record.entity_type === 'item') {
+        const resolvedCategoryId = this.resolveCreatedReference(change.payload['category_local_id'], change.payload['category_id'], createdIdMap);
+        const resolvedUnitId = this.resolveCreatedReference(change.payload['unit_local_id'], change.payload['unit_id'], createdIdMap) ?? '';
+        items = [
+          ...items,
+          {
+            id: entityId,
+            name: String(change.payload['name'] ?? ''),
+            sku: change.payload['sku'] ? String(change.payload['sku']) : '',
+            category_id: resolvedCategoryId,
+            category_name: null,
+            unit_id: resolvedUnitId,
+            unit_symbol: units.find(unit => unit.id === resolvedUnitId)?.symbol ?? '',
+            is_active: change.payload['is_active'] !== false,
+            hashtags: Array.isArray(change.payload['hashtags']) ? change.payload['hashtags'] as string[] : [],
+          },
+        ];
+        changed = true;
+      }
+    }
+
+    if (!changed) {
+      return;
+    }
+
+    this.computeItemCounts(categories, items);
+    this.enrichItemsWithCategoryName(categories, items);
+    this.categories.set(categories);
+    this.allItems.set(items);
+    this.units.set(units);
+  }
+
+  private resolveCreatedReference(
+    localRef: unknown,
+    persistedRef: unknown,
+    createdIdMap: Map<string, string>,
+  ): string | null {
+    if (localRef != null) {
+      return createdIdMap.get(String(localRef)) ?? String(localRef);
+    }
+    if (persistedRef == null || persistedRef === '') {
+      return null;
+    }
+    return String(persistedRef);
+  }
+
+  private cloneCategory(category: Category): Category {
+    return {
+      ...category,
+      children: category.children?.map(child => this.cloneCategory(child)) ?? [],
+    };
+  }
+
+  private insertCategoryIntoTree(categories: Category[], categoryToInsert: Category): Category[] {
+    if (!categoryToInsert.parent_id) {
+      return [...categories, categoryToInsert];
+    }
+
+    const tryInsert = (nodes: Category[]): boolean => {
+      for (const node of nodes) {
+        if (node.id === categoryToInsert.parent_id) {
+          node.children = [...(node.children ?? []), categoryToInsert];
+          node.children_count = node.children.length;
+          return true;
+        }
+        if (node.children?.length && tryInsert(node.children)) {
+          return true;
+        }
+      }
+      return false;
+    };
+
+    if (tryInsert(categories)) {
+      return categories;
+    }
+
+    return [...categories, categoryToInsert];
+  }
+
+  private async reloadBootstrapAfterBatch(
+    changes: CatalogPendingChange[],
+    response?: CatalogBatchResponse | null,
+  ): Promise<void> {
     await this.loadBootstrap({ cacheBust: true });
+    this.materializeCreatedRecords(changes, response);
 
     const records = response?.records ?? [];
 
     const missingCreatedRecords = records.filter(record => (
       record.action === 'create'
-      && record.status === 'success'
+      && record.status === 'applied'
       && record.entity_id != null
       && !this.hasEntityInState(record.entity_type, record.entity_id)
     ));
@@ -642,7 +800,7 @@ export class NomenclatureService {
       };
 
       const response = await firstValueFrom(this.bff.postData<CatalogBatchResponse>('/catalog/admin/batch', batchRequest));
-      await this.reloadBootstrapAfterBatch(response);
+      await this.reloadBootstrapAfterBatch(changes, response);
     } catch (err: any) {
       this.error.set(err?.message || 'Batch apply failed');
       throw err;
