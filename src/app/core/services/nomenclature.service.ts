@@ -77,6 +77,7 @@ export class NomenclatureService {
   readonly selectedEntity = signal<SelectedEntity | null>(null);
   readonly expandedIds = signal<Set<string>>(new Set());
   readonly searchQuery = signal<string>('');
+  readonly forceVisibleIds = signal<Set<string>>(new Set());
   readonly isLoading = signal<boolean>(false);
   readonly error = signal<string | null>(null);
   readonly isSaving = signal<boolean>(false);
@@ -161,7 +162,115 @@ export class NomenclatureService {
     }
     
     if (!query) return tree;
-    return this.filterTree(tree, query);
+
+    const forceIds = this.forceVisibleIds();
+    if (forceIds.size === 0) {
+      return this.filterTree(tree, query);
+    }
+
+    // Merge: search results + force-visible nodes from unfiltered tree
+    const filtered = this.filterTree(tree, query);
+    const resultMap = new Map<string, CatalogTreeNodeVm>();
+
+    // Collect all nodes from filtered results into map
+    const collectNodes = (nodes: CatalogTreeNodeVm[]) => {
+      for (const node of nodes) {
+        resultMap.set(node.id, node);
+        if (node.children) collectNodes(node.children);
+      }
+    };
+    collectNodes(filtered);
+
+    // Determine which forceIds are "deepest" (not a parent of another forced node)
+    const deepestIds = new Set(forceIds);
+    for (const id of forceIds) {
+      const node = this.findNodeInTree(tree, id);
+      if (node?.parentId && forceIds.has(node.parentId)) {
+        deepestIds.delete(node.parentId);
+      }
+    }
+
+    // Add force-visible nodes
+    for (const forceId of forceIds) {
+      const node = this.findNodeInTree(tree, forceId);
+      if (!node) continue;
+
+      if (deepestIds.has(forceId)) {
+        // Deepest node: full children, expanded
+        if (resultMap.has(forceId)) {
+          resultMap.set(forceId, { ...resultMap.get(forceId)!, expanded: true });
+        } else {
+          resultMap.set(forceId, { ...node, expanded: true });
+        }
+      } else {
+        // Ancestor: only forced children
+        const forcedChildIds = new Set(
+          [...forceIds].filter(id => {
+            const n = this.findNodeInTree(tree, id);
+            return n?.parentId === forceId;
+          })
+        );
+        const filteredChildren = (node.children || []).filter(c => forcedChildIds.has(c.id));
+
+        if (resultMap.has(forceId)) {
+          const existing = resultMap.get(forceId)!;
+          const mergedChildren = [...(existing.children || [])];
+          for (const fc of filteredChildren) {
+            if (!mergedChildren.some(c => c.id === fc.id)) {
+              mergedChildren.push(fc);
+            }
+          }
+          resultMap.set(forceId, { ...existing, expanded: true, children: mergedChildren });
+        } else {
+          resultMap.set(forceId, { ...node, expanded: true, children: filteredChildren });
+        }
+      }
+    }
+
+    // For deepest forced categories, add their sibling items as children
+    const flatAll = this.collectFlat(tree);
+    for (const forceId of deepestIds) {
+      const catNode = resultMap.get(forceId);
+      if (!catNode || catNode.type !== 'category') continue;
+
+      const catItems = flatAll.filter(n => n.type === 'item' && n.parentId === forceId);
+      if (catItems.length === 0) continue;
+
+      for (const itemNode of catItems) {
+        if (!resultMap.has(itemNode.id)) {
+          resultMap.set(itemNode.id, itemNode);
+        }
+      }
+
+      const existingChildren = catNode.children || [];
+      const mergedChildren = [...existingChildren];
+      for (const itemNode of catItems) {
+        if (!mergedChildren.some(c => c.id === itemNode.id)) {
+          mergedChildren.push(itemNode);
+        }
+      }
+      resultMap.set(forceId, { ...catNode, children: mergedChildren });
+    }
+
+    // Fix children references to point to resultMap versions
+    for (const [id, node] of resultMap) {
+      if (node.children?.length) {
+        resultMap.set(id, {
+          ...node,
+          children: node.children.map(c => resultMap.get(c.id) ?? c),
+        });
+      }
+    }
+
+    // Return root nodes (nodes with no parent in resultMap)
+    const roots: CatalogTreeNodeVm[] = [];
+    for (const node of resultMap.values()) {
+      if (!node.parentId || !resultMap.has(node.parentId)) {
+        roots.push(node);
+      }
+    }
+
+    return roots;
   });
 
   readonly visibleNodeCount = computed(() => {
@@ -285,6 +394,40 @@ export class NomenclatureService {
 
   setSearch(query: string): void {
     this.searchQuery.set(query);
+    if (!query) {
+      this.forceVisibleIds.set(new Set());
+    }
+  }
+
+  forceShowCategory(categoryId: string): void {
+    const cats = this.categories();
+    const newIds = new Set<string>();
+    let current: string | null = categoryId;
+
+    while (current) {
+      newIds.add(current);
+      const cat = this.findCategoryById(current, cats);
+      current = cat?.parent_id ?? null;
+    }
+
+    this.forceVisibleIds.set(newIds);
+  }
+
+  clearForceVisible(): void {
+    this.forceVisibleIds.set(new Set());
+  }
+
+  // ─── Helpers: tree traversal ────────────────────────────────
+
+  private collectFlat(nodes: CatalogTreeNodeVm[]): CatalogTreeNodeVm[] {
+    const result: CatalogTreeNodeVm[] = [];
+    for (const n of nodes) {
+      result.push(n);
+      if (n.children) {
+        result.push(...this.collectFlat(n.children));
+      }
+    }
+    return result;
   }
 
   // ─── Helpers: tree building ──────────────────────────────────
@@ -301,7 +444,7 @@ export class NomenclatureService {
     const itemMap = this.buildItemMap(items);
 
     for (const cat of cats) {
-      if (!cat.is_active) continue;
+      if (!cat.is_active && !buffer.hasPending(cat.id, 'category')) continue;
       const catPending = buffer.getChangeForEntity(cat.id, 'category');
       const node: CatalogTreeNodeVm = {
         id: cat.id,
@@ -322,7 +465,7 @@ export class NomenclatureService {
 
       const catItems = itemMap.get(cat.id) ?? [];
       for (const item of catItems) {
-        if (!item.is_active) continue;
+        if (!item.is_active && !buffer.hasPending(item.id, 'item')) continue;
         const itemPending = buffer.getChangeForEntity(item.id, 'item');
         result.push({
           id: item.id,
@@ -758,6 +901,7 @@ export class NomenclatureService {
     response?: CatalogBatchResponse | null,
   ): Promise<void> {
     await this.loadBootstrap({ cacheBust: true });
+    this.forceVisibleIds.set(new Set());
     this.materializeCreatedRecords(changes, response);
 
     const records = response?.records ?? [];

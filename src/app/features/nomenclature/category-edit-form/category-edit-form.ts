@@ -76,12 +76,16 @@ import { AuthContextService } from '../../../core/services/auth-context.service'
             Слияние
           </button>
         }
-        <button class="wh-btn wh-btn--danger btn btn-danger" (click)="onDeactivate()" type="button">
-          Деактивировать
-        </button>
-        <button class="wh-btn wh-btn--danger btn btn-danger" (click)="onDelete()" type="button">
-          Удалить
-        </button>
+        @if (canDeactivate()) {
+          <button class="wh-btn wh-btn--danger btn btn-danger" (click)="onDeactivate()" type="button">
+            Деактивировать
+          </button>
+        }
+        @if (canDelete()) {
+          <button class="wh-btn wh-btn--danger btn btn-danger" (click)="onDelete()" type="button">
+            Удалить
+          </button>
+        }
         <div class="spacer"></div>
         <button class="wh-btn wh-btn--secondary btn btn-secondary" (click)="onReset()" type="button">
           Сбросить
@@ -289,6 +293,21 @@ export class CategoryEditFormComponent {
     const isManager = role === 'root' || role === 'chief_storekeeper';
     const cat = this.category();
     return isManager && !!cat && cat.is_active;
+  });
+
+  readonly canDelete = computed(() => {
+    const cat = this.category();
+    if (!cat) return false;
+    if (cat.is_active) return false;
+    if ((cat.children_count ?? 0) > 0) return false;
+    if ((cat.items_count ?? 0) > 0) return false;
+    return true;
+  });
+
+  readonly canDeactivate = computed(() => {
+    const cat = this.category();
+    if (!cat) return false;
+    return cat.is_active;
   });
 
   draft = {

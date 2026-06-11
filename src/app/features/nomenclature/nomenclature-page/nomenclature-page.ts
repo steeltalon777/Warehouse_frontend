@@ -265,11 +265,9 @@ export class NomenclaturePageComponent implements OnInit {
   onSelectNode(node: { id: string; type: string }): void {
     this.createModeEntity.set(null);
 
-    // When searching and clicking a category: clear search and reveal its contents
+    // When searching and clicking a category: keep search, force-show the category
     if (this.searchQuery().trim() && node.type === 'category') {
-      this.service.setSearch('');
-      this.service.expandAll();
-      // Ensure the clicked category is expanded (expandAll already does this)
+      this.service.forceShowCategory(node.id);
       this.service.selectNode(node as any);
       return;
     }
