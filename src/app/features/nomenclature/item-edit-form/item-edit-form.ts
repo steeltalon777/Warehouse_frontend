@@ -1,7 +1,10 @@
-import { Component, ElementRef, inject, input, output, signal, computed, SimpleChanges, viewChild } from '@angular/core';
+import { Component, ElementRef, inject, input, output, signal, computed, SimpleChanges, viewChild, OnDestroy } from '@angular/core';
 import { FormsModule } from '@angular/forms';
 import { Item, Unit, Category } from '../../../core/models/nomenclature.models';
 import { AuthContextService } from '../../../core/services/auth-context.service';
+import { BffApiService } from '../../../core/api/bff-api.service';
+import { Subject, of } from 'rxjs';
+import { debounceTime, distinctUntilChanged, switchMap, takeUntil, catchError } from 'rxjs/operators';
 
 @Component({
   selector: 'app-item-edit-form',
@@ -40,21 +43,22 @@ import { AuthContextService } from '../../../core/services/auth-context.service'
               <input
                 type="text"
                 class="wh-form-input form-input combobox-input"
-                [(ngModel)]="unitQuery"
-                (ngModelChange)="onUnitQueryChange($event)"
+                [value]="unitQuery()"
+                (input)="onUnitQueryChange(($any($event.target)).value)"
                 (focus)="openUnitDropdown()"
                 placeholder="Введите единицу измерения"
                 autocomplete="off"
+                data-testid="unit-combobox-input"
               />
-              @if (draft.unitId || unitQuery) {
-                <button class="combobox-clear" type="button" (mousedown)="clearUnit($event)" aria-label="Очистить единицу измерения">×</button>
+              @if (draft.unitId || unitQuery()) {
+                <button class="combobox-clear" type="button" (mousedown)="clearUnit($event)" aria-label="Очистить единицу измерения" data-testid="unit-combobox-clear">×</button>
               }
             </div>
             @if (isUnitDropdownOpen()) {
-              <div class="combobox-dropdown">
+              <div class="combobox-dropdown" data-testid="unit-combobox-dropdown">
                 @if (filteredUnits().length) {
                   @for (u of filteredUnits(); track u.id) {
-                    <button class="combobox-option" type="button" (mousedown)="selectUnit(u, $event)">
+                    <button class="combobox-option" type="button" (mousedown)="selectUnit(u, $event)" [attr.data-testid]="'unit-option-' + u.id">
                       {{ formatUnitLabel(u) }}
                     </button>
                   }
@@ -74,24 +78,25 @@ import { AuthContextService } from '../../../core/services/auth-context.service'
               <input
                 type="text"
                 class="wh-form-input form-input combobox-input"
-                [(ngModel)]="categoryQuery"
-                (ngModelChange)="onCategoryQueryChange($event)"
+                [value]="categoryQuery()"
+                (input)="onCategoryQueryChange(($any($event.target)).value)"
                 (focus)="openCategoryDropdown()"
                 placeholder="Без категории"
                 autocomplete="off"
+                data-testid="category-combobox-input"
               />
-              @if (draft.categoryId || categoryQuery) {
-                <button class="combobox-clear" type="button" (mousedown)="clearCategory($event)" aria-label="Очистить категорию">×</button>
+              @if (draft.categoryId || categoryQuery()) {
+                <button class="combobox-clear" type="button" (mousedown)="clearCategory($event)" aria-label="Очистить категорию" data-testid="category-combobox-clear">×</button>
               }
             </div>
             @if (isCategoryDropdownOpen()) {
-              <div class="combobox-dropdown">
-                <button class="combobox-option combobox-option--placeholder" type="button" (mousedown)="clearCategory($event)">
+              <div class="combobox-dropdown" data-testid="category-combobox-dropdown">
+                <button class="combobox-option combobox-option--placeholder" type="button" (mousedown)="clearCategory($event)" data-testid="category-option-none">
                   Без категории
                 </button>
                 @if (filteredCategories().length) {
                   @for (c of filteredCategories(); track c.id) {
-                    <button class="combobox-option combobox-option--stacked" type="button" (mousedown)="selectCategory(c, $event)">
+                    <button class="combobox-option combobox-option--stacked" type="button" (mousedown)="selectCategory(c, $event)" [attr.data-testid]="'category-option-' + c.id">
                       <span>{{ c.name }}</span>
                       @if (c.pathLabel) {
                         <span class="combobox-meta">{{ c.pathLabel }}</span>
@@ -483,8 +488,11 @@ import { AuthContextService } from '../../../core/services/auth-context.service'
     }
   `]
 })
-export class ItemEditFormComponent {
+export class ItemEditFormComponent implements OnDestroy {
   private readonly authContextService = inject(AuthContextService);
+  private readonly bffApi = inject(BffApiService);
+  private readonly categorySearch$ = new Subject<string>();
+  private readonly destroy$ = new Subject<void>();
 
   readonly item = input.required<Item>();
   readonly units = input<Unit[]>([]);
@@ -520,9 +528,12 @@ export class ItemEditFormComponent {
     isActive: true,
   };
 
-  unitQuery = '';
-  categoryQuery = '';
+  readonly unitQuery = signal('');
+  readonly categoryQuery = signal('');
   hashtagInput = '';
+  readonly filteredUnits = computed(() => this.computeFilteredUnits());
+  readonly filteredCategories = computed(() => this.computeFilteredCategories());
+  readonly remoteCategoryResults = signal<{ id: string; name: string; pathLabel: string; searchText: string }[]>([]);
 
   // Flat categories are used as a safe local fallback for searchable category selection.
   readonly flatCategories = computed(() => {
@@ -543,25 +554,64 @@ export class ItemEditFormComponent {
     return result;
   });
 
-  readonly filteredUnits = computed(() => {
-    const query = this.unitQuery.trim().toLowerCase();
+  private computeFilteredUnits(): Unit[] {
+    const query = this.getEffectiveUnitSearchQuery();
     if (!query) {
       return this.units().slice(0, 50);
     }
     return this.units()
       .filter(unit => `${unit.name} ${unit.symbol}`.toLowerCase().includes(query))
       .slice(0, 50);
-  });
+  }
 
-  readonly filteredCategories = computed(() => {
-    const query = this.categoryQuery.trim().toLowerCase();
+  private computeFilteredCategories() {
+    const query = this.getEffectiveCategorySearchQuery();
     if (!query) {
       return this.flatCategories().slice(0, 50);
+    }
+    if (query.length >= 2 && this.remoteCategoryResults().length > 0) {
+      const remoteIds = new Set(this.remoteCategoryResults().map(r => r.id));
+      const localMatches = this.flatCategories()
+        .filter(category => !remoteIds.has(category.id) && category.searchText.includes(query));
+      return [...this.remoteCategoryResults(), ...localMatches].slice(0, 50);
     }
     return this.flatCategories()
       .filter(category => category.searchText.includes(query))
       .slice(0, 50);
-  });
+  }
+
+  constructor() {
+    this.categorySearch$.pipe(
+      debounceTime(300),
+      distinctUntilChanged(),
+      takeUntil(this.destroy$),
+      switchMap(query => {
+        if (!query || query.length < 2) {
+          return of({ items: [] as Array<Record<string, unknown>> });
+        }
+        return this.bffApi.getData<{ items?: Array<Record<string, unknown>> }>('/catalog/search/categories', { q: query, limit: 20 }).pipe(
+          catchError(() => of({ items: [] as Array<Record<string, unknown>> }))
+        );
+      }),
+    ).subscribe(result => {
+      const items = result?.items ?? [];
+      this.remoteCategoryResults.set(items.map(item => {
+        const name = String(item['name'] ?? '');
+        const pathLabel = String(item['path_label'] ?? item['path'] ?? '');
+        return {
+          id: String(item['id'] ?? ''),
+          name,
+          pathLabel,
+          searchText: `${pathLabel} ${name}`.toLowerCase(),
+        };
+      }));
+    });
+  }
+
+  ngOnDestroy(): void {
+    this.destroy$.next();
+    this.destroy$.complete();
+  }
 
   get isValid(): boolean {
     const d = this.draft;
@@ -631,8 +681,8 @@ export class ItemEditFormComponent {
     const it = this.item();
     if (!it) {
       this.draft = { name: '', sku: '', unitId: '', categoryId: '', hashtags: [], description: '', isActive: true };
-      this.unitQuery = '';
-      this.categoryQuery = '';
+      this.unitQuery.set('');
+      this.categoryQuery.set('');
       this.hashtagInput = '';
       this.formError.set(null);
       this.resetDraft.emit();
@@ -670,7 +720,7 @@ export class ItemEditFormComponent {
   }
 
   onUnitQueryChange(value: string): void {
-    this.unitQuery = value;
+    this.unitQuery.set(value);
     const selectedLabel = this.getUnitLabel(this.draft.unitId);
     if (selectedLabel !== value) {
       this.draft.unitId = '';
@@ -679,10 +729,16 @@ export class ItemEditFormComponent {
   }
 
   onCategoryQueryChange(value: string): void {
-    this.categoryQuery = value;
+    this.categoryQuery.set(value);
     const selectedLabel = this.getCategoryLabel(this.draft.categoryId);
     if (selectedLabel !== value) {
       this.draft.categoryId = '';
+    }
+    const query = this.getEffectiveCategorySearchQuery();
+    if (query.length >= 2) {
+      this.categorySearch$.next(query);
+    } else {
+      this.remoteCategoryResults.set([]);
     }
     this.isCategoryDropdownOpen.set(true);
   }
@@ -690,7 +746,7 @@ export class ItemEditFormComponent {
   selectUnit(unit: Unit, event?: Event): void {
     event?.preventDefault();
     this.draft.unitId = unit.id;
-    this.unitQuery = this.formatUnitLabel(unit);
+    this.unitQuery.set(this.formatUnitLabel(unit));
     this.isUnitDropdownOpen.set(false);
     this.formError.set(null);
   }
@@ -698,22 +754,24 @@ export class ItemEditFormComponent {
   selectCategory(category: { id: string; name: string; pathLabel: string }, event?: Event): void {
     event?.preventDefault();
     this.draft.categoryId = category.id;
-    this.categoryQuery = this.getCategoryDisplayLabel(category.name, category.pathLabel);
+    this.categoryQuery.set(this.getCategoryDisplayLabel(category.name, category.pathLabel));
     this.isCategoryDropdownOpen.set(false);
+    this.remoteCategoryResults.set([]);
   }
 
   clearUnit(event?: Event): void {
     event?.preventDefault();
     this.draft.unitId = '';
-    this.unitQuery = '';
+    this.unitQuery.set('');
     this.isUnitDropdownOpen.set(false);
   }
 
   clearCategory(event?: Event): void {
     event?.preventDefault();
     this.draft.categoryId = '';
-    this.categoryQuery = '';
+    this.categoryQuery.set('');
     this.isCategoryDropdownOpen.set(false);
+    this.remoteCategoryResults.set([]);
   }
 
   formatUnitLabel(unit: Unit): string {
@@ -735,8 +793,36 @@ export class ItemEditFormComponent {
   }
 
   private syncQueriesFromDraft(): void {
-    this.unitQuery = this.getUnitLabel(this.draft.unitId);
-    this.categoryQuery = this.getCategoryLabel(this.draft.categoryId);
+    this.unitQuery.set(this.getUnitLabel(this.draft.unitId));
+    this.categoryQuery.set(this.getCategoryLabel(this.draft.categoryId));
+  }
+
+  private getEffectiveUnitSearchQuery(): string {
+    const rawQuery = this.unitQuery().trim().toLowerCase();
+    const selectedLabel = this.getUnitLabel(this.draft.unitId).trim().toLowerCase();
+    return this.stripSelectedPrefix(rawQuery, selectedLabel);
+  }
+
+  private getEffectiveCategorySearchQuery(): string {
+    const rawQuery = this.categoryQuery().trim().toLowerCase();
+    const selectedLabel = this.getCategoryLabel(this.draft.categoryId).trim().toLowerCase();
+    return this.stripSelectedPrefix(rawQuery, selectedLabel);
+  }
+
+  private stripSelectedPrefix(rawQuery: string, selectedLabel: string): string {
+    if (!rawQuery) {
+      return '';
+    }
+    if (!selectedLabel) {
+      return rawQuery;
+    }
+    if (rawQuery === selectedLabel) {
+      return '';
+    }
+    if (rawQuery.startsWith(selectedLabel)) {
+      return rawQuery.slice(selectedLabel.length).trim();
+    }
+    return rawQuery;
   }
 
   private getUnitLabel(unitId: string): string {
@@ -757,28 +843,46 @@ export class ItemEditFormComponent {
   }
 
   private addHashtagFromInput(): void {
-    const tag = this.hashtagInput.trim().replace(/\s+/g, ' ');
-    if (!tag) {
+    const raw = this.hashtagInput.trim();
+    if (!raw) {
       this.hashtagInput = '';
       return;
     }
-    if (!this.isValidHashtag(tag)) {
-      this.formError.set('Тег должен быть длиной 1-50 символов и содержать только буквы, цифры, дефис и пробел.');
-      return;
+
+    // Split by comma or semicolon for multi-tag entry (e.g. "асус, лаптоп")
+    const parts = raw.includes(',') || raw.includes(';')
+      ? raw.split(/[,;]+/).map(s => s.trim().replace(/\s+/g, ' ')).filter(Boolean)
+      : [raw.replace(/\s+/g, ' ')];
+
+    let added = 0;
+    const invalidTags: string[] = [];
+
+    for (const tag of parts) {
+      if (this.draft.hashtags.length >= 20) {
+        this.formError.set('Можно добавить не более 20 тегов.');
+        break;
+      }
+      if (!this.isValidHashtag(tag)) {
+        invalidTags.push(tag);
+        continue;
+      }
+      const normalizedKey = this.normalizeHashtagKey(tag);
+      if (this.draft.hashtags.some(existing => this.normalizeHashtagKey(existing) === normalizedKey)) {
+        continue; // duplicate, silently skip
+      }
+      this.draft.hashtags = [...this.draft.hashtags, tag];
+      added++;
     }
-    if (this.draft.hashtags.length >= 20) {
-      this.formError.set('Можно добавить не более 20 тегов.');
-      return;
-    }
-    const normalizedKey = this.normalizeHashtagKey(tag);
-    if (this.draft.hashtags.some(existing => this.normalizeHashtagKey(existing) === normalizedKey)) {
-      this.hashtagInput = '';
-      this.formError.set(null);
-      return;
-    }
-    this.draft.hashtags = [...this.draft.hashtags, tag];
+
     this.hashtagInput = '';
-    this.formError.set(null);
+
+    if (invalidTags.length > 0) {
+      this.formError.set(
+        `Неверный формат: «${invalidTags.join('», «')}». Тег: 1-50 символов, буквы/цифры/дефис/пробел.`
+      );
+    } else {
+      this.formError.set(null);
+    }
   }
 
   private isValidHashtag(tag: string): boolean {
