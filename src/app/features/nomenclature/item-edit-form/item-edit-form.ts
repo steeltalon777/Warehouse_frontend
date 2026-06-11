@@ -118,7 +118,7 @@ import { debounceTime, distinctUntilChanged, switchMap, takeUntil, catchError } 
             @for (tag of draft.hashtags; track tag) {
               <span class="tag-chip">
                 <span>{{ tag }}</span>
-                <button type="button" class="tag-chip-remove" (click)="removeHashtag(tag)" [attr.aria-label]="'Удалить тег ' + tag">×</button>
+                <button type="button" class="tag-chip-remove" (click)="removeHashtag(tag)" [attr.aria-label]="'Удалить тег ' + tag">&times;</button>
               </span>
             }
             <input
@@ -127,10 +127,11 @@ import { debounceTime, distinctUntilChanged, switchMap, takeUntil, catchError } 
               class="tag-input"
               [(ngModel)]="hashtagInput"
               (keydown.enter)="onHashtagEnter($event)"
-              placeholder="Введите тег и нажмите Enter"
+              (keydown.backspace)="onHashtagBackspace()"
+              placeholder="Теги через запятую, Enter — добавить"
             />
           </div>
-          <div class="form-hint">До 20 тегов, 1-50 символов: буквы, цифры, дефис и пробел.</div>
+          <div class="form-hint">До 20 тегов, ввод через запятую. Backspace удаляет последний.</div>
         </div>
 
         <!-- Описание -->
@@ -781,6 +782,12 @@ export class ItemEditFormComponent implements OnDestroy {
   onHashtagEnter(event: Event): void {
     event.preventDefault();
     this.addHashtagFromInput();
+  }
+
+  onHashtagBackspace(): void {
+    if (this.hashtagInput.length > 0) return;
+    if (this.draft.hashtags.length === 0) return;
+    this.draft.hashtags = this.draft.hashtags.slice(0, -1);
   }
 
   removeHashtag(tag: string): void {
