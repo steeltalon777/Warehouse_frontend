@@ -14,8 +14,8 @@ export interface Item {
   id: string;
   name: string;
   sku: string;
-  category_id: string;
-  category_name: string;
+  category_id: string | null;
+  category_name: string | null;
   unit_id: string;
   unit_symbol: string;
   is_active: boolean;
@@ -156,4 +156,16 @@ export interface CatalogBatchResponse {
     error_message?: string;
   }>;
   server_time: string;
+}
+
+export interface ItemMergeRequest {
+  source_item_id: string;
+  target_item_id: string;
+  comment?: string;
+}
+
+export interface CategoryMergeRequest {
+  source_category_id: string;
+  target_category_id: string;
+  comment?: string;
 }

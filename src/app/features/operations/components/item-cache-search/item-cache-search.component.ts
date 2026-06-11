@@ -269,16 +269,23 @@ export class ItemCacheSearchComponent implements OnDestroy {
 
   selectItem(item: Item, event?: Event): void {
     event?.stopPropagation();
-    this.selectedItem.set(item);
-    this.searchText.set(item.name);
     this.highlightedIndex.set(-1);
     this.itemSelected.emit(item);
+    this.selectedItem.set(null);
+    this.searchText.set('');
+    this.localResults.set([]);
   }
 
   clearSelection(): void {
-    this.selectedItem.set(null);
-    this.searchText.set('');
+    this.reset();
     this.inputEl.nativeElement.focus();
     this.cleared.emit();
+  }
+
+  reset(): void {
+    this.selectedItem.set(null);
+    this.searchText.set('');
+    this.localResults.set([]);
+    this.highlightedIndex.set(-1);
   }
 }

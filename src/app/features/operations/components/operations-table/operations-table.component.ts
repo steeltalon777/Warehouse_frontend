@@ -44,9 +44,9 @@ import {
                 <span class="sort-arrow">{{ sortDirection() === 'asc' ? '▲' : '▼' }}</span>
               }
             </th>
-            <th class="col-author" (click)="sort.emit('createdByLabel')">
-              Автор
-              @if (sortColumn() === 'createdByLabel') {
+            <th class="col-comment" (click)="sort.emit('comment')">
+              Комментарий
+              @if (sortColumn() === 'comment') {
                 <span class="sort-arrow">{{ sortDirection() === 'asc' ? '▲' : '▼' }}</span>
               }
             </th>
@@ -83,7 +83,11 @@ import {
               </td>
               <td class="col-direction" data-testid="operation-direction-cell" [title]="row.directionLabel">{{ row.directionLabel }}</td>
               <td class="col-positions" data-testid="operation-items-count-cell">{{ row.positionCount }}</td>
-              <td class="col-author" data-testid="operation-author-cell" [title]="row.createdByUserId">{{ row.createdByLabel }}</td>
+              <td
+                class="col-comment"
+                data-testid="operation-comment-cell"
+                [attr.title]="row.comment?.trim() ? row.comment : null"
+              >{{ row.comment?.trim() || '—' }}</td>
               <td class="col-date" data-testid="operation-date-cell">{{ row.createdAt | date:'dd.MM.yyyy HH:mm' }}</td>
               <td class="col-actions" (click)="$event.stopPropagation()">
                 <div class="action-stack">
@@ -202,7 +206,7 @@ import {
     .col-status { width: 7%; min-width: 70px; }
     .col-direction { width: 18%; min-width: 130px; }
     .col-positions { width: 4%; min-width: 40px; text-align: center; }
-    .col-author { width: auto; min-width: 120px; }
+    .col-comment { width: auto; min-width: 120px; }
     .col-date { width: auto; min-width: 80px; white-space: nowrap; }
     .col-actions { width: 160px; min-width: 160px; text-align: center; }
 

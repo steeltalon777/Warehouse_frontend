@@ -302,7 +302,7 @@ Initial target matrix:
 | Pending acceptance | `/pending-acceptance/` or agreed route | Angular candidate | Required by `Functional and WorkLogik.md`. |
 | Lost/unaccepted assets | `/lost-assets/` | Angular candidate | Required by `Functional and WorkLogik.md`. |
 | Temporary items | `/temporary-items/` | Angular candidate | SSR implemented; dashboard count required. |
-| Issued assets | `/issued-assets/` | Angular candidate | Design/partial requirements. |
+| Issued assets | `/issued-assets/` | Angular primary | 40/60 workspace: left tree of issue-object categories/objects, right panel for selection. Sidebar label is `Репозиторий выдачи`; old `Непринятое` sidebar label is renamed to `Репозиторий непринятого` (route `/operations/lost-assets` unchanged). Per-row `Возврат`/`Списание` actions launch the operations modal with object-issued `availableQuantity` validation. |
 | Reports/documents | `/reports/`, `/documents/` | Angular candidate | PDF invoice flow required soon. |
 | Admin/users/devices | `/admin-panel/`, `/users/` | SSR active | Keep Django/admin-first until a TZ changes it. |
 

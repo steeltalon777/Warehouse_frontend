@@ -39,7 +39,7 @@ function currentDateTimeLocal(): string {
   standalone: true,
   imports: [CommonModule, FormsModule, ItemCacheSearchComponent, OperationLinesTableComponent, InlineItemCreateModalComponent],
   template: `
-    <div class="wh-modal-overlay modal-overlay" [class.modal-overlay--pair]="isInlineModalOpen()" (click)="onOverlayClick($event)">
+    <div class="wh-modal-overlay modal-overlay" [class.modal-overlay--pair]="isInlineModalOpen()">
       <div class="wh-modal modal-container">
         <div class="wh-modal__header modal-header">
           <h2>{{ isEdit() ? 'Редактирование операции' : 'Новая операция' }}</h2>
@@ -878,12 +878,6 @@ export class OperationCreateModalComponent implements OnInit {
     }));
   }
 
-  onOverlayClick(event: MouseEvent): void {
-    if (event.target === event.currentTarget) {
-      this.cancel.emit();
-    }
-  }
-
   onTypeModelChange(value: OperationType | null): void {
     if (!value) return;
     // Locked-from-row drafts must keep the type that was determined by the
@@ -993,7 +987,7 @@ export class OperationCreateModalComponent implements OnInit {
               ...l,
               itemId: item.id,
               itemName: item.name,
-              categoryName: item.category_name,
+              categoryName: item.category_name ?? undefined,
               sku: item.sku,
               unitId: item.unit_id,
               unitName: item.unit_symbol,
@@ -1020,7 +1014,7 @@ export class OperationCreateModalComponent implements OnInit {
           localId: nextLocalId(),
           itemId: item.id,
           itemName: item.name,
-          categoryName: item.category_name,
+          categoryName: item.category_name ?? undefined,
           sku: item.sku,
           unitId: item.unit_id,
           unitName: item.unit_symbol,

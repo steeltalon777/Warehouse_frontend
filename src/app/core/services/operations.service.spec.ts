@@ -48,6 +48,7 @@ describe('OperationsService', () => {
       search: 'test',
       type: 'RECEIVE' as OperationType,
       status: 'draft' as OperationStatus,
+      acceptanceState: 'pending',
       siteId: 'site-1',
       createdAfter: '2026-01-01',
       createdBefore: '2026-01-31',
@@ -66,6 +67,7 @@ describe('OperationsService', () => {
     expect(params['search']).toBe('test');
     expect(params['type']).toBe('RECEIVE');
     expect(params['status']).toBe('draft');
+    expect(params['acceptance_state']).toBe('pending');
     expect(params['site_id']).toBe('site-1');
     expect(params['created_after']).toBe('2026-01-01');
     expect(params['created_before']).toBe('2026-01-31');
@@ -79,6 +81,7 @@ describe('OperationsService', () => {
 
     await service.loadList({
       search: '', type: null, status: null, siteId: null,
+      acceptanceState: null,
       createdAfter: null, createdBefore: null, updatedAfter: null, updatedBefore: null,
       createdByUserId: null, onlyMine: true, page: 1, pageSize: 20,
     });
@@ -96,6 +99,7 @@ describe('OperationsService', () => {
 
     await service.loadList({
       search: '', type: null, status: null, siteId: null,
+      acceptanceState: null,
       createdAfter: null, createdBefore: null, updatedAfter: null, updatedBefore: null,
       createdByUserId: null, onlyMine: false, page: 1, pageSize: 20,
     });
@@ -114,6 +118,7 @@ describe('OperationsService', () => {
 
     await service.loadList({
       search: '', type: null, status: null, siteId: null,
+      acceptanceState: null,
       createdAfter: null, createdBefore: null, updatedAfter: null, updatedBefore: null,
       createdByUserId: null, onlyMine: false, page: 1, pageSize: 20,
     });
@@ -132,6 +137,7 @@ describe('OperationsService', () => {
 
     await service.loadList({
       search: '', type: null, status: null, siteId: null,
+      acceptanceState: null,
       createdAfter: null, createdBefore: null, updatedAfter: null, updatedBefore: null,
       createdByUserId: null, onlyMine: false, page: 1, pageSize: 20,
     });
@@ -144,11 +150,12 @@ describe('OperationsService', () => {
 
   it('mapToRowVm allows root to edit any draft and accept pending', async () => {
     authMock.authContext = vi.fn(() => ({ userId: 'user-1', role: 'root', defaultSiteId: null }));
-    const op = makeOperation('pending', { created_by_user_id: 'user-2' });
+    const op = makeOperation('submitted', { created_by_user_id: 'user-2', acceptance_state: 'pending' });
     bffMock.getList.mockReturnValue(of({ items: [op], total_count: 1, page: 1, page_size: 20 }));
 
     await service.loadList({
       search: '', type: null, status: null, siteId: null,
+      acceptanceState: null,
       createdAfter: null, createdBefore: null, updatedAfter: null, updatedBefore: null,
       createdByUserId: null, onlyMine: false, page: 1, pageSize: 20,
     });
@@ -168,6 +175,7 @@ describe('OperationsService', () => {
 
     await service.loadList({
       search: '', type: null, status: null, siteId: null,
+      acceptanceState: null,
       createdAfter: null, createdBefore: null, updatedAfter: null, updatedBefore: null,
       createdByUserId: null, onlyMine: false, page: 1, pageSize: 20,
     });
@@ -212,6 +220,7 @@ describe('OperationsService', () => {
       personName: 'Иванов Иван',
       issueObjectId: '7',
       issueObjectName: 'Объект A',
+      effectiveAt: '2026-01-15T10:30',
       comment: 'test note',
       lines: [
         {
@@ -237,6 +246,7 @@ describe('OperationsService', () => {
       issued_to_name: 'Иванов Иван',
       issue_object_id: '7',
       issue_object_name_snapshot: 'Объект A',
+      effective_at: new Date('2026-01-15T10:30').toISOString(),
       notes: 'test note',
     });
     expect(payload.lines).toEqual([
@@ -246,6 +256,33 @@ describe('OperationsService', () => {
         qty: '400',
       },
     ]);
+  });
+
+  it('updateOperation sends effective_at via dedicated endpoint', async () => {
+    bffMock.patchData
+      .mockReturnValueOnce(of({ id: 'op-1', status: 'draft' }))
+      .mockReturnValueOnce(of({ id: 'op-1', status: 'draft', effective_at: '2026-01-15T07:30:00.000Z' }));
+
+    await service.updateOperation('op-1', {
+      id: 'op-1',
+      type: 'RECEIVE' as OperationType,
+      status: 'draft',
+      destinationSiteId: '20',
+      effectiveAt: '2026-01-15T10:30',
+      comment: null,
+      lines: [
+        { localId: 'l1', itemId: '5', itemName: 'Кабель', unitName: 'шт', quantity: 1, isTemporary: false, fromBalances: false },
+      ],
+    });
+
+    expect(bffMock.patchData).toHaveBeenCalledTimes(2);
+    const [mainPath, mainPayload] = bffMock.patchData.mock.calls[0];
+    expect(mainPath).toBe('/operations/op-1');
+    expect(mainPayload.effective_at).toBeUndefined();
+
+    const [effectivePath, effectivePayload] = bffMock.patchData.mock.calls[1];
+    expect(effectivePath).toBe('/operations/op-1/effective-at');
+    expect(effectivePayload.effective_at).toBe(new Date('2026-01-15T10:30').toISOString());
   });
 
   it('isSubmitting toggles during submitOperation', async () => {
@@ -267,6 +304,7 @@ describe('OperationsService', () => {
 
     await service.loadList({
       search: '', type: null, status: null, siteId: null,
+      acceptanceState: null,
       createdAfter: null, createdBefore: null, updatedAfter: null, updatedBefore: null,
       createdByUserId: null, onlyMine: false, page: 1, pageSize: 20,
     });
@@ -282,6 +320,7 @@ describe('OperationsService', () => {
 
     await service.loadList({
       search: '', type: null, status: null, siteId: null,
+      acceptanceState: null,
       createdAfter: null, createdBefore: null, updatedAfter: null, updatedBefore: null,
       createdByUserId: null, onlyMine: false, page: 1, pageSize: 20,
     });
@@ -297,6 +336,7 @@ describe('OperationsService', () => {
 
     await service.loadList({
       search: '', type: null, status: null, siteId: null,
+      acceptanceState: null,
       createdAfter: null, createdBefore: null, updatedAfter: null, updatedBefore: null,
       createdByUserId: null, onlyMine: false, page: 1, pageSize: 20,
     });
@@ -313,6 +353,7 @@ describe('OperationsService', () => {
 
     await service.loadList({
       search: '', type: null, status: null, siteId: null,
+      acceptanceState: null,
       createdAfter: null, createdBefore: null, updatedAfter: null, updatedBefore: null,
       createdByUserId: null, onlyMine: false, page: 1, pageSize: 20,
     });
@@ -431,6 +472,7 @@ describe('OperationsService', () => {
       created_by_user_id: 'u1',
       created_at: '2026-01-01T00:00:00Z',
       updated_at: '2026-01-01T00:00:00Z',
+      effective_at: '2026-01-02T03:04:00Z',
       lines: [
         { id: 'line-1', item_id: 'item-1', item_name: 'Кабель', sku: 'SKU-1', unit_symbol: 'м', qty: '100' },
         { id: 'line-2', item_id: 'item-2', item_name: 'Разъем', sku: 'SKU-2', unit_symbol: 'шт', qty: '50' },
@@ -442,6 +484,7 @@ describe('OperationsService', () => {
     expect(draft.type).toBe('MOVE');
     expect(draft.sourceSiteId).toBe('10');
     expect(draft.destinationSiteId).toBe('20');
+    expect(draft.effectiveAt).toMatch(/^2026-01-02T\d{2}:04$/);
     expect(draft.lines).toHaveLength(2);
     expect(draft.lines[0].itemId).toBe('item-1');
     expect(draft.lines[0].itemName).toBe('Кабель');

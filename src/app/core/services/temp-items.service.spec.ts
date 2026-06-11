@@ -105,7 +105,7 @@ describe('TempItemsService', () => {
 
     const result = await service.loadDetail('ti-1');
 
-    expect(bffMock.getData).toHaveBeenCalledWith('/temporary-items/ti-1');
+    expect(bffMock.getData).toHaveBeenCalledWith('/review-items/ti-1');
     expect(result).toEqual(detail);
   });
 
@@ -115,7 +115,7 @@ describe('TempItemsService', () => {
     const result = await service.approveAsItem('ti-1', { name: 'New Item', category_id: 'cat-1', unit_id: 'u-1' });
 
     expect(bffMock.postData).toHaveBeenCalledWith(
-      '/temporary-items/ti-1/approve-as-item',
+      '/review-items/ti-1/confirm',
       { name: 'New Item', category_id: 'cat-1', unit_id: 'u-1' }
     );
     expect(result).toBe(true);

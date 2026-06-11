@@ -8,6 +8,7 @@ import {
   OperationListRowVm,
   OperationDraftVm,
   OperationLineDraftVm,
+  OperationInlineItemDraftVm,
   SiteDto,
   BalanceDto,
   OPERATION_TYPE_LABELS,
@@ -74,6 +75,7 @@ export class OperationsService {
           params['status'] = filters.status;
         }
       }
+      if (filters.acceptanceState) params['acceptance_state'] = filters.acceptanceState;
       if (filters.siteId) params['site_id'] = filters.siteId;
       if (filters.createdAfter) params['created_after'] = filters.createdAfter;
       if (filters.createdBefore) params['created_before'] = filters.createdBefore;
@@ -113,7 +115,7 @@ export class OperationsService {
     this.error.set(null);
     this.fieldErrors.set(null);
     try {
-      const payload = this.buildPayload(draft);
+      const payload = this.buildPayload(draft, { includeEffectiveAt: true, isCreate: true });
       const result = await firstValueFrom(
         this.bff.postData<OperationDto>('/operations', payload)
       );
@@ -131,11 +133,15 @@ export class OperationsService {
     this.error.set(null);
     this.fieldErrors.set(null);
     try {
-      const payload = this.buildPayload(draft);
+      const payload = this.buildPayload(draft, { includeEffectiveAt: false, isCreate: false });
       const result = await firstValueFrom(
         this.bff.patchData<OperationDto>(`/operations/${id}`, payload)
       );
-      return result;
+      const effectiveAt = this.toIsoDateTime(draft.effectiveAt);
+      if (!effectiveAt) return result;
+      return await firstValueFrom(
+        this.bff.patchData<OperationDto>(`/operations/${id}/effective-at`, { effective_at: effectiveAt })
+      );
     } catch (err: any) {
       this.normalizeError(err);
       throw err;
@@ -204,19 +210,36 @@ export class OperationsService {
   }
 
   mapDtoToDraftVm(dto: OperationDto): OperationDraftVm {
-    const lines: OperationLineDraftVm[] = (dto.lines ?? []).map((l, idx) => ({
-      localId: `line-${l.id ?? idx}`,
-      itemId: l.item_id ?? l.resolved_item_id ?? null,
-      itemName: l.item_name ?? l.item_name_snapshot ?? l.resolved_item_name ?? '',
-      categoryName: l.category_name_snapshot ?? undefined,
-      sku: l.sku ?? l.item_sku_snapshot ?? null,
-      unitId: l.unit_id ?? null,
-      unitName: l.unit_symbol ?? l.unit_symbol_snapshot ?? 'шт',
-      quantity: l.qty ? parseFloat(l.qty) : null,
-      lineNumber: idx + 1,
-      isTemporary: l.is_temporary ?? false,
-      fromBalances: false,
-    }));
+    const lines: OperationLineDraftVm[] = (dto.lines ?? []).map((l, idx) => {
+      const hasInline = !!l.temporary_draft_payload || !!l.is_draft_temporary;
+      const inlineItem: OperationInlineItemDraftVm | null = l.temporary_draft_payload
+        ? {
+            clientKey: l.temporary_draft_payload.client_key ?? `inline-${idx}-${Date.now()}`,
+            name: l.temporary_draft_payload.name ?? l.item_name_snapshot ?? l.resolved_item_name ?? '',
+            sku: l.temporary_draft_payload.sku ?? l.item_sku_snapshot ?? null,
+            unitId: l.temporary_draft_payload.unit_id ?? l.unit_id ?? '',
+            unitName: l.unit_symbol ?? l.unit_symbol_snapshot ?? 'шт',
+            categoryId: l.temporary_draft_payload.category_id ?? null,
+            description: l.temporary_draft_payload.description ?? null,
+            hashtags: l.temporary_draft_payload.hashtags ?? null,
+          }
+        : null;
+
+      return {
+        localId: `line-${l.id ?? idx}`,
+        itemId: hasInline ? null : (l.item_id ?? l.resolved_item_id ?? null),
+        itemName: l.item_name ?? l.item_name_snapshot ?? l.resolved_item_name ?? '',
+        categoryName: l.category_name_snapshot ?? undefined,
+        sku: l.sku ?? l.item_sku_snapshot ?? null,
+        unitId: l.unit_id ?? null,
+        unitName: l.unit_symbol ?? l.unit_symbol_snapshot ?? 'шт',
+        quantity: l.qty ? parseFloat(l.qty) : null,
+        lineNumber: idx + 1,
+        isTemporary: l.is_temporary ?? false,
+        fromBalances: false,
+        inlineItem,
+      };
+    });
 
     const type = dto.type;
     const fallbackSiteId = dto.site_id != null ? String(dto.site_id) : null;
@@ -238,13 +261,14 @@ export class OperationsService {
       issueObjectId: dto.issue_object_id ?? null,
       issueObjectName: dto.issue_object_name_snapshot ?? null,
       acceptanceState: dto.acceptance_state ?? null,
+      effectiveAt: this.toDateTimeLocalValue(dto.effective_at ?? dto.created_at ?? null),
       comment: dto.comment ?? (dto as any).notes ?? null,
       lines,
     };
   }
 
   isDraftEditable(status: OperationStatus): boolean {
-    return status === 'draft' || status === 'created';
+    return status === 'draft';
   }
 
   // ─── Sites / Balances ────────────────────────────────────────
@@ -304,11 +328,8 @@ export class OperationsService {
     const statusLines = this.buildStatusLines(op);
 
     const isDraft = op.status === 'draft';
-    const isCreated = op.status === 'created';
-    const isPending = op.status === 'pending';
     const isSubmitted = op.status === 'submitted';
     const isCancelled = op.status === 'cancelled';
-    const isRejected = op.status === 'rejected';
 
     const auth = this.authContextService.authContext();
     const role = auth?.role ?? 'observer';
@@ -326,22 +347,22 @@ export class OperationsService {
       canPrint = isSubmitted;
     } else if (role === 'storekeeper') {
       canEdit = isDraft && op.created_by_user_id === userId;
-      canSubmit = isDraft || isCreated;
-      canCancel = isDraft || isCreated || isPending;
+      canSubmit = isDraft;
+      canCancel = isDraft;
       canPrint = isSubmitted;
     } else if (role === 'chief_storekeeper') {
       canEdit = isDraft;
-      canSubmit = isDraft || isCreated;
-      canCancel = isDraft || isCreated || isPending;
+      canSubmit = isDraft;
+      canCancel = isDraft;
       canPrint = isSubmitted;
     } else {
       canEdit = isDraft;
-      canSubmit = isDraft || isCreated;
-      canCancel = isDraft || isCreated || isPending || isSubmitted;
+      canSubmit = isDraft;
+      canCancel = isDraft || isSubmitted;
       canPrint = isSubmitted;
     }
 
-    if (isCancelled || isRejected) {
+    if (isCancelled) {
       canCancel = false;
     }
 
@@ -349,6 +370,7 @@ export class OperationsService {
       id: op.id,
       number: displayNumber,
       displayNumber,
+      comment: op.comment ?? null,
       type: normalizedType as OperationType,
       typeLabel,
       status: op.status,
@@ -369,7 +391,7 @@ export class OperationsService {
       linesCount: op.lines_count ?? (op.lines?.length ?? 0),
       positionCount: op.lines_count ?? (op.lines?.length ?? 0),
       acceptanceStateLabel: op.acceptance_state_label || '',
-      canInvoice: op.status === 'submitted' || op.status === 'pending',
+      canInvoice: op.status === 'draft' || op.status === 'submitted',
       canOpen: true,
       canEdit,
       canSubmit,
@@ -449,20 +471,24 @@ export class OperationsService {
 
   private isAcceptanceApplicable(op: OperationDto): boolean {
     return (op.type === 'MOVE' || op.type === 'RECEIVE')
-      && (op.status === 'submitted' || op.status === 'pending');
+      && op.status === 'submitted'
+      && (op.acceptance_state === 'pending' || op.acceptance_state === 'in_progress');
   }
 
   private isDeleteAllowed(op: OperationDto): boolean {
     const auth = this.authContextService.authContext();
     const role = auth?.role ?? 'observer';
-    const isDraft = op.status === 'draft' || op.status === 'created';
+    const isDraft = op.status === 'draft';
     if (role === 'root') return isDraft || op.status === 'submitted';
     if (role === 'chief_storekeeper') return isDraft;
     if (role === 'storekeeper') return isDraft && op.created_by_user_id === auth?.userId;
     return false;
   }
 
-  private buildPayload(draft: OperationDraftVm): Record<string, unknown> {
+  private buildPayload(
+    draft: OperationDraftVm,
+    options: { includeEffectiveAt: boolean; isCreate?: boolean } = { includeEffectiveAt: true, isCreate: false }
+  ): Record<string, unknown> {
     const mapOperationType = (type: OperationType): string => {
       return type === 'CORRECTION' ? 'ADJUSTMENT' : type;
     };
@@ -482,6 +508,18 @@ export class OperationsService {
     let includeSourceSite = false;
     let includeDestinationSite = false;
 
+    // Object-source flows (ISSUE_RETURN, WRITE_OFF from object) still need
+    // a physical site_id on the server (return / write-off target warehouse).
+    // The object itself is only the logical source for register math, not a
+    // warehouse. Fall back to the user's default site when the draft has no
+    // site selected.
+    const isObjectSourceFlow =
+      draft.type === 'ISSUE_RETURN' ||
+      (draft.type === 'WRITE_OFF' && draft.writeOffSource === 'object');
+    const fallbackSiteId = isObjectSourceFlow
+      ? this.authContextService.authContext()?.defaultSiteId ?? this.sites()[0]?.id ?? null
+      : null;
+
     if (draft.type === 'RECEIVE') {
       siteId = safeId(draft.destinationSiteId);
       includeDestinationSite = true;
@@ -492,23 +530,49 @@ export class OperationsService {
       includeDestinationSite = true;
     } else {
       // EXPENSE, WRITE_OFF, ISSUE, ISSUE_RETURN, CORRECTION
-      siteId = safeId(draft.sourceSiteId);
+      siteId = safeId(draft.sourceSiteId ?? fallbackSiteId);
       includeSourceSite = true;
       // Non-MOVE non-RECEIVE does not send destination_site_id
     }
+
+    const hasInlineLines = draft.lines.some(l => l.inlineItem);
 
     const payload: Record<string, unknown> = {
       type: mapOperationType(draft.type),
       site_id: siteId,
       notes: draft.comment || '',
       lines: draft.lines
-        .filter(l => l.quantity != null && l.quantity > 0 && l.itemId)
-        .map((l, idx) => ({
-          line_number: idx + 1,
-          item_id: safeId(l.itemId),
-          qty: String(l.quantity),
-        })),
+        .filter(l => l.quantity != null && l.quantity > 0 && (l.itemId || l.inlineItem))
+        .map((l, idx) => {
+          const baseLine: Record<string, unknown> = {
+            line_number: idx + 1,
+            qty: String(l.quantity),
+          };
+          if (l.inlineItem) {
+            baseLine['temporary_item'] = {
+              client_key: l.inlineItem.clientKey,
+              name: l.inlineItem.name,
+              sku: l.inlineItem.sku,
+              unit_id: safeId(l.inlineItem.unitId),
+              category_id: safeId(l.inlineItem.categoryId),
+              description: l.inlineItem.description ?? null,
+              hashtags: l.inlineItem.hashtags ?? null,
+            };
+          } else {
+            baseLine['item_id'] = safeId(l.itemId);
+          }
+          return baseLine;
+        }),
     };
+
+    if (options.isCreate && hasInlineLines) {
+      payload['client_request_id'] = this.generateClientRequestId();
+    }
+
+    if (options.includeEffectiveAt) {
+      const effectiveAt = this.toIsoDateTime(draft.effectiveAt);
+      if (effectiveAt) payload['effective_at'] = effectiveAt;
+    }
 
     if (includeSourceSite) {
       const srcId = safeId(draft.sourceSiteId);
@@ -530,6 +594,33 @@ export class OperationsService {
     }
 
     return payload;
+  }
+
+  private generateClientRequestId(): string {
+    try {
+      return `op-inline-${crypto.randomUUID()}`;
+    } catch {
+      return `op-inline-${Date.now()}-${Math.random().toString(36).slice(2, 10)}`;
+    }
+  }
+
+  private toDateTimeLocalValue(value: string | null | undefined): string | null {
+    if (!value) return null;
+    const date = new Date(value);
+    if (Number.isNaN(date.getTime())) return null;
+    const pad = (num: number) => String(num).padStart(2, '0');
+    return [
+      date.getFullYear(),
+      pad(date.getMonth() + 1),
+      pad(date.getDate()),
+    ].join('-') + `T${pad(date.getHours())}:${pad(date.getMinutes())}`;
+  }
+
+  private toIsoDateTime(value: string | null | undefined): string | null {
+    if (!value) return null;
+    const date = new Date(value);
+    if (Number.isNaN(date.getTime())) return null;
+    return date.toISOString();
   }
 
   private normalizeError(err: any): void {

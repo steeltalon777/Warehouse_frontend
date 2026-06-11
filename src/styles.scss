@@ -14,6 +14,21 @@ body {
   min-height: 100%;
 }
 
+/* Override app-root to prevent page-level scrolling */
+app-root {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  overflow: hidden;
+}
+
+app-root > div.warehouse-spa {
+  height: 100%;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+}
+
 .warehouse-spa ::-webkit-scrollbar {
   width: 6px;
   height: 6px;

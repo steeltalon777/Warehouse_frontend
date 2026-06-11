@@ -12,6 +12,7 @@ import { CatalogTreeNodeVm } from '../../../core/models/nomenclature.models';
         [class.dirty]="node().dirty"
         [class.inactive]="!node().isActive"
         [class.error]="node().error"
+        [class.pending-delete]="node().pendingAction === 'delete'"
         [style.padding-left.px]="node().level * 16"
         (click)="select.emit(node())"
       >
@@ -41,7 +42,10 @@ import { CatalogTreeNodeVm } from '../../../core/models/nomenclature.models';
         </div>
 
         <div class="node-badges">
-          @if (node().dirty) {
+          @if (node().pendingAction === 'delete') {
+            <span class="wh-badge badge badge-delete">удалено</span>
+          }
+          @if (node().dirty && node().pendingAction !== 'delete') {
             <span class="wh-badge badge badge-dirty">изменено</span>
           }
           @if (!node().isActive) {
@@ -92,6 +96,13 @@ import { CatalogTreeNodeVm } from '../../../core/models/nomenclature.models';
       border-color: #FCA5A5;
     }
     .tree-row.inactive .node-name { color: #9CA3AF; }
+    .tree-row.pending-delete {
+      opacity: 0.5;
+      text-decoration: line-through;
+      background: #FEF2F2;
+      border-color: #FECACA;
+    }
+    .tree-row.pending-delete .node-name { color: #991B1B; }
 
     .toggle-btn {
       flex-shrink: 0;
@@ -150,6 +161,14 @@ import { CatalogTreeNodeVm } from '../../../core/models/nomenclature.models';
       display: flex;
       gap: 4px;
       flex-shrink: 0;
+    }
+    .badge-delete {
+      background: #FEE2E2;
+      color: #991B1B;
+      font-size: 10px;
+      font-weight: 500;
+      padding: 2px 8px;
+      border-radius: 999px;
     }
     .children { padding-left: 4px; }
   `]

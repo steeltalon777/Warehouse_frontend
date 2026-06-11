@@ -103,6 +103,7 @@ import { NomenclatureService } from '../../../core/services/nomenclature.service
                   (resetDraft)="resetDraft.emit()"
                   (deactivate)="deactivate.emit($event)"
                   (delete)="delete.emit($event)"
+                  (mergeRequest)="mergeRequest.emit($event)"
                 />
               </div>
             }
@@ -126,6 +127,7 @@ import { NomenclatureService } from '../../../core/services/nomenclature.service
                   (resetDraft)="resetDraft.emit()"
                   (deactivate)="deactivate.emit($event)"
                   (delete)="delete.emit($event)"
+                  (mergeRequest)="mergeRequest.emit($event)"
                 />
               </div>
             }
@@ -255,6 +257,7 @@ export class RightPanelComponent {
   readonly resetDraft = output<void>();
   readonly deactivate = output<string>();
   readonly delete = output<string>();
+  readonly mergeRequest = output<string>();
 
   /** Resolve unit from selectedEntity (service) by node id, works even when inputs lag */
   readonly resolvedUnit = computed(() => {

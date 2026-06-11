@@ -27,3 +27,10 @@ export interface DocumentStatusPayload {
   payload?: Record<string, unknown>;
   payload_hash?: string;
 }
+
+export interface OperationWaybillOpenResult {
+  document: Document;
+  created: boolean;
+  pdf_url: string;
+  download_url: string;
+}

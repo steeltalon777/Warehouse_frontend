@@ -1,12 +1,16 @@
 import { Component, computed, inject, signal, OnInit } from '@angular/core';
 import { NomenclatureService } from '../../../core/services/nomenclature.service';
 import { CatalogChangeBufferService } from '../../../core/services/catalog-change-buffer.service';
+import { AuthContextService } from '../../../core/services/auth-context.service';
 import { PageHeaderComponent } from '../page-header/page-header';
 import { SearchInputComponent } from '../search-input/search-input';
 import { ActionButtonsComponent } from '../action-buttons/action-buttons';
 import { CatalogTreeComponent } from '../catalog-tree/catalog-tree';
 import { RightPanelComponent } from '../right-panel/right-panel';
 import { PendingChangesBarComponent } from '../pending-changes-bar/pending-changes-bar';
+import { MergeItemModalComponent } from '../merge-item-modal/merge-item-modal';
+import { MergeCategoryModalComponent } from '../merge-category-modal/merge-category-modal';
+import { Category, Item } from '../../../core/models/nomenclature.models';
 
 @Component({
   selector: 'app-nomenclature-page',
@@ -18,6 +22,8 @@ import { PendingChangesBarComponent } from '../pending-changes-bar/pending-chang
     CatalogTreeComponent,
     RightPanelComponent,
     PendingChangesBarComponent,
+    MergeItemModalComponent,
+    MergeCategoryModalComponent,
   ],
   template: `
     <div class="wh-page page">
@@ -97,9 +103,26 @@ import { PendingChangesBarComponent } from '../pending-changes-bar/pending-chang
               (resetDraft)="onResetDraft()"
               (deactivate)="onDeactivate($event)"
               (delete)="onDelete($event)"
+              (mergeRequest)="onMergeRequest($event)"
             />
           </div>
         </div>
+      }
+
+      @if (mergeItemSource()) {
+        <app-merge-item-modal
+          [sourceItem]="mergeItemSource()!"
+          (mergeComplete)="onItemMergeComplete()"
+          (cancel)="mergeItemSource.set(null)"
+        />
+      }
+      @if (mergeCategorySource()) {
+        <app-merge-category-modal
+          [sourceCategory]="mergeCategorySource()!"
+          [allCategories]="categories()"
+          (mergeComplete)="onCategoryMergeComplete()"
+          (cancel)="mergeCategorySource.set(null)"
+        />
       }
     </div>
   `,
@@ -213,8 +236,10 @@ import { PendingChangesBarComponent } from '../pending-changes-bar/pending-chang
 export class NomenclaturePageComponent implements OnInit {
   private readonly service = inject(NomenclatureService);
   private readonly changeBuffer = inject(CatalogChangeBufferService);
+  private readonly authContextService = inject(AuthContextService);
 
   ngOnInit(): void {
+    this.authContextService.load();
     this.service.loadBootstrap();
   }
 
@@ -244,6 +269,10 @@ export class NomenclaturePageComponent implements OnInit {
   );
 
   readonly createModeEntity = signal<{ type: 'category' | 'item' | 'unit'; entity: unknown } | null>(null);
+
+  // Merge modal state
+  readonly mergeItemSource = signal<Item | null>(null);
+  readonly mergeCategorySource = signal<Category | null>(null);
 
   onSearchChange(query: string): void {
     this.service.setSearch(query);
@@ -374,5 +403,30 @@ export class NomenclaturePageComponent implements OnInit {
     });
 
     this.service.clearSelection();
+  }
+
+  onMergeRequest(id: string): void {
+    const sel = this.service.selectedEntity();
+    if (!sel) return;
+
+    if (sel.type === 'item') {
+      const item = this.service.getSelectedItem();
+      if (item) this.mergeItemSource.set(item);
+    } else if (sel.type === 'category') {
+      const cat = this.service.getSelectedCategory();
+      if (cat) this.mergeCategorySource.set(cat);
+    }
+  }
+
+  async onItemMergeComplete(): Promise<void> {
+    this.mergeItemSource.set(null);
+    this.service.clearSelection();
+    await this.service.loadBootstrap();
+  }
+
+  async onCategoryMergeComplete(): Promise<void> {
+    this.mergeCategorySource.set(null);
+    this.service.clearSelection();
+    await this.service.loadBootstrap();
   }
 }

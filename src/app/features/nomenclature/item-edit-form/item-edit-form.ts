@@ -1,6 +1,7 @@
-import { Component, input, output, signal, computed, SimpleChanges } from '@angular/core';
+import { Component, ElementRef, inject, input, output, signal, computed, SimpleChanges, viewChild } from '@angular/core';
 import { FormsModule } from '@angular/forms';
 import { Item, Unit, Category } from '../../../core/models/nomenclature.models';
+import { AuthContextService } from '../../../core/services/auth-context.service';
 
 @Component({
   selector: 'app-item-edit-form',
@@ -34,34 +35,97 @@ import { Item, Unit, Category } from '../../../core/models/nomenclature.models';
         <!-- Единица измерения -->
         <div class="form-group">
           <label class="form-label">Единица измерения <span class="required">*</span></label>
-          <select class="wh-form-input form-select" [(ngModel)]="draft.unitId">
-            <option value="">— Выберите —</option>
-            @for (u of units(); track u.id) {
-              <option [value]="u.id">{{ u.name }} ({{ u.symbol }})</option>
+          <div class="combobox" (focusin)="openUnitDropdown()" (focusout)="closeUnitDropdownSoon()">
+            <div class="combobox-input-wrap">
+              <input
+                type="text"
+                class="wh-form-input form-input combobox-input"
+                [(ngModel)]="unitQuery"
+                (ngModelChange)="onUnitQueryChange($event)"
+                (focus)="openUnitDropdown()"
+                placeholder="Введите единицу измерения"
+                autocomplete="off"
+              />
+              @if (draft.unitId || unitQuery) {
+                <button class="combobox-clear" type="button" (mousedown)="clearUnit($event)" aria-label="Очистить единицу измерения">×</button>
+              }
+            </div>
+            @if (isUnitDropdownOpen()) {
+              <div class="combobox-dropdown">
+                @if (filteredUnits().length) {
+                  @for (u of filteredUnits(); track u.id) {
+                    <button class="combobox-option" type="button" (mousedown)="selectUnit(u, $event)">
+                      {{ formatUnitLabel(u) }}
+                    </button>
+                  }
+                } @else {
+                  <div class="combobox-empty">Ничего не найдено</div>
+                }
+              </div>
             }
-          </select>
+          </div>
         </div>
 
         <!-- Категория -->
         <div class="form-group full">
-          <label class="form-label">Категория <span class="required">*</span></label>
-          <select class="wh-form-input form-select" [(ngModel)]="draft.categoryId">
-            <option value="">— Выберите —</option>
-            @for (c of flatCategories(); track c.id) {
-              <option [value]="c.id">{{ c.indent }}{{ c.name }}</option>
+          <label class="form-label">Категория</label>
+          <div class="combobox" (focusin)="openCategoryDropdown()" (focusout)="closeCategoryDropdownSoon()">
+            <div class="combobox-input-wrap">
+              <input
+                type="text"
+                class="wh-form-input form-input combobox-input"
+                [(ngModel)]="categoryQuery"
+                (ngModelChange)="onCategoryQueryChange($event)"
+                (focus)="openCategoryDropdown()"
+                placeholder="Без категории"
+                autocomplete="off"
+              />
+              @if (draft.categoryId || categoryQuery) {
+                <button class="combobox-clear" type="button" (mousedown)="clearCategory($event)" aria-label="Очистить категорию">×</button>
+              }
+            </div>
+            @if (isCategoryDropdownOpen()) {
+              <div class="combobox-dropdown">
+                <button class="combobox-option combobox-option--placeholder" type="button" (mousedown)="clearCategory($event)">
+                  Без категории
+                </button>
+                @if (filteredCategories().length) {
+                  @for (c of filteredCategories(); track c.id) {
+                    <button class="combobox-option combobox-option--stacked" type="button" (mousedown)="selectCategory(c, $event)">
+                      <span>{{ c.name }}</span>
+                      @if (c.pathLabel) {
+                        <span class="combobox-meta">{{ c.pathLabel }}</span>
+                      }
+                    </button>
+                  }
+                } @else {
+                  <div class="combobox-empty">Ничего не найдено</div>
+                }
+              </div>
             }
-          </select>
+          </div>
         </div>
 
         <!-- Ключевые слова -->
         <div class="form-group full">
           <label class="form-label">Ключевые слова</label>
-          <input
-            type="text"
-            class="wh-form-input form-input"
-            [(ngModel)]="draft.hashtags"
-            placeholder="через запятую: кабель, сеть, cat5e"
-          />
+          <div class="tags-input" (click)="focusHashtagInput()">
+            @for (tag of draft.hashtags; track tag) {
+              <span class="tag-chip">
+                <span>{{ tag }}</span>
+                <button type="button" class="tag-chip-remove" (click)="removeHashtag(tag)" [attr.aria-label]="'Удалить тег ' + tag">×</button>
+              </span>
+            }
+            <input
+              #hashtagInputRef
+              type="text"
+              class="tag-input"
+              [(ngModel)]="hashtagInput"
+              (keydown.enter)="onHashtagEnter($event)"
+              placeholder="Введите тег и нажмите Enter"
+            />
+          </div>
+          <div class="form-hint">До 20 тегов, 1-50 символов: буквы, цифры, дефис и пробел.</div>
         </div>
 
         <!-- Описание -->
@@ -92,6 +156,11 @@ import { Item, Unit, Category } from '../../../core/models/nomenclature.models';
 
       <!-- Actions -->
       <div class="form-actions">
+        @if (canMerge()) {
+          <button class="wh-btn wh-btn--warning btn btn-warning" (click)="onMerge()" type="button" title="Слияние с другой ТМЦ">
+            Слияние
+          </button>
+        }
         <button class="wh-btn wh-btn--danger btn btn-danger" (click)="onDeactivate()" type="button">
           Деактивировать
         </button>
@@ -163,6 +232,129 @@ import { Item, Unit, Category } from '../../../core/models/nomenclature.models';
       padding: 10px 12px;
       resize: vertical;
       min-height: 80px;
+    }
+    .form-hint {
+      font-size: 12px;
+      color: #6B7280;
+    }
+    .combobox {
+      position: relative;
+    }
+    .combobox-input-wrap {
+      position: relative;
+    }
+    .combobox-input {
+      padding-right: 36px;
+      width: 100%;
+    }
+    .combobox-clear {
+      position: absolute;
+      top: 50%;
+      right: 10px;
+      transform: translateY(-50%);
+      border: 0;
+      background: transparent;
+      color: #6B7280;
+      cursor: pointer;
+      font-size: 18px;
+      line-height: 1;
+      padding: 0;
+      width: 20px;
+      height: 20px;
+    }
+    .combobox-dropdown {
+      position: absolute;
+      top: calc(100% + 4px);
+      left: 0;
+      right: 0;
+      z-index: 20;
+      background: #FFFFFF;
+      border: 1px solid #D1D5DB;
+      border-radius: 10px;
+      box-shadow: 0 12px 28px rgba(15, 23, 42, 0.14);
+      max-height: 240px;
+      overflow-y: auto;
+      padding: 4px;
+    }
+    .combobox-option {
+      width: 100%;
+      border: 0;
+      background: transparent;
+      text-align: left;
+      padding: 10px 12px;
+      border-radius: 8px;
+      cursor: pointer;
+      color: #111827;
+      font-size: 13px;
+      display: block;
+    }
+    .combobox-option:hover {
+      background: #EFF6FF;
+    }
+    .combobox-option--placeholder {
+      color: #2563EB;
+      font-weight: 500;
+    }
+    .combobox-option--stacked {
+      display: flex;
+      flex-direction: column;
+      gap: 2px;
+    }
+    .combobox-meta {
+      color: #6B7280;
+      font-size: 12px;
+    }
+    .combobox-empty {
+      padding: 10px 12px;
+      color: #6B7280;
+      font-size: 13px;
+    }
+    .tags-input {
+      min-height: 40px;
+      border: 1px solid #D1D5DB;
+      border-radius: 8px;
+      padding: 6px;
+      display: flex;
+      flex-wrap: wrap;
+      gap: 6px;
+      align-items: center;
+      background: #FFFFFF;
+    }
+    .tags-input:focus-within {
+      border-color: #2563EB;
+      box-shadow: 0 0 0 3px rgba(37,99,235,0.1);
+    }
+    .tag-chip {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      padding: 5px 10px;
+      border-radius: 999px;
+      background: #EFF6FF;
+      color: #1D4ED8;
+      font-size: 12px;
+    }
+    .tag-chip-remove {
+      border: 0;
+      background: transparent;
+      color: inherit;
+      cursor: pointer;
+      font-size: 16px;
+      line-height: 1;
+      padding: 0;
+    }
+    .tag-input {
+      flex: 1 1 180px;
+      min-width: 140px;
+      border: 0;
+      outline: none;
+      font: inherit;
+      color: #111827;
+      background: transparent;
+      padding: 4px 6px;
+    }
+    .tag-input::placeholder {
+      color: #9CA3AF;
     }
 
     .switch-row {
@@ -271,6 +463,14 @@ import { Item, Unit, Category } from '../../../core/models/nomenclature.models';
       color: #B91C1C;
     }
     .btn-danger:hover:not(:disabled) { background: #FEE2E2; }
+    .btn-warning {
+      background: #f59e0b;
+      color: white;
+      border: 1px solid #d97706;
+    }
+    .btn-warning:hover:not(:disabled) {
+      background: #d97706;
+    }
 
     .form-error {
       margin-top: 12px;
@@ -284,16 +484,30 @@ import { Item, Unit, Category } from '../../../core/models/nomenclature.models';
   `]
 })
 export class ItemEditFormComponent {
+  private readonly authContextService = inject(AuthContextService);
+
   readonly item = input.required<Item>();
   readonly units = input<Unit[]>([]);
   readonly categories = input<Category[]>([]);
+  readonly hashtagInputRef = viewChild<ElementRef<HTMLInputElement>>('hashtagInputRef');
 
   readonly saveDraft = output<{ id: string; payload: Record<string, unknown> }>();
   readonly resetDraft = output<void>();
   readonly deactivate = output<string>();
   readonly delete = output<string>();
+  readonly mergeRequest = output<string>();
 
   readonly formError = signal<string | null>(null);
+  readonly isUnitDropdownOpen = signal(false);
+  readonly isCategoryDropdownOpen = signal(false);
+
+  readonly canMerge = computed(() => {
+    const auth = this.authContextService.authContext();
+    const role = auth?.role ?? 'observer';
+    const isManager = role === 'root' || role === 'chief_storekeeper';
+    const it = this.item();
+    return isManager && !!it && it.is_active;
+  });
 
   // Plain object for ngModel (signals don't work with ngModel property binding)
   draft = {
@@ -301,31 +515,57 @@ export class ItemEditFormComponent {
     sku: '',
     unitId: '',
     categoryId: '',
-    hashtags: '',
+    hashtags: [] as string[],
     description: '',
     isActive: true,
   };
 
-  // Flat categories for select
+  unitQuery = '';
+  categoryQuery = '';
+  hashtagInput = '';
+
+  // Flat categories are used as a safe local fallback for searchable category selection.
   readonly flatCategories = computed(() => {
-    const result: { id: string; name: string; indent: string }[] = [];
-    const walk = (cats: Category[], level: number) => {
+    const result: { id: string; name: string; pathLabel: string; searchText: string }[] = [];
+    const walk = (cats: Category[], ancestors: string[]) => {
       for (const c of cats) {
+        const path = [...ancestors, c.name];
         result.push({
           id: c.id,
           name: c.name,
-          indent: '  '.repeat(level),
+          pathLabel: ancestors.join(' / '),
+          searchText: path.join(' ').toLowerCase(),
         });
-        if (c.children) walk(c.children, level + 1);
+        if (c.children) walk(c.children, path);
       }
     };
-    walk(this.categories(), 0);
+    walk(this.categories(), []);
     return result;
+  });
+
+  readonly filteredUnits = computed(() => {
+    const query = this.unitQuery.trim().toLowerCase();
+    if (!query) {
+      return this.units().slice(0, 50);
+    }
+    return this.units()
+      .filter(unit => `${unit.name} ${unit.symbol}`.toLowerCase().includes(query))
+      .slice(0, 50);
+  });
+
+  readonly filteredCategories = computed(() => {
+    const query = this.categoryQuery.trim().toLowerCase();
+    if (!query) {
+      return this.flatCategories().slice(0, 50);
+    }
+    return this.flatCategories()
+      .filter(category => category.searchText.includes(query))
+      .slice(0, 50);
   });
 
   get isValid(): boolean {
     const d = this.draft;
-    return !!(d.name.trim().length > 0 && d.unitId && d.categoryId);
+    return !!(d.name.trim().length > 0 && d.unitId);
   }
 
   private isLocalRef(id: string, entityType: 'category' | 'unit'): boolean {
@@ -340,11 +580,13 @@ export class ItemEditFormComponent {
         name: it.name,
         sku: it.sku,
         unitId: it.unit_id,
-        categoryId: it.category_id,
-        hashtags: it.hashtags.join(', '),
+        categoryId: it.category_id ?? '',
+        hashtags: [...it.hashtags],
         description: '',
         isActive: it.is_active,
       };
+      this.syncQueriesFromDraft();
+      this.hashtagInput = '';
       this.formError.set(null);
     }
   }
@@ -360,7 +602,7 @@ export class ItemEditFormComponent {
     const payload: Record<string, unknown> = {
       name: d.name.trim(),
       sku: normalizedSku || null,
-      hashtags: d.hashtags.split(',').map(s => s.trim()).filter(Boolean),
+      hashtags: [...d.hashtags],
       is_active: d.isActive,
     };
 
@@ -370,7 +612,9 @@ export class ItemEditFormComponent {
       payload['unit_id'] = d.unitId;
     }
 
-    if (this.isLocalRef(d.categoryId, 'category')) {
+    if (!d.categoryId) {
+      payload['category_id'] = null;
+    } else if (this.isLocalRef(d.categoryId, 'category')) {
       payload['category_local_id'] = d.categoryId;
     } else {
       payload['category_id'] = d.categoryId;
@@ -385,18 +629,164 @@ export class ItemEditFormComponent {
 
   onReset(): void {
     const it = this.item();
-    if (!it) { this.draft = { name: '', sku: '', unitId: '', categoryId: '', hashtags: '', description: '', isActive: true }; this.formError.set(null); this.resetDraft.emit(); return; }
+    if (!it) {
+      this.draft = { name: '', sku: '', unitId: '', categoryId: '', hashtags: [], description: '', isActive: true };
+      this.unitQuery = '';
+      this.categoryQuery = '';
+      this.hashtagInput = '';
+      this.formError.set(null);
+      this.resetDraft.emit();
+      return;
+    }
     this.draft = {
       name: it.name,
       sku: it.sku,
       unitId: it.unit_id,
-      categoryId: it.category_id,
-      hashtags: it.hashtags.join(', '),
+      categoryId: it.category_id ?? '',
+      hashtags: [...it.hashtags],
       description: '',
       isActive: it.is_active,
     };
+    this.syncQueriesFromDraft();
+    this.hashtagInput = '';
     this.formError.set(null);
     this.resetDraft.emit();
+  }
+
+  openUnitDropdown(): void {
+    this.isUnitDropdownOpen.set(true);
+  }
+
+  openCategoryDropdown(): void {
+    this.isCategoryDropdownOpen.set(true);
+  }
+
+  closeUnitDropdownSoon(): void {
+    setTimeout(() => this.isUnitDropdownOpen.set(false), 120);
+  }
+
+  closeCategoryDropdownSoon(): void {
+    setTimeout(() => this.isCategoryDropdownOpen.set(false), 120);
+  }
+
+  onUnitQueryChange(value: string): void {
+    this.unitQuery = value;
+    const selectedLabel = this.getUnitLabel(this.draft.unitId);
+    if (selectedLabel !== value) {
+      this.draft.unitId = '';
+    }
+    this.isUnitDropdownOpen.set(true);
+  }
+
+  onCategoryQueryChange(value: string): void {
+    this.categoryQuery = value;
+    const selectedLabel = this.getCategoryLabel(this.draft.categoryId);
+    if (selectedLabel !== value) {
+      this.draft.categoryId = '';
+    }
+    this.isCategoryDropdownOpen.set(true);
+  }
+
+  selectUnit(unit: Unit, event?: Event): void {
+    event?.preventDefault();
+    this.draft.unitId = unit.id;
+    this.unitQuery = this.formatUnitLabel(unit);
+    this.isUnitDropdownOpen.set(false);
+    this.formError.set(null);
+  }
+
+  selectCategory(category: { id: string; name: string; pathLabel: string }, event?: Event): void {
+    event?.preventDefault();
+    this.draft.categoryId = category.id;
+    this.categoryQuery = this.getCategoryDisplayLabel(category.name, category.pathLabel);
+    this.isCategoryDropdownOpen.set(false);
+  }
+
+  clearUnit(event?: Event): void {
+    event?.preventDefault();
+    this.draft.unitId = '';
+    this.unitQuery = '';
+    this.isUnitDropdownOpen.set(false);
+  }
+
+  clearCategory(event?: Event): void {
+    event?.preventDefault();
+    this.draft.categoryId = '';
+    this.categoryQuery = '';
+    this.isCategoryDropdownOpen.set(false);
+  }
+
+  formatUnitLabel(unit: Unit): string {
+    return unit.symbol ? `${unit.name} (${unit.symbol})` : unit.name;
+  }
+
+  onHashtagEnter(event: Event): void {
+    event.preventDefault();
+    this.addHashtagFromInput();
+  }
+
+  removeHashtag(tag: string): void {
+    this.draft.hashtags = this.draft.hashtags.filter(existing => existing !== tag);
+    this.formError.set(null);
+  }
+
+  focusHashtagInput(): void {
+    this.hashtagInputRef()?.nativeElement.focus();
+  }
+
+  private syncQueriesFromDraft(): void {
+    this.unitQuery = this.getUnitLabel(this.draft.unitId);
+    this.categoryQuery = this.getCategoryLabel(this.draft.categoryId);
+  }
+
+  private getUnitLabel(unitId: string): string {
+    const unit = this.units().find(candidate => candidate.id === unitId);
+    return unit ? this.formatUnitLabel(unit) : '';
+  }
+
+  private getCategoryLabel(categoryId: string): string {
+    if (!categoryId) {
+      return '';
+    }
+    const category = this.flatCategories().find(candidate => candidate.id === categoryId);
+    return category ? this.getCategoryDisplayLabel(category.name, category.pathLabel) : '';
+  }
+
+  private getCategoryDisplayLabel(name: string, pathLabel: string): string {
+    return pathLabel ? `${pathLabel} / ${name}` : name;
+  }
+
+  private addHashtagFromInput(): void {
+    const tag = this.hashtagInput.trim().replace(/\s+/g, ' ');
+    if (!tag) {
+      this.hashtagInput = '';
+      return;
+    }
+    if (!this.isValidHashtag(tag)) {
+      this.formError.set('Тег должен быть длиной 1-50 символов и содержать только буквы, цифры, дефис и пробел.');
+      return;
+    }
+    if (this.draft.hashtags.length >= 20) {
+      this.formError.set('Можно добавить не более 20 тегов.');
+      return;
+    }
+    const normalizedKey = this.normalizeHashtagKey(tag);
+    if (this.draft.hashtags.some(existing => this.normalizeHashtagKey(existing) === normalizedKey)) {
+      this.hashtagInput = '';
+      this.formError.set(null);
+      return;
+    }
+    this.draft.hashtags = [...this.draft.hashtags, tag];
+    this.hashtagInput = '';
+    this.formError.set(null);
+  }
+
+  private isValidHashtag(tag: string): boolean {
+    return tag.length >= 1 && tag.length <= 50 && /^[\p{L}\p{N} -]+$/u.test(tag);
+  }
+
+  private normalizeHashtagKey(tag: string): string {
+    return tag.trim().replace(/\s+/g, ' ').toLocaleLowerCase();
   }
 
   onDeactivate(): void {
@@ -409,5 +799,11 @@ export class ItemEditFormComponent {
     const it = this.item();
     if (!it) return;
     this.delete.emit(it.id);
+  }
+
+  onMerge(): void {
+    const it = this.item();
+    if (!it) return;
+    this.mergeRequest.emit(it.id);
   }
 }

@@ -1,5 +1,5 @@
 import { Injectable, signal, computed } from '@angular/core';
-import { Category, Item, Unit, CatalogTreeNodeVm, CatalogPendingChange, CatalogBatchChange, CatalogBatchRequest } from '../models/nomenclature.models';
+import { Category, Item, Unit, CatalogTreeNodeVm, CatalogPendingChange, CatalogBatchChange, CatalogBatchRequest, CatalogBatchResponse } from '../models/nomenclature.models';
 import { CatalogChangeBufferService } from './catalog-change-buffer.service';
 import { BffApiService } from '../api/bff-api.service';
 import { ApiService } from '../api/api.service';
@@ -16,6 +16,10 @@ export interface BootstrapPayload {
   units: Record<string, unknown>[];
   user: Record<string, unknown>;
   permissions: string[];
+}
+
+interface BootstrapLoadOptions {
+  cacheBust?: boolean;
 }
 
 @Injectable({
@@ -165,7 +169,7 @@ export class NomenclatureService {
     const result: CatalogTreeNodeVm[] = [];
 
     for (const u of this.units()) {
-      if (this.changeBuffer.hasPendingDelete(u.id, 'unit')) continue;
+      const unitPending = this.changeBuffer.getChangeForEntity(u.id, 'unit');
       result.push({
         id: u.id,
         type: 'unit',
@@ -176,11 +180,11 @@ export class NomenclatureService {
         expanded: false,
         selected: selected?.id === u.id && selected?.type === 'unit',
         dirty: this.changeBuffer.hasPending(u.id, 'unit'),
+        pendingAction: unitPending?.action,
       });
     }
 
     for (const u of this.stagedUnits()) {
-      if (this.changeBuffer.hasPendingDelete(u.id, 'unit')) continue;
       result.push({
         id: u.id,
         type: 'unit',
@@ -211,11 +215,12 @@ export class NomenclatureService {
 
   // ─── Data loading ────────────────────────────────────────────
 
-  async loadBootstrap(): Promise<void> {
+  async loadBootstrap(options?: BootstrapLoadOptions): Promise<void> {
     this.isLoading.set(true);
     this.error.set(null);
     try {
-      const data = await firstValueFrom(this.api.getData<BootstrapPayload>('/bootstrap/'));
+      const cacheBustSuffix = options?.cacheBust ? `?_=${Date.now()}` : '';
+      const data = await firstValueFrom(this.api.getData<BootstrapPayload>(`/bootstrap/${cacheBustSuffix}`));
       const unitMap = this.buildUnitMap(data.units);
       const cats = this.toCategoryTree(data.categories_tree);
       const items = data.items.map(i => this.toItem(i, unitMap));
@@ -291,8 +296,8 @@ export class NomenclatureService {
     const itemMap = this.buildItemMap(items);
 
     for (const cat of cats) {
-      if (buffer.hasPendingDelete(cat.id, 'category')) continue;
-
+      if (!cat.is_active) continue;
+      const catPending = buffer.getChangeForEntity(cat.id, 'category');
       const node: CatalogTreeNodeVm = {
         id: cat.id,
         type: 'category',
@@ -303,6 +308,7 @@ export class NomenclatureService {
         expanded: expanded.has(cat.id),
         selected: selected?.type === 'category' && selected.id === cat.id,
         dirty: buffer.hasPending(cat.id, 'category'),
+        pendingAction: catPending?.action,
         children: cat.children
           ? this.buildTree(cat.children, items, level + 1, expanded, selected, buffer)
           : undefined,
@@ -311,7 +317,8 @@ export class NomenclatureService {
 
       const catItems = itemMap.get(cat.id) ?? [];
       for (const item of catItems) {
-        if (buffer.hasPendingDelete(item.id, 'item')) continue;
+        if (!item.is_active) continue;
+        const itemPending = buffer.getChangeForEntity(item.id, 'item');
         result.push({
           id: item.id,
           type: 'item',
@@ -325,6 +332,7 @@ export class NomenclatureService {
           expanded: false,
           selected: selected?.type === 'item' && selected.id === item.id,
           dirty: buffer.hasPending(item.id, 'item'),
+          pendingAction: itemPending?.action,
         });
       }
     }
@@ -335,9 +343,10 @@ export class NomenclatureService {
   private buildItemMap(items: Item[]): Map<string, Item[]> {
     const map = new Map<string, Item[]>();
     for (const item of items) {
-      const list = map.get(item.category_id) ?? [];
+      const categoryId = item.category_id ?? '';
+      const list = map.get(categoryId) ?? [];
       list.push(item);
-      map.set(item.category_id, list);
+      map.set(categoryId, list);
     }
     return map;
   }
@@ -436,7 +445,7 @@ export class NomenclatureService {
   private computeItemCounts(cats: Category[], items: Item[]): void {
     for (const cat of cats) {
       const childIds = this.collectChildIds(cat);
-      cat.items_count = items.filter(i => childIds.has(i.category_id)).length;
+      cat.items_count = items.filter(i => !!i.category_id && childIds.has(i.category_id)).length;
       if (cat.children) {
         this.computeItemCounts(cat.children, items);
       }
@@ -466,7 +475,7 @@ export class NomenclatureService {
     };
     walk(cats);
     for (const item of items) {
-      item.category_name = catNameMap[item.category_id] ?? '';
+      item.category_name = item.category_id ? (catNameMap[item.category_id] ?? '') : '';
     }
   }
 
@@ -573,6 +582,43 @@ export class NomenclatureService {
     return this.allUnits().find(u => u.id === unitId) ?? null;
   }
 
+  private hasEntityInState(entityType: string, entityId: number): boolean {
+    const entityIdString = String(entityId);
+    if (entityType === 'category') {
+      return this.findCategoryById(entityIdString, this.categories()) !== null;
+    }
+
+    if (entityType === 'item') {
+      return this.allItems().some(item => item.id === entityIdString);
+    }
+
+    if (entityType === 'unit') {
+      return this.units().some(unit => unit.id === entityIdString);
+    }
+
+    return true;
+  }
+
+  private async reloadBootstrapAfterBatch(response?: CatalogBatchResponse | null): Promise<void> {
+    await this.loadBootstrap({ cacheBust: true });
+
+    const records = response?.records ?? [];
+
+    const missingCreatedRecords = records.filter(record => (
+      record.action === 'create'
+      && record.status === 'success'
+      && record.entity_id != null
+      && !this.hasEntityInState(record.entity_type, record.entity_id)
+    ));
+
+    if (missingCreatedRecords.length === 0) {
+      return;
+    }
+
+    await new Promise(resolve => setTimeout(resolve, 300));
+    await this.loadBootstrap({ cacheBust: true });
+  }
+
   // ─── Batch apply ─────────────────────────────────────────────
 
   async applyBatch(changes: CatalogPendingChange[]): Promise<void> {
@@ -595,8 +641,8 @@ export class NomenclatureService {
         changes: batchChanges,
       };
 
-      await firstValueFrom(this.bff.post('/catalog/admin/batch', batchRequest));
-      await this.loadBootstrap();
+      const response = await firstValueFrom(this.bff.postData<CatalogBatchResponse>('/catalog/admin/batch', batchRequest));
+      await this.reloadBootstrapAfterBatch(response);
     } catch (err: any) {
       this.error.set(err?.message || 'Batch apply failed');
       throw err;

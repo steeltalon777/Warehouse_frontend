@@ -5,6 +5,7 @@ import { firstValueFrom } from 'rxjs';
 
 export interface IssuedAssetsFilter {
   issue_object_id?: string;
+  category_id?: string;
   item_id?: string;
   search?: string;
   page?: number;
@@ -34,6 +35,7 @@ export class IssuedAssetsService {
       };
       if (filters.search) params['search'] = filters.search;
       if (filters.issue_object_id) params['issue_object_id'] = filters.issue_object_id;
+      if (filters.category_id) params['category_id'] = filters.category_id;
       if (filters.item_id) params['item_id'] = filters.item_id;
 
       const result = await firstValueFrom(

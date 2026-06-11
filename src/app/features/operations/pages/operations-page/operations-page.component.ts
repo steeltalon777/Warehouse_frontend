@@ -1,4 +1,4 @@
-import { Component, OnDestroy, OnInit, signal, computed, inject, HostListener, effect } from '@angular/core';
+import { Component, OnDestroy, OnInit, signal, computed, inject, effect } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { Router } from '@angular/router';
@@ -655,15 +655,6 @@ export class OperationsPageComponent implements OnInit, OnDestroy {
       'resolved': 'Приёмка: закрыта',
     };
     return labels[state] || state;
-  }
-
-  @HostListener('document:keydown.escape')
-  onEscape(): void {
-    if (this.showConfirmModal()) {
-      this.onConfirmCancel();
-    } else if (this.showCreateModal()) {
-      this.onDraftCancel();
-    }
   }
 
   // ─── Modal events ────────────────────────────────────────────

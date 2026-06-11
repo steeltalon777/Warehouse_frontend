@@ -1,6 +1,7 @@
-import { Component, input, output, signal, computed, SimpleChanges } from '@angular/core';
+import { Component, inject, input, output, signal, computed, SimpleChanges } from '@angular/core';
 import { FormsModule } from '@angular/forms';
 import { Category } from '../../../core/models/nomenclature.models';
+import { AuthContextService } from '../../../core/services/auth-context.service';
 
 @Component({
   selector: 'app-category-edit-form',
@@ -70,6 +71,11 @@ import { Category } from '../../../core/models/nomenclature.models';
 
       <!-- Actions -->
       <div class="form-actions">
+        @if (canMerge()) {
+          <button class="wh-btn wh-btn--warning btn btn-warning" (click)="onMerge()" type="button" title="Слияние с другой категорией">
+            Слияние
+          </button>
+        }
         <button class="wh-btn wh-btn--danger btn btn-danger" (click)="onDeactivate()" type="button">
           Деактивировать
         </button>
@@ -243,6 +249,14 @@ import { Category } from '../../../core/models/nomenclature.models';
       color: #B91C1C;
     }
     .btn-danger:hover:not(:disabled) { background: #FEE2E2; }
+    .btn-warning {
+      background: #f59e0b;
+      color: white;
+      border: 1px solid #d97706;
+    }
+    .btn-warning:hover:not(:disabled) {
+      background: #d97706;
+    }
 
     .form-error {
       margin-top: 12px;
@@ -256,6 +270,8 @@ import { Category } from '../../../core/models/nomenclature.models';
   `]
 })
 export class CategoryEditFormComponent {
+  private readonly authContextService = inject(AuthContextService);
+
   readonly category = input.required<Category>();
   readonly categories = input<Category[]>([]);
 
@@ -263,8 +279,17 @@ export class CategoryEditFormComponent {
   readonly resetDraft = output<void>();
   readonly deactivate = output<string>();
   readonly delete = output<string>();
+  readonly mergeRequest = output<string>();
 
   readonly formError = signal<string | null>(null);
+
+  readonly canMerge = computed(() => {
+    const auth = this.authContextService.authContext();
+    const role = auth?.role ?? 'observer';
+    const isManager = role === 'root' || role === 'chief_storekeeper';
+    const cat = this.category();
+    return isManager && !!cat && cat.is_active;
+  });
 
   draft = {
     name: '',
@@ -368,5 +393,11 @@ export class CategoryEditFormComponent {
     const cat = this.category();
     if (!cat) return;
     this.delete.emit(cat.id);
+  }
+
+  onMerge(): void {
+    const cat = this.category();
+    if (!cat) return;
+    this.mergeRequest.emit(cat.id);
   }
 }
