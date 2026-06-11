@@ -15,6 +15,9 @@ import { Component, input, output } from '@angular/core';
         <button class="wh-btn wh-btn--ghost btn btn-ghost" (click)="expandAll.emit()">
           Раскрыть всё
         </button>
+        <button class="wh-btn wh-btn--ghost btn btn-ghost" (click)="collapseAll.emit()">
+          Свернуть всё
+        </button>
       } @else {
         <button class="wh-btn wh-btn--primary btn btn-primary" (click)="createUnit.emit()">
           + Ед. изм.
@@ -37,4 +40,5 @@ export class ActionButtonsComponent {
   readonly createItem = output<void>();
   readonly createUnit = output<void>();
   readonly expandAll = output<void>();
+  readonly collapseAll = output<void>();
 }

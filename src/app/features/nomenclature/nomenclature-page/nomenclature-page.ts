@@ -70,6 +70,7 @@ import { Category, Item } from '../../../core/models/nomenclature.models';
               (createItem)="onCreateItem()"
               (createUnit)="onCreateUnit()"
               (expandAll)="onExpandAll()"
+              (collapseAll)="onCollapseAll()"
             />
             <div class="tree-wrapper">
               <app-catalog-tree
@@ -109,173 +110,149 @@ import { Category, Item } from '../../../core/models/nomenclature.models';
         </div>
       }
 
-      @if (mergeItemSource()) {
+      @if (mergeItemModal()) {
         <app-merge-item-modal
-          [sourceItem]="mergeItemSource()!"
-          (mergeComplete)="onItemMergeComplete()"
-          (cancel)="mergeItemSource.set(null)"
+          [sourceItem]="selectedItem()!"
+          (cancel)="mergeItemModal.set(null)"
+          (mergeComplete)="mergeItemModal.set(null)"
         />
       }
-      @if (mergeCategorySource()) {
+
+      @if (mergeCategoryModal()) {
         <app-merge-category-modal
-          [sourceCategory]="mergeCategorySource()!"
-          [allCategories]="categories()"
-          (mergeComplete)="onCategoryMergeComplete()"
-          (cancel)="mergeCategorySource.set(null)"
+          [sourceCategory]="selectedCategory()!"
+          (cancel)="mergeCategoryModal.set(null)"
+          (mergeComplete)="mergeCategoryModal.set(null)"
         />
       }
     </div>
   `,
   styles: [`
-    :host { display: flex; flex-direction: column; height: 100%; overflow: hidden; }
-    .page {
+    :host { display: block; height: 100%; }
+    .wh-page { height: 100%; display: flex; flex-direction: column; }
+    .wh-workspace {
+      flex: 1;
       display: flex;
-      flex-direction: column;
-      flex: 1;
-      background: #F3F4F6;
+      gap: 0;
       min-height: 0;
     }
-
-    .workspace {
-      flex: 1;
-      display: grid;
-      grid-template-columns: 456px 1fr;
-      gap: 16px;
-      overflow: hidden;
-      padding: 12px 16px 16px;
-      min-height: 0;
-    }
-
     .left-panel {
-      background: #FFFFFF;
-      border: 1px solid #E5E7EB;
-      border-radius: 16px;
-      padding: 20px 16px 16px;
+      width: 420px;
+      flex-shrink: 0;
       display: flex;
       flex-direction: column;
-      overflow: hidden;
-      min-height: 0;
+      border-right: 1px solid #E5E7EB;
+      background: #F9FAFB;
     }
-    .tree-wrapper {
+    .right-panel-wrapper {
       flex: 1;
-      overflow: hidden;
-      min-height: 0;
+      min-width: 0;
+      background: #FFFFFF;
     }
-
     .tabs {
       display: flex;
-      gap: 4px;
-      margin-bottom: 12px;
       border-bottom: 1px solid #E5E7EB;
-      padding-bottom: 0;
+      background: #FFFFFF;
+      padding: 0 16px;
     }
     .tab-btn {
-      padding: 8px 16px;
+      border: 0;
+      background: transparent;
+      padding: 12px 16px;
       font-size: 13px;
       font-weight: 500;
       color: #6B7280;
-      background: none;
-      border: none;
-      border-bottom: 2px solid transparent;
       cursor: pointer;
-      transition: color 0.15s, border-color 0.15s;
-      margin-bottom: -1px;
+      border-bottom: 2px solid transparent;
+      transition: all 0.15s;
     }
-    .tab-btn:hover { color: #374151; }
     .tab-btn.active {
       color: #2563EB;
       border-bottom-color: #2563EB;
     }
-
-    .right-panel-wrapper {
-      background: #FFFFFF;
-      border: 1px solid #E5E7EB;
-      border-radius: 16px;
-      overflow: hidden;
+    .tree-wrapper {
+      flex: 1;
       min-height: 0;
     }
-
     .loading-overlay {
-      flex: 1;
       display: flex;
+      flex-direction: column;
       align-items: center;
-      justify-content: center;
       gap: 12px;
+      padding: 48px;
       color: #6B7280;
-      font-size: 14px;
     }
     .spinner {
-      width: 24px;
-      height: 24px;
+      width: 32px;
+      height: 32px;
       border: 3px solid #E5E7EB;
-      border-top-color: #3B82F6;
+      border-top-color: #2563EB;
       border-radius: 50%;
       animation: spin 0.8s linear infinite;
     }
     @keyframes spin { to { transform: rotate(360deg); } }
-
     .error-banner {
-      margin: 16px 24px;
-      padding: 12px 16px;
+      padding: 16px;
       background: #FEF2F2;
       color: #DC2626;
       border: 1px solid #FECACA;
       border-radius: 8px;
-      font-size: 14px;
-    }
-
-    @media (max-width: 1200px) {
-      .workspace { grid-template-columns: 360px 1fr; }
-    }
-    @media (max-width: 900px) {
-      .workspace { grid-template-columns: 1fr; grid-template-rows: 1fr 1fr; }
-      .right-panel-wrapper { min-height: 300px; }
+      margin: 16px;
     }
   `]
 })
 export class NomenclaturePageComponent implements OnInit {
   private readonly service = inject(NomenclatureService);
   private readonly changeBuffer = inject(CatalogChangeBufferService);
-  private readonly authContextService = inject(AuthContextService);
 
-  ngOnInit(): void {
-    this.authContextService.load();
-    this.service.loadBootstrap();
-  }
+  readonly activeTab = signal<'catalog' | 'units'>('catalog');
+  readonly createModeEntity = signal<{ type: 'category' | 'item' | 'unit'; entity: null } | null>(null);
+  readonly mergeItemModal = signal<Item | null>(null);
+  readonly mergeCategoryModal = signal<Category | null>(null);
 
-  // Signals
   readonly isLoading = this.service.isLoading;
   readonly error = this.service.error;
-  readonly searchQuery = this.service.searchQuery;
-  readonly unifiedTree = this.service.unifiedTree;
-  readonly visibleNodeCount = this.service.visibleNodeCount;
-  readonly selectedNode = this.service.selectedNode;
   readonly isSaving = this.service.isSaving;
+
+  readonly searchQuery = this.service.searchQuery;
+
+  readonly currentTreeNodes = computed(() => {
+    return this.activeTab() === 'catalog' ? this.service.unifiedTree() : this.service.unitListNodes();
+  });
+
+  readonly currentVisibleCount = computed(() => {
+    return this.activeTab() === 'catalog' ? this.service.visibleNodeCount() : this.service.unitListNodes().length;
+  });
+
+  readonly selectedNode = this.service.selectedNode;
+  readonly selectedItem = computed(() => {
+    const sel = this.service.selectedEntity();
+    if (sel?.type !== 'item') return null;
+    return this.service.allItems().find(i => i.id === sel.id) ?? null;
+  });
+  readonly selectedCategory = computed(() => {
+    const sel = this.service.selectedEntity();
+    if (sel?.type !== 'category') return null;
+    return this.service.findCategoryById(sel.id) ?? null;
+  });
+  readonly selectedUnit = computed(() => {
+    const sel = this.service.selectedEntity();
+    if (sel?.type !== 'unit') return null;
+    return this.service.units().find(u => u.id === sel.id) ?? null;
+  });
+
   readonly units = this.service.allUnits;
   readonly categories = this.service.allCategories;
 
-  readonly selectedItem = computed(() => this.service.getSelectedItem());
-  readonly selectedCategory = computed(() => this.service.getSelectedCategory());
-  readonly selectedUnit = computed(() => this.service.selectedUnit());
-  readonly pendingCount = computed(() => this.changeBuffer.count());
-  readonly applyDisabled = computed(() => this.changeBuffer.isEmpty());
+  readonly pendingCount = computed(() => this.changeBuffer.changes().length);
+  readonly applyDisabled = computed(() => this.pendingCount() === 0);
 
-  readonly activeTab = signal<'catalog' | 'units'>('catalog');
-  readonly currentTreeNodes = computed(() =>
-    this.activeTab() === 'catalog' ? this.service.unifiedTree() : this.service.unitListNodes()
-  );
-  readonly currentVisibleCount = computed(() =>
-    this.activeTab() === 'catalog' ? this.service.visibleNodeCount() : this.service.unitListNodes().length
-  );
+  ngOnInit(): void {
+    this.service.loadBootstrap();
+  }
 
-  readonly createModeEntity = signal<{ type: 'category' | 'item' | 'unit'; entity: unknown } | null>(null);
-
-  // Merge modal state
-  readonly mergeItemSource = signal<Item | null>(null);
-  readonly mergeCategorySource = signal<Category | null>(null);
-
-  onSearchChange(query: string): void {
-    this.service.setSearch(query);
+  onSearchChange(value: string): void {
+    this.service.setSearch(value);
   }
 
   onTabChange(tab: 'catalog' | 'units'): void {
@@ -287,6 +264,16 @@ export class NomenclaturePageComponent implements OnInit {
 
   onSelectNode(node: { id: string; type: string }): void {
     this.createModeEntity.set(null);
+
+    // When searching and clicking a category: clear search and reveal its contents
+    if (this.searchQuery().trim() && node.type === 'category') {
+      this.service.setSearch('');
+      this.service.expandAll();
+      // Ensure the clicked category is expanded (expandAll already does this)
+      this.service.selectNode(node as any);
+      return;
+    }
+
     this.service.selectNode(node as any);
   }
 
@@ -298,6 +285,10 @@ export class NomenclaturePageComponent implements OnInit {
     if (this.activeTab() === 'catalog') {
       this.service.expandAll();
     }
+  }
+
+  onCollapseAll(): void {
+    this.service.collapseAll();
   }
 
   onCreateCategory(): void {
@@ -357,39 +348,13 @@ export class NomenclaturePageComponent implements OnInit {
       entityType: sel.type,
       entityId: id,
       action: 'deactivate',
-      payload: { is_active: false },
+      payload: {},
     });
-  }
-
-  onResetAll(): void {
-    this.changeBuffer.clearAll();
-  }
-
-  async onApplyAll(): Promise<void> {
-    const changes = this.changeBuffer.changes();
-    if (changes.length === 0) return;
-
-    const count = changes.length;
-    const msg = count === 1
-      ? 'Применить 1 изменение? Это действие нельзя отменить.'
-      : `Применить ${count} изменений? Это действие нельзя отменить.`;
-    if (!confirm(msg)) return;
-
-    try {
-      await this.service.applyBatch(changes);
-      this.changeBuffer.clearAll();
-      this.createModeEntity.set(null);
-    } catch (err: any) {
-      console.error('Batch apply failed:', err);
-    }
   }
 
   onDelete(id: string): void {
     const cm = this.createModeEntity();
-    if (cm) {
-      this.createModeEntity.set(null);
-      return;
-    }
+    if (cm) return;
 
     const sel = this.service.selectedEntity();
     if (!sel) return;
@@ -401,8 +366,29 @@ export class NomenclaturePageComponent implements OnInit {
       action: 'delete',
       payload: {},
     });
+  }
 
-    this.service.clearSelection();
+  async onApplyAll(): Promise<void> {
+    const changes = this.changeBuffer.changes();
+    if (changes.length === 0) return;
+
+    const count = changes.length;
+    const confirmMsg = count === 1
+      ? 'Применить 1 изменение? Это действие нельзя отменить.'
+      : `Применить ${count} изменений? Это действие нельзя отменить.`;
+
+    if (!confirm(confirmMsg)) return;
+
+    try {
+      await this.service.applyBatch(changes);
+      this.changeBuffer.clearAll();
+    } catch {
+      // error already set in service
+    }
+  }
+
+  onResetAll(): void {
+    this.changeBuffer.clearAll();
   }
 
   onMergeRequest(id: string): void {
@@ -410,23 +396,11 @@ export class NomenclaturePageComponent implements OnInit {
     if (!sel) return;
 
     if (sel.type === 'item') {
-      const item = this.service.getSelectedItem();
-      if (item) this.mergeItemSource.set(item);
+      const item = this.service.allItems().find(i => i.id === sel.id);
+      if (item) this.mergeItemModal.set(item);
     } else if (sel.type === 'category') {
-      const cat = this.service.getSelectedCategory();
-      if (cat) this.mergeCategorySource.set(cat);
+      const cat = this.service.findCategoryById(sel.id);
+      if (cat) this.mergeCategoryModal.set(cat);
     }
-  }
-
-  async onItemMergeComplete(): Promise<void> {
-    this.mergeItemSource.set(null);
-    this.service.clearSelection();
-    await this.service.loadBootstrap();
-  }
-
-  async onCategoryMergeComplete(): Promise<void> {
-    this.mergeCategorySource.set(null);
-    this.service.clearSelection();
-    await this.service.loadBootstrap();
   }
 }
