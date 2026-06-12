@@ -294,9 +294,10 @@ Every browser screen should be tracked with one of these states.
 Initial target matrix:
 
 | Area | Target business URL | Target state | Notes |
-|---|---|---|---|
+|---|---|---|---|---|
 | Dashboard | `/client/` or future `/dashboard/` | SSR active | Dynamic menu/dashboard can be planned later. |
-| Nomenclature | `/nomenclature/` | Angular primary | SSR fallback under `/nomenclature/ssr/`. |
+| Catalog readonly | `/catalog/` | Angular primary | Readonly Angular alias of nomenclature tree. SSR fallback under `/catalog/ssr/`. |
+| Nomenclature | `/nomenclature/` | Angular primary | Editable Angular screen. SSR fallback under `/nomenclature/ssr/`. |
 | Operations journal | `/operations/` | Angular primary | Must not remain under `/nomenclature/operations/`. |
 | Balances | `/balances/` | Angular candidate | BFF exists; table contract required. |
 | Pending acceptance | `/pending-acceptance/` or agreed route | Angular candidate | Required by `Functional and WorkLogik.md`. |
