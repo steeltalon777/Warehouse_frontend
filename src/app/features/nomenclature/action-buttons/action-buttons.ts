@@ -6,12 +6,14 @@ import { Component, input, output } from '@angular/core';
   template: `
     <div class="action-row">
       @if (mode() === 'catalog') {
-        <button class="wh-btn wh-btn--primary btn btn-primary" (click)="createCategory.emit()">
-          + Категория
-        </button>
-        <button class="wh-btn wh-btn--primary btn btn-primary" (click)="createItem.emit()">
-          + ТМЦ
-        </button>
+        @if (canWrite()) {
+          <button class="wh-btn wh-btn--primary btn btn-primary" (click)="createCategory.emit()">
+            + Категория
+          </button>
+          <button class="wh-btn wh-btn--primary btn btn-primary" (click)="createItem.emit()">
+            + ТМЦ
+          </button>
+        }
         <button class="wh-btn wh-btn--ghost btn btn-ghost" (click)="expandAll.emit()">
           Раскрыть всё
         </button>
@@ -19,9 +21,11 @@ import { Component, input, output } from '@angular/core';
           Свернуть всё
         </button>
       } @else {
-        <button class="wh-btn wh-btn--primary btn btn-primary" (click)="createUnit.emit()">
-          + Ед. изм.
-        </button>
+        @if (canWrite()) {
+          <button class="wh-btn wh-btn--primary btn btn-primary" (click)="createUnit.emit()">
+            + Ед. изм.
+          </button>
+        }
       }
     </div>
   `,
@@ -36,6 +40,7 @@ import { Component, input, output } from '@angular/core';
 })
 export class ActionButtonsComponent {
   readonly mode = input<'catalog' | 'units'>('catalog');
+  readonly canWrite = input<boolean>(true);
   readonly createCategory = output<void>();
   readonly createItem = output<void>();
   readonly createUnit = output<void>();

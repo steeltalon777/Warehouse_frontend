@@ -925,6 +925,10 @@ export class NomenclatureService {
 
   async applyBatch(changes: CatalogPendingChange[]): Promise<void> {
     if (changes.length === 0) return;
+    if (this.changeBuffer.disabled()) {
+      this.error.set('Cannot apply changes in readonly mode');
+      return;
+    }
     this.isSaving.set(true);
     this.error.set(null);
 

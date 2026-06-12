@@ -6,23 +6,22 @@ import { Component, input, output } from '@angular/core';
   template: `
     <div class="wh-page-header page-header">
       <div class="header-left">
-        <h1 class="header-title">Номенклатура</h1>
-        <p class="header-subtitle">
-          Категории, ТМЦ, SKU, единицы измерения и ключевые слова.
-          Изменения копятся локально и применяются батчем.
-        </p>
+        <h1 class="header-title">{{ title() }}</h1>
+        <p class="header-subtitle">{{ subtitle() }}</p>
       </div>
       <div class="header-right">
-        <button class="wh-btn wh-btn--secondary btn btn-secondary" (click)="export.emit()" title="Экспорт (в разработке)">
-          Экспорт
-        </button>
-        <button
-          class="wh-btn wh-btn--primary btn btn-primary"
-          [disabled]="applyDisabled()"
-          (click)="applyAll.emit()"
-        >
-          Применить все
-        </button>
+        @if (canWrite()) {
+          <button class="wh-btn wh-btn--secondary btn btn-secondary" (click)="export.emit()" title="Экспорт (в разработке)">
+            Экспорт
+          </button>
+          <button
+            class="wh-btn wh-btn--primary btn btn-primary"
+            [disabled]="applyDisabled()"
+            (click)="applyAll.emit()"
+          >
+            Применить все
+          </button>
+        }
       </div>
     </div>
   `,
@@ -66,6 +65,9 @@ import { Component, input, output } from '@angular/core';
   `]
 })
 export class PageHeaderComponent {
+  readonly canWrite = input<boolean>(true);
+  readonly title = input<string>('Номенклатура');
+  readonly subtitle = input<string>('Категории, ТМЦ, SKU, единицы измерения и ключевые слова. Изменения копятся локально и применяются батчем.');
   readonly applyDisabled = input<boolean>(true);
   readonly export = output<void>();
   readonly applyAll = output<void>();

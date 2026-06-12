@@ -11,7 +11,23 @@ export const routes: Routes = [
     redirectTo: '/operations',
   },
   {
+    path: 'catalog',
+    data: { catalogMode: 'readonly' },
+    loadComponent: () => import('./features/nomenclature/nomenclature-page/nomenclature-page').then(m => m.NomenclaturePageComponent),
+  },
+  {
+    path: 'catalog/items',
+    data: { catalogMode: 'readonly' },
+    loadComponent: () => import('./features/nomenclature/nomenclature-page/nomenclature-page').then(m => m.NomenclaturePageComponent),
+  },
+  {
+    path: 'catalog/categories',
+    data: { catalogMode: 'readonly' },
+    loadComponent: () => import('./features/nomenclature/nomenclature-page/nomenclature-page').then(m => m.NomenclaturePageComponent),
+  },
+  {
     path: 'nomenclature',
+    data: { catalogMode: 'editable' },
     loadComponent: () => import('./features/nomenclature/nomenclature-page/nomenclature-page').then(m => m.NomenclaturePageComponent),
   },
   {

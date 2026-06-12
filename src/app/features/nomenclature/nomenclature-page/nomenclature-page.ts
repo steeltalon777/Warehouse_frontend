@@ -1,4 +1,5 @@
 import { Component, computed, inject, signal, OnInit } from '@angular/core';
+import { ActivatedRoute } from '@angular/router';
 import { NomenclatureService } from '../../../core/services/nomenclature.service';
 import { CatalogChangeBufferService } from '../../../core/services/catalog-change-buffer.service';
 import { AuthContextService } from '../../../core/services/auth-context.service';
@@ -29,6 +30,9 @@ import { Category, Item } from '../../../core/models/nomenclature.models';
     <div class="wh-page page">
       <!-- Page header -->
       <app-page-header
+        [canWrite]="canWriteCatalog()"
+        [title]="catalogMode() === 'readonly' ? 'Каталог' : 'Номенклатура'"
+        [subtitle]="catalogMode() === 'readonly' ? 'Просмотр категорий, ТМЦ, единиц измерения и ключевых слов' : 'Категории, ТМЦ, SKU, единицы измерения и ключевые слова. Изменения копятся локально и применяются батчем.'"
         [applyDisabled]="applyDisabled()"
         (applyAll)="onApplyAll()"
       />
@@ -66,6 +70,7 @@ import { Category, Item } from '../../../core/models/nomenclature.models';
             />
             <app-action-buttons
               [mode]="activeTab()"
+              [canWrite]="canWriteCatalog()"
               (createCategory)="onCreateCategory()"
               (createItem)="onCreateItem()"
               (createUnit)="onCreateUnit()"
@@ -82,17 +87,20 @@ import { Category, Item } from '../../../core/models/nomenclature.models';
                 (toggle)="onToggleExpand($event.id)"
               />
             </div>
-            <app-pending-changes-bar
-              [count]="pendingCount()"
-              [isSaving]="isSaving()"
-              (reset)="onResetAll()"
-              (apply)="onApplyAll()"
-            />
+            @if (canWriteCatalog()) {
+              <app-pending-changes-bar
+                [count]="pendingCount()"
+                [isSaving]="isSaving()"
+                (reset)="onResetAll()"
+                (apply)="onApplyAll()"
+              />
+            }
           </div>
 
           <!-- Right panel: form or empty state -->
           <div class="wh-panel right-panel-wrapper">
             <app-right-panel
+              [canWrite]="canWriteCatalog()"
               [selectedNode]="selectedNode()"
               [selectedItem]="selectedItem()"
               [selectedCategory]="selectedCategory()"
@@ -202,8 +210,12 @@ import { Category, Item } from '../../../core/models/nomenclature.models';
   `]
 })
 export class NomenclaturePageComponent implements OnInit {
+  private readonly route = inject(ActivatedRoute);
   private readonly service = inject(NomenclatureService);
   private readonly changeBuffer = inject(CatalogChangeBufferService);
+
+  readonly catalogMode = signal<'readonly' | 'editable'>('editable');
+  readonly canWriteCatalog = computed(() => this.catalogMode() === 'editable');
 
   readonly activeTab = signal<'catalog' | 'units'>('catalog');
   readonly createModeEntity = signal<{ type: 'category' | 'item' | 'unit'; entity: null } | null>(null);
@@ -249,6 +261,12 @@ export class NomenclaturePageComponent implements OnInit {
 
   ngOnInit(): void {
     this.service.loadBootstrap();
+
+    const mode = this.route.snapshot.data['catalogMode'] as string | undefined;
+    if (mode === 'readonly') {
+      this.catalogMode.set('readonly');
+      this.changeBuffer.clearAll();
+    }
   }
 
   onSearchChange(value: string): void {

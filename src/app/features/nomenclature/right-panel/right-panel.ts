@@ -11,7 +11,42 @@ import { NomenclatureService } from '../../../core/services/nomenclature.service
   imports: [ItemEditFormComponent, CategoryEditFormComponent, UnitEditFormComponent],
   template: `
     <div class="wh-panel right-panel" [class.empty]="!selectedNode() && !createModeEntity()">
-      @if (createModeEntity(); as cm) {
+      @if (!canWrite() && nomenService.selectedEntity(); as sel) {
+        <div class="panel-content">
+          @if (sel.type === 'unit' && resolvedUnit(); as unitData) {
+            <div class="panel-header">
+              <span class="wh-badge panel-badge badge-unit">ед. изм.</span>
+              <h3 class="panel-title">{{ unitData.name }}</h3>
+            </div>
+            <div class="panel-body readonly-body">
+              <div class="readonly-field"><label>Символ</label><span>{{ unitData.symbol }}</span></div>
+              <div class="readonly-field"><label>Статус</label><span>{{ unitData.is_active ? 'Активна' : 'Неактивна' }}</span></div>
+            </div>
+          } @else if (sel.type === 'item' && selectedItem(); as item) {
+            <div class="panel-header">
+              <span class="wh-badge panel-badge badge-item">ТМЦ</span>
+              <h3 class="panel-title">{{ item.name }}</h3>
+            </div>
+            <div class="panel-body readonly-body">
+              <div class="readonly-field"><label>Артикул</label><span>{{ item.sku || '—' }}</span></div>
+              <div class="readonly-field"><label>Единица изм.</label><span>{{ item.unit_symbol || '—' }}</span></div>
+              <div class="readonly-field"><label>Категория</label><span>{{ item.category_name || '—' }}</span></div>
+              @if (item.hashtags.length) {
+                <div class="readonly-field"><label>Ключевые слова</label><span>{{ item.hashtags.join(', ') }}</span></div>
+              }
+              <div class="readonly-field"><label>Статус</label><span>{{ item.is_active ? 'Активна' : 'Неактивна' }}</span></div>
+            </div>
+          } @else if (sel.type === 'category' && selectedCategory(); as cat) {
+            <div class="panel-header">
+              <span class="wh-badge panel-badge badge-category">категория</span>
+              <h3 class="panel-title">{{ cat.name }}</h3>
+            </div>
+            <div class="panel-body readonly-body">
+              <div class="readonly-field"><label>Код</label><span>{{ cat.code || '—' }}</span></div>
+            </div>
+          }
+        </div>
+      } @else if (createModeEntity(); as cm) {
         <div class="panel-content">
           <div class="panel-header">
             <span class="wh-badge panel-badge" [class.badge-unit]="cm.type === 'unit'" [class.badge-category]="cm.type === 'category'" [class.badge-item]="cm.type === 'item'">
@@ -224,6 +259,25 @@ import { NomenclatureService } from '../../../core/services/nomenclature.service
       line-height: 1.5;
     }
 
+    .readonly-body {
+      padding: 16px 32px 24px;
+    }
+    .readonly-field {
+      margin-bottom: 16px;
+    }
+    .readonly-field label {
+      display: block;
+      font-size: 12px;
+      font-weight: 500;
+      color: #6B7280;
+      margin-bottom: 4px;
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+    }
+    .readonly-field span {
+      font-size: 15px;
+      color: #111827;
+    }
     .empty-state {
       text-align: center;
       padding: 40px 24px;
@@ -245,6 +299,7 @@ import { NomenclatureService } from '../../../core/services/nomenclature.service
 export class RightPanelComponent {
   readonly nomenService = inject(NomenclatureService);
 
+  readonly canWrite = input<boolean>(true);
   readonly selectedNode = input<CatalogTreeNodeVm | null>(null);
   readonly selectedItem = input<Item | null>(null);
   readonly selectedCategory = input<Category | null>(null);

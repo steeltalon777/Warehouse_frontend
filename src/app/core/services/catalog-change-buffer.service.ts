@@ -6,13 +6,20 @@ import { CatalogPendingChange } from '../models/nomenclature.models';
 })
 export class CatalogChangeBufferService {
   private readonly _changes = signal<CatalogPendingChange[]>([]);
+  private readonly _disabled = signal<boolean>(false);
 
   readonly changes = computed(() => this._changes());
   readonly count = computed(() => this._changes().length);
   readonly isEmpty = computed(() => this._changes().length === 0);
+  readonly disabled = this._disabled.asReadonly();
+
+  setDisabled(value: boolean): void {
+    this._disabled.set(value);
+  }
 
   /** Add or replace a change by localId */
   addChange(change: CatalogPendingChange): void {
+    if (this._disabled()) return;
     const current = this._changes();
     const idx = current.findIndex(c => c.localId === change.localId);
     if (idx >= 0) {
