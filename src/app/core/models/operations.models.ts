@@ -35,6 +35,7 @@ export interface OperationDto {
   issue_object_id?: string | null;
   issue_object_name_snapshot?: string | null;
   comment?: string | null;
+  notes?: string | null;
   created_by_user_id: string;
   created_by_label?: string;
   created_at: string;

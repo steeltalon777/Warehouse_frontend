@@ -130,6 +130,7 @@ export class OperationsFilterPanelComponent {
   reset = output<void>();
 
   readonly types = (Object.entries(OPERATION_TYPE_LABELS) as [OperationType, string][])
+    .filter(([key]) => key !== 'CORRECTION')
     .map(([key, label]) => ({ key, label }));
 
   onSearchChange(value: string): void {

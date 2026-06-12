@@ -66,7 +66,11 @@ export class OperationsService {
       };
       if (filters.search) params['search'] = filters.search;
       if (filters.itemIds?.length) params['item_ids'] = filters.itemIds.join(',');
-      if (filters.type) params['type'] = filters.type;
+      if (filters.type) {
+        params['type'] = filters.type;
+      } else {
+        params['exclude_adjustments'] = true;
+      }
       if (filters.status) {
         const role = this.authContextService.authContext()?.role ?? 'observer';
         if (role !== 'root' && filters.status === 'cancelled') {
@@ -325,6 +329,7 @@ export class OperationsService {
     const displayNumber = op.display_number || op.number || this.computeClientDisplayNumber(op);
     const directionLabel = this.buildDirectionLabel(op);
     const createdByLabel = op.created_by_label || 'Пользователь';
+    const comment = op.comment ?? op.notes ?? null;
     const statusLines = this.buildStatusLines(op);
 
     const isDraft = op.status === 'draft';
@@ -370,7 +375,7 @@ export class OperationsService {
       id: op.id,
       number: displayNumber,
       displayNumber,
-      comment: op.comment ?? null,
+      comment,
       type: normalizedType as OperationType,
       typeLabel,
       status: op.status,

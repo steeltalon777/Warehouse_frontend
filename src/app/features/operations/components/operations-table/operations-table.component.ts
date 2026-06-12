@@ -11,6 +11,7 @@ import {
   imports: [CommonModule, MinPipe],
   template: `
       <div class="table-wrapper">
+        <div class="table-scroll" data-testid="operations-table-scroll">
         <table class="wh-table data-table" data-testid="operations-table">
         <thead class="sticky-header">
           <tr>
@@ -87,7 +88,9 @@ import {
                 class="col-comment"
                 data-testid="operation-comment-cell"
                 [attr.title]="row.comment?.trim() ? row.comment : null"
-              >{{ row.comment?.trim() || '—' }}</td>
+              >
+                <span class="comment-text">{{ row.comment?.trim() || '—' }}</span>
+              </td>
               <td class="col-date" data-testid="operation-date-cell">{{ row.createdAt | date:'dd.MM.yyyy HH:mm' }}</td>
               <td class="col-actions" (click)="$event.stopPropagation()">
                 <div class="action-stack">
@@ -142,6 +145,7 @@ import {
           }
         </tbody>
       </table>
+      </div>
 
       <!-- Pagination -->
       @if (totalCount() > 0) {
@@ -169,8 +173,9 @@ import {
     </div>
   `,
   styles: [`
-    :host { display: block; height: 100%; }
-    .table-wrapper { flex: 1; overflow-y: auto; display: flex; flex-direction: column; min-height: 0; }
+    :host { display: flex; flex: 1; min-height: 0; height: 100%; }
+    .table-wrapper { flex: 1; display: flex; flex-direction: column; min-height: 0; overflow: hidden; }
+    .table-scroll { flex: 1; min-height: 0; overflow: auto; }
 
     .data-table {
       width: 100%;
@@ -206,8 +211,15 @@ import {
     .col-status { width: 7%; min-width: 70px; }
     .col-direction { width: 18%; min-width: 130px; }
     .col-positions { width: 4%; min-width: 40px; text-align: center; }
-    .col-comment { width: auto; min-width: 120px; }
-    .col-date { width: auto; min-width: 80px; white-space: nowrap; }
+    .col-comment { width: 28%; min-width: 220px; max-width: 28%; }
+    .comment-text {
+      display: block;
+      max-width: 42ch;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+    .col-date { width: 13%; min-width: 130px; white-space: nowrap; }
     .col-actions { width: 160px; min-width: 160px; text-align: center; }
 
     .number-link {
