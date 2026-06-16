@@ -1,4 +1,5 @@
 import { Routes } from '@angular/router';
+import { catalogWriteGuard } from './core/guards/catalog-write.guard';
 
 export const routes: Routes = [
   {
@@ -28,6 +29,7 @@ export const routes: Routes = [
   {
     path: 'nomenclature',
     data: { catalogMode: 'editable' },
+    canActivate: [catalogWriteGuard],
     loadComponent: () => import('./features/nomenclature/nomenclature-page/nomenclature-page').then(m => m.NomenclaturePageComponent),
   },
   {

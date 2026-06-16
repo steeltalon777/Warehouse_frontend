@@ -347,7 +347,7 @@ export class OperationsService {
     let canPrint = false;
 
     if (role === 'observer') {
-      canEdit = false;
+      canEdit = isDraft && op.created_by_user_id === userId;
       canSubmit = false;
       canCancel = false;
       canPrint = isSubmitted;

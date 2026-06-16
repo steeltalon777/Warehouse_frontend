@@ -213,9 +213,13 @@ export class NomenclaturePageComponent implements OnInit {
   private readonly route = inject(ActivatedRoute);
   private readonly service = inject(NomenclatureService);
   private readonly changeBuffer = inject(CatalogChangeBufferService);
+  private readonly auth = inject(AuthContextService);
 
   readonly catalogMode = signal<'readonly' | 'editable'>('editable');
-  readonly canWriteCatalog = computed(() => this.catalogMode() === 'editable');
+  readonly canWriteCatalog = computed(() => {
+    const role = this.auth.authContext()?.role;
+    return role === 'root' || role === 'chief_storekeeper';
+  });
 
   readonly activeTab = signal<'catalog' | 'units'>('catalog');
   readonly createModeEntity = signal<{ type: 'category' | 'item' | 'unit'; entity: null } | null>(null);
