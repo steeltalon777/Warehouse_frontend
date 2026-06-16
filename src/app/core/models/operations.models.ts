@@ -95,6 +95,12 @@ export interface OperationsFilterVm {
   pageSize: number;
 }
 
+export interface StatusLineVm {
+  label: string;
+  kind: 'operation_status' | 'acceptance';
+  acceptanceState?: OperationAcceptanceState | null;
+}
+
 export interface OperationListRowVm {
   id: string;
   number: string;
@@ -104,7 +110,7 @@ export interface OperationListRowVm {
   typeLabel: string;
   status: OperationStatus;
   statusLabel: string;
-  statusLines: string[];
+  statusLines: StatusLineVm[];
   createdAt: string;
   createdByUserId: string;
   createdByLabel: string;

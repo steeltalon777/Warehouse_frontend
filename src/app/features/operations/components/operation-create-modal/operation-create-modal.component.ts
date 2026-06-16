@@ -550,6 +550,7 @@ export class OperationCreateModalComponent implements OnInit {
   });
 
   readonly isBalanceRefreshing = signal<boolean>(false);
+  private balanceRefreshSeq = 0;
 
   readonly typeOptions = (Object.entries(OPERATION_TYPE_LABELS) as [OperationType, string][])
     .map(([key, label]) => ({ key, label }));
@@ -811,11 +812,13 @@ export class OperationCreateModalComponent implements OnInit {
         return;
       }
       if (siteId && siteId !== 'undefined' && siteId !== 'null') {
+        const seq = ++this.balanceRefreshSeq;
         this.isBalanceRefreshing.set(true);
         this.service.loadBalances(siteId).then(() => {
-          this.isBalanceRefreshing.set(false);
-          this.refreshSourceQuantities();
-        }).catch(() => {
+          if (seq !== this.balanceRefreshSeq) return;
+          if (this.relevantSiteId() === siteId) {
+            this.refreshSourceQuantities();
+          }
           this.isBalanceRefreshing.set(false);
         });
       } else {
@@ -876,6 +879,25 @@ export class OperationCreateModalComponent implements OnInit {
         };
       }),
     }));
+  }
+
+  private shouldUseWarehouseBalances(): boolean {
+    return !this.isObjectSourceFlow() && !this.hasPrefilledAssetLine();
+  }
+
+  private async refreshBeforePersist(): Promise<void> {
+    if (!this.shouldUseWarehouseBalances()) return;
+    const siteId = this.relevantSiteId();
+    if (!siteId || siteId === 'undefined' || siteId === 'null') return;
+    const seq = ++this.balanceRefreshSeq;
+    this.isBalanceRefreshing.set(true);
+    await this.service.loadBalances(siteId);
+    if (seq === this.balanceRefreshSeq) {
+      if (this.relevantSiteId() === siteId) {
+        this.refreshSourceQuantities();
+      }
+      this.isBalanceRefreshing.set(false);
+    }
   }
 
   onTypeModelChange(value: OperationType | null): void {
@@ -1049,8 +1071,9 @@ export class OperationCreateModalComponent implements OnInit {
     }));
   }
 
-  onSave(): void {
+  async onSave(): Promise<void> {
     if (this.saveDisabledReason()) return;
+    await this.refreshBeforePersist();
     this.save.emit(this.localDraft());
   }
 
@@ -1058,8 +1081,9 @@ export class OperationCreateModalComponent implements OnInit {
     this.savedOperationId.set(savedId);
   }
 
-  onSubmit(): void {
+  async onSubmit(): Promise<void> {
     if (!this.canSubmitComputed()) return;
+    await this.refreshBeforePersist();
     this.submit.emit(this.localDraft());
   }
 

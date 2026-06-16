@@ -78,7 +78,11 @@ import {
               <td class="col-status" data-testid="operation-status-cell">
                 <div class="status-stack">
                   @for (line of row.statusLines; track $index) {
-                    <span class="status-line {{ statusClass(row.status) }}">{{ line }}</span>
+                    @if (line.kind === 'operation_status') {
+                      <span class="status-line {{ statusClass(row.status) }}">{{ line.label }}</span>
+                    } @else {
+                      <span class="status-line {{ acceptanceClass(line.acceptanceState) }}">{{ line.label }}</span>
+                    }
                   }
                 </div>
               </td>
@@ -329,6 +333,11 @@ import {
     }
     .btn-page:disabled { opacity: 0.4; cursor: not-allowed; }
     .page-current { font-size: 13px; font-weight: 600; color: #1E293B; min-width: 24px; text-align: center; }
+
+    .wh-badge--acceptance-pending { background: #FEF3C7; color: #92400E; }
+    .wh-badge--acceptance-in-progress { background: #DBEAFE; color: #1E40AF; }
+    .wh-badge--acceptance-resolved { background: #ECFDF5; color: #065F46; }
+    .wh-badge--acceptance-unknown { background: #F3F4F6; color: #6B7280; }
   `]
 })
 export class OperationsTableComponent {
@@ -363,5 +372,14 @@ export class OperationsTableComponent {
 
   statusClass(status: string | undefined): string {
     return status ? `wh-badge--status-${status}` : 'wh-badge--status-unknown';
+  }
+
+  acceptanceClass(state: string | undefined | null): string {
+    switch (state) {
+      case 'pending': return 'wh-badge--acceptance-pending';
+      case 'in_progress': return 'wh-badge--acceptance-in-progress';
+      case 'resolved': return 'wh-badge--acceptance-resolved';
+      default: return 'wh-badge--acceptance-unknown';
+    }
   }
 }

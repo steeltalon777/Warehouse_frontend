@@ -6,6 +6,7 @@ import {
   OperationStatus,
   OperationsFilterVm,
   OperationListRowVm,
+  StatusLineVm,
   OperationDraftVm,
   OperationLineDraftVm,
   OperationInlineItemDraftVm,
@@ -452,14 +453,18 @@ export class OperationsService {
     }
   }
 
-  private buildStatusLines(op: OperationDto): string[] {
-    const lines: string[] = [];
+  private buildStatusLines(op: OperationDto): StatusLineVm[] {
+    const lines: StatusLineVm[] = [];
     const statusLabel = OPERATION_STATUS_LABELS[op.status] ?? op.status;
-    lines.push(statusLabel);
+    lines.push({ label: statusLabel, kind: 'operation_status' });
 
     if (op.acceptance_state && op.acceptance_state !== 'not_required') {
       const accLabel = op.acceptance_state_label || this.getAcceptanceStateLabel(op.acceptance_state);
-      lines.push(accLabel);
+      lines.push({
+        label: accLabel,
+        kind: 'acceptance',
+        acceptanceState: op.acceptance_state,
+      });
     }
 
     return lines.slice(0, 4);

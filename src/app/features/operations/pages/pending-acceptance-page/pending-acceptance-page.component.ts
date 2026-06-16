@@ -6,6 +6,8 @@ import {
   OperationListRowVm,
   OperationDto,
   OperationStatus,
+  StatusLineVm,
+  OperationAcceptanceState,
 } from '../../../../core/models/operations.models';
 import { OperationsTableComponent } from '../../components/operations-table/operations-table.component';
 import { firstValueFrom } from 'rxjs';
@@ -176,7 +178,12 @@ export class PendingAcceptancePageComponent implements OnInit {
       typeLabel: typeLabels[normalizedType] || op.type,
       status: op.status as OperationStatus,
       statusLabel: statusLabels[op.status] || op.status,
-      statusLines: [statusLabels[op.status] || op.status, accLabel].filter(Boolean),
+      statusLines: [
+        { label: statusLabels[op.status] || op.status, kind: 'operation_status' },
+        ...(accLabel
+          ? [{ label: accLabel, kind: 'acceptance' as const, acceptanceState: (op.acceptance_state ?? null) as OperationAcceptanceState | null }]
+          : []),
+      ],
       createdAt: op.created_at,
       createdByUserId: op.created_by_user_id,
       createdByLabel: op.created_by_label || 'Пользователь',
