@@ -36,6 +36,7 @@ export interface LineQuantityChange {
         <table class="wh-table lines-data-table">
           <thead>
             <tr>
+              <th class="col-num">№</th>
               <th class="col-name" (click)="toggleSort('itemName')">
                 ТМЦ
                 @if (sortColumn() === 'itemName') {
@@ -60,6 +61,7 @@ export interface LineQuantityChange {
           <tbody>
             @for (line of filteredSortedLines(); track line.localId) {
               <tr>
+                <td class="col-num">{{ line.lineNumber ?? '—' }}</td>
                 <td class="col-name">
                   <div class="item-info">
                     <span class="item-name">{{ line.itemName }}</span>
@@ -112,7 +114,7 @@ export interface LineQuantityChange {
               </tr>
             } @empty {
               <tr>
-                <td colspan="4" class="empty-state">
+                <td colspan="5" class="empty-state">
                   @if (lines().length === 0) {
                     Для добавления используйте поле «Добавить ТМЦ» выше
                   } @else {
@@ -194,7 +196,8 @@ export interface LineQuantityChange {
     .lines-data-table th:hover { background: #F1F5F9; }
     .lines-data-table tbody tr:hover { background: #FAFAFA; }
 
-    .col-name { width: 60%; }
+    .col-num { width: 40px; text-align: center; color: #94A3B8; font-size: 12px; white-space: nowrap; }
+    .col-name { width: 55%; }
     .col-qty { width: 20%; }
     .col-avail { width: 15%; }
     .col-del { width: 5%; text-align: center; }

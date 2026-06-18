@@ -199,7 +199,7 @@ function currentDateTimeLocal(): string {
           <!-- Lines table component -->
             <div class="form-row lines-section">
               <div class="section-header">
-                <h3>Позиции ({{ lines().length }})</h3>
+                <h3>Позиции: {{ lines().length }}, Всего: {{ totalQuantity() }}</h3>
               </div>
               <app-operation-lines-table
                 [lines]="lines()"
@@ -541,6 +541,10 @@ export class OperationCreateModalComponent implements OnInit {
     return draftLines.map(l => ({ ...l, error: this.lineAvailableQtyError(l) }));
   });
 
+  readonly totalQuantity = computed(() => {
+    return this.localDraft().lines.reduce((sum, l) => sum + (l.quantity ?? 0), 0);
+  });
+
   readonly savedOperationId = signal<string | null>(null);
 
   readonly hasUnsavedChanges = computed(() => {
@@ -693,6 +697,7 @@ export class OperationCreateModalComponent implements OnInit {
           sourceSiteQuantity: null,
           isTemporary: false,
           fromBalances: false,
+          lineNumber: d.lines.length + 1,
           inlineItem,
         },
       ],
@@ -718,6 +723,7 @@ export class OperationCreateModalComponent implements OnInit {
           sourceSiteQuantity: null,
           isTemporary: false,
           fromBalances: false,
+          lineNumber: d.lines.length + 1,
           inlineItem: {
             ...inlineItem,
             // reuse same clientKey so backend groups lines by client_key
@@ -996,7 +1002,9 @@ export class OperationCreateModalComponent implements OnInit {
   removeLine(localId: string): void {
     this.localDraft.update(d => ({
       ...d,
-      lines: d.lines.filter(l => l.localId !== localId),
+      lines: d.lines
+        .filter(l => l.localId !== localId)
+        .map((l, idx) => ({ ...l, lineNumber: idx + 1 })),
     }));
   }
 
@@ -1045,6 +1053,7 @@ export class OperationCreateModalComponent implements OnInit {
           sourceSiteQuantity: availableQuantity,
           isTemporary: false,
           fromBalances: false,
+          lineNumber: d.lines.length + 1,
         },
       ],
     }));

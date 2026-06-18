@@ -247,9 +247,10 @@ test.describe('Operation Create Modal — Lines Table', () => {
     await openCreateModal(page);
 
     const table = page.locator('.modal-overlay table');
-    await expect(table.locator('th').nth(0)).toContainText('ТМЦ');
-    await expect(table.locator('th').nth(1)).toContainText('Отправляемое количество');
-    await expect(table.locator('th').nth(2)).toContainText('Имеется');
+    await expect(table.locator('th').nth(0)).toContainText('№');
+    await expect(table.locator('th').nth(1)).toContainText('ТМЦ');
+    await expect(table.locator('th').nth(2)).toContainText('Отправляемое количество');
+    await expect(table.locator('th').nth(3)).toContainText('Имеется');
   });
 
   test('lines table shows correct columns for RECEIVE (Количество)', async ({ page }) => {
@@ -260,7 +261,8 @@ test.describe('Operation Create Modal — Lines Table', () => {
     await page.waitForTimeout(300);
 
     const table = page.locator('.modal-overlay table');
-    await expect(table.locator('th').nth(1)).toContainText('Количество');
+    await expect(table.locator('th').nth(0)).toContainText('№');
+    await expect(table.locator('th').nth(2)).toContainText('Количество');
   });
 
   test('lines table hides added-lines filter when there are too few positions', async ({ page }) => {
