@@ -5,6 +5,7 @@ export default defineConfig({
   timeout: 30000,
   retries: process.env.CI ? 2 : 0,
   globalSetup: require.resolve('./global-setup'),
+  outputDir: './test-results',
   use: {
     baseURL: process.env.E2E_BASE_URL || 'http://localhost:8001',
     headless: true,
