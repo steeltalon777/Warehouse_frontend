@@ -1,7 +1,7 @@
-import { Component, OnInit, OnDestroy, inject, signal, computed, effect, DestroyRef } from '@angular/core';
+import { Component, OnInit, OnDestroy, inject, signal, computed, effect, ElementRef, viewChild } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { ReactiveFormsModule, FormControl, FormGroup, Validators } from '@angular/forms';
-import { takeUntilDestroyed, toSignal } from '@angular/core/rxjs-interop';
+import { toSignal } from '@angular/core/rxjs-interop';
 import { IssueObjectsService } from '../../../../core/services/issue-objects.service';
 import { IssueObjectCategoriesService } from '../../../../core/services/issue-object-categories.service';
 import {
@@ -13,7 +13,7 @@ import {
   ISSUE_OBJECT_TYPE_LABELS,
 } from '../../../../core/models/issue-objects.models';
 import { IssuedAssetRow } from '../../../../core/models/assets.models';
-import { OperationDraftVm, OperationType } from '../../../../core/models/operations.models';
+import { OperationDraftVm } from '../../../../core/models/operations.models';
 import { OperationsService } from '../../../../core/services/operations.service';
 import { RepositorySelectionService } from '../../services/repository-selection.service';
 import { AssignedAssetsTableComponent } from '../assigned-assets-table/assigned-assets-table.component';
@@ -108,143 +108,204 @@ function genLocalId(): string {
       } @else if (service.error(); as err) {
         <div class="wh-state wh-state--error error-state">{{ err }}</div>
       } @else if (object(); as obj) {
-        <div class="panel-header">
-          <div class="header-info">
-            <h2 class="panel-title">{{ obj.display_name }}</h2>
-            <p class="panel-subtitle">Объект выдачи</p>
+        <div class="object-detail" data-testid="issue-object-detail">
+          <div class="panel-header">
+            <div class="header-info">
+              <h2 class="panel-title">{{ obj.display_name }}</h2>
+              <p class="panel-subtitle">Объект выдачи</p>
+            </div>
+            <div class="header-actions">
+              <button type="button" class="wh-btn wh-btn--secondary btn btn-secondary" (click)="toggleEdit()">
+                {{ editMode() ? 'Отменить редактирование' : 'Редактировать' }}
+              </button>
+              <button
+                type="button"
+                class="wh-btn wh-btn--secondary btn btn-toggle"
+                [disabled]="service.isSaving()"
+                (click)="onToggleActive()">
+                {{ obj.is_active ? 'Деактивировать' : 'Активировать' }}
+              </button>
+              <button
+                type="button"
+                class="wh-btn wh-btn--danger btn btn-danger"
+                [disabled]="service.isSaving() || hasAssignedAssets()"
+                [title]="hasAssignedAssets() ? 'Невозможно удалить: есть назначенное имущество' : 'Удалить объект'"
+                (click)="onDelete()">
+                Удалить
+              </button>
+            </div>
           </div>
-          <div class="header-actions">
-            <button class="wh-btn wh-btn--secondary btn btn-secondary" (click)="toggleEdit()">
-              {{ editMode() ? 'Отменить редактирование' : 'Редактировать' }}
-            </button>
-            <button
-              class="wh-btn wh-btn--secondary btn btn-toggle"
-              [disabled]="service.isSaving()"
-              (click)="onToggleActive()">
-              {{ obj.is_active ? 'Деактивировать' : 'Активировать' }}
-            </button>
-            <button
-              class="wh-btn wh-btn--danger btn btn-danger"
-              [disabled]="service.isSaving() || hasAssignedAssets()"
-              [title]="hasAssignedAssets() ? 'Невозможно удалить: есть назначенное имущество' : 'Удалить объект'"
-              (click)="onDelete()">
-              Удалить
-            </button>
-          </div>
-        </div>
 
-        <div class="panel-body">
-          <div class="wh-card form-card" [formGroup]="editForm">
-            <h3 class="card-title">{{ editMode() ? 'Редактирование объекта' : 'Параметры объекта' }}</h3>
-            <div class="form-row">
-              <label class="form-label">Наименование *</label>
-              <input
-                type="text"
-                class="wh-form-input input"
-                formControlName="displayName"
-                [disabled]="!editMode()"
-                placeholder="Введите наименование объекта"
-              />
-            </div>
-            <div class="form-row">
-              <label class="form-label">Комментарий</label>
-              <textarea
-                class="wh-form-input input comment-area"
-                rows="2"
-                formControlName="comment"
-                [disabled]="!editMode()"
-                placeholder="Дополнительная информация об объекте"
-              ></textarea>
-            </div>
-            <div class="form-row form-row--split">
-              <div class="form-col">
-                <label class="form-label">Категория *</label>
-                <select
-                  class="wh-form-input input"
-                  formControlName="categoryId"
-                  [disabled]="!editMode()">
-                  <option value="" disabled>Выберите категорию</option>
-                  @for (cat of categoryOptions(); track cat.id) {
-                    <option [value]="cat.id">{{ cat.name }}</option>
-                  }
-                </select>
-              </div>
-              <div class="form-col">
-                <label class="form-label">Тип (совместимость)</label>
-                <select
-                  class="wh-form-input input"
-                  formControlName="objectType"
-                  [disabled]="!editMode()">
-                  <option value="">— не указан</option>
-                  @for (entry of typeOptions; track entry.key) {
-                    <option [value]="entry.key">{{ entry.label }}</option>
-                  }
-                </select>
-              </div>
-            </div>
-            <div class="form-row form-row--split">
-              <div class="form-col">
-                <label class="form-label">Код</label>
+          <div class="panel-body">
+            <div class="wh-card form-card" data-testid="issue-object-params-card" [formGroup]="editForm">
+              <h3 class="card-title">{{ editMode() ? 'Редактирование объекта' : 'Параметры объекта' }}</h3>
+              <div class="form-row">
+                <label class="form-label">Наименование *</label>
                 <input
                   type="text"
                   class="wh-form-input input"
-                  formControlName="code"
+                  formControlName="displayName"
                   [disabled]="!editMode()"
-                  placeholder="Внешний код (необязательно)"
+                  placeholder="Введите наименование объекта"
                 />
               </div>
-              <div class="form-col">
-                <label class="form-label">Активен</label>
-                <label class="checkbox-row">
+              <div class="form-row">
+                <label class="form-label">Комментарий</label>
+                <textarea
+                  class="wh-form-input input comment-area"
+                  rows="2"
+                  formControlName="comment"
+                  [disabled]="!editMode()"
+                  placeholder="Дополнительная информация об объекте"
+                ></textarea>
+              </div>
+              <div class="form-row form-row--split">
+                <div class="form-col">
+                  <label class="form-label">Категория *</label>
+                  <select
+                    class="wh-form-input input"
+                    formControlName="categoryId"
+                    [disabled]="!editMode()">
+                    <option value="" disabled>Выберите категорию</option>
+                    @for (cat of categoryOptions(); track cat.id) {
+                      <option [value]="cat.id">{{ cat.name }}</option>
+                    }
+                  </select>
+                </div>
+                <div class="form-col">
+                  <label class="form-label">Тип (совместимость)</label>
+                  <select
+                    class="wh-form-input input"
+                    formControlName="objectType"
+                    [disabled]="!editMode()">
+                    <option value="">— не указан</option>
+                    @for (entry of typeOptions; track entry.key) {
+                      <option [value]="entry.key">{{ entry.label }}</option>
+                    }
+                  </select>
+                </div>
+              </div>
+              <div class="form-row form-row--split">
+                <div class="form-col">
+                  <label class="form-label">Код</label>
                   <input
-                    type="checkbox"
-                    formControlName="isActive"
+                    type="text"
+                    class="wh-form-input input"
+                    formControlName="code"
                     [disabled]="!editMode()"
+                    placeholder="Внешний код (необязательно)"
                   />
-                  <span>{{ editForm.controls.isActive.value ? 'Да' : 'Нет' }}</span>
-                </label>
+                </div>
+                <div class="form-col">
+                  <label class="form-label">Активен</label>
+                  <label class="checkbox-row">
+                    <input
+                      type="checkbox"
+                      formControlName="isActive"
+                      [disabled]="!editMode()"
+                    />
+                    <span>{{ editForm.controls.isActive.value ? 'Да' : 'Нет' }}</span>
+                  </label>
+                </div>
               </div>
-            </div>
-            <div class="form-row form-row--meta">
-              <div class="form-col">
-                <label class="form-label">Ключ</label>
-                <div class="readonly-value">{{ obj.normalized_key || '—' }}</div>
+              <div class="form-row form-row--meta">
+                <div class="form-col">
+                  <label class="form-label">Ключ</label>
+                  <div class="readonly-value">{{ obj.normalized_key || '—' }}</div>
+                </div>
+                <div class="form-col">
+                  <label class="form-label">Создан</label>
+                  <div class="readonly-value">{{ obj.created_at | date:'dd.MM.yyyy HH:mm' }}</div>
+                </div>
+                <div class="form-col">
+                  <label class="form-label">Обновлён</label>
+                  <div class="readonly-value">{{ obj.updated_at | date:'dd.MM.yyyy HH:mm' }}</div>
+                </div>
               </div>
-              <div class="form-col">
-                <label class="form-label">Создан</label>
-                <div class="readonly-value">{{ obj.created_at | date:'dd.MM.yyyy HH:mm' }}</div>
-              </div>
-              <div class="form-col">
-                <label class="form-label">Обновлён</label>
-                <div class="readonly-value">{{ obj.updated_at | date:'dd.MM.yyyy HH:mm' }}</div>
-              </div>
+
+              @if (editMode()) {
+                <div class="form-actions">
+                  <button type="button" class="wh-btn wh-btn--secondary btn btn-secondary" (click)="onCancelEdit()">Отмена</button>
+                  <button
+                    type="button"
+                    class="wh-btn wh-btn--primary btn btn-primary"
+                    [disabled]="!canEdit()"
+                    (click)="onEditSave()">
+                    {{ service.isSaving() ? 'Сохранение...' : 'Сохранить' }}
+                  </button>
+                </div>
+              }
+              @if (service.error(); as err) {
+                <div class="error-msg">{{ err }}</div>
+              }
             </div>
 
-            @if (editMode()) {
-              <div class="form-actions">
-                <button type="button" class="wh-btn wh-btn--secondary btn btn-secondary" (click)="onCancelEdit()">Отмена</button>
+            <div class="wh-card assets-card" data-testid="issued-assets-panel">
+              <div class="assets-card-header" data-testid="issued-assets-header">
+                <h3 class="card-title">Назначенное имущество</h3>
                 <button
+                  #expandButton
                   type="button"
-                  class="wh-btn wh-btn--primary btn btn-primary"
-                  [disabled]="!canEdit()"
-                  (click)="onEditSave()">
-                  {{ service.isSaving() ? 'Сохранение...' : 'Сохранить' }}
+                  class="wh-btn wh-btn--secondary btn btn-secondary assets-expand-button"
+                  data-testid="issued-assets-expand-button"
+                  aria-haspopup="dialog"
+                  [attr.aria-expanded]="assignedAssetsExpanded()"
+                  (click)="openAssignedAssetsExpanded()">
+                  ⛶ Развернуть
                 </button>
               </div>
-            }
-            @if (service.error(); as err) {
-              <div class="error-msg">{{ err }}</div>
-            }
+
+              @if (!assignedAssetsExpanded()) {
+                <app-assigned-assets-table
+                  [objectId]="obj.id"
+                  variant="embedded"
+                  (return)="onReturn($event)"
+                  (writeOff)="onWriteOff($event)"
+                />
+              }
+            </div>
           </div>
 
-          <div class="wh-card assets-card">
-            <h3 class="card-title">Назначенное имущество</h3>
-            <app-assigned-assets-table
-              [objectId]="obj.id"
-              (return)="onReturn($event)"
-              (writeOff)="onWriteOff($event)"
-            />
-          </div>
+          @if (assignedAssetsExpanded()) {
+            <div class="expanded-dialog-backdrop" (click)="closeAssignedAssetsExpanded()">
+              <div
+                #expandedDialog
+                class="expanded-dialog"
+                role="dialog"
+                aria-modal="true"
+                aria-labelledby="issued-assets-expanded-title"
+                tabindex="-1"
+                data-testid="issued-assets-expanded-dialog"
+                (click)="$event.stopPropagation()"
+                (keydown.escape)="closeAssignedAssetsExpanded()">
+                <div class="expanded-dialog-header">
+                  <div class="expanded-dialog-heading">
+                    <h3 id="issued-assets-expanded-title" class="expanded-dialog-title" data-testid="issued-assets-expanded-title">
+                      Назначенное имущество — {{ obj.display_name }}
+                    </h3>
+                    <p class="expanded-dialog-subtitle">Выбранный объект: {{ obj.display_name }}</p>
+                  </div>
+                  <button
+                    type="button"
+                    class="wh-btn wh-btn--secondary btn btn-secondary"
+                    aria-label="Закрыть"
+                    data-testid="issued-assets-expanded-close-button"
+                    (click)="closeAssignedAssetsExpanded()">
+                    Закрыть
+                  </button>
+                </div>
+
+                <div class="expanded-dialog-body">
+                  <app-assigned-assets-table
+                    [objectId]="obj.id"
+                    variant="expanded"
+                    (return)="onReturnFromExpanded($event)"
+                    (writeOff)="onWriteOffFromExpanded($event)"
+                  />
+                </div>
+              </div>
+            </div>
+          }
         </div>
       }
     </div>
@@ -266,7 +327,8 @@ function genLocalId(): string {
   `,
   styles: [`
     :host { display: flex; flex-direction: column; height: 100%; min-height: 0; }
-    .object-panel { display: flex; flex-direction: column; height: 100%; min-height: 0; background: #F8FAFC; }
+    .object-panel { position: relative; display: flex; flex-direction: column; height: 100%; min-height: 0; background: #F8FAFC; }
+    .object-detail { display: flex; flex-direction: column; height: 100%; min-height: 0; }
 
     .panel-header { flex-shrink: 0; display: flex; align-items: flex-start; justify-content: space-between; gap: 16px; padding: 14px 20px; background: #FFFFFF; border-bottom: 1px solid #E2E8F0; }
     .header-info { min-width: 0; }
@@ -274,39 +336,72 @@ function genLocalId(): string {
     .panel-subtitle { font-size: 12px; color: #64748B; margin: 2px 0 0; }
     .header-actions { display: flex; gap: 6px; flex-shrink: 0; flex-wrap: wrap; justify-content: flex-end; }
 
-    .panel-body { flex: 1; overflow-y: auto; padding: 16px 20px; display: flex; flex-direction: column; gap: 16px; min-height: 0; }
+    .panel-body { flex: 1 1 auto; min-height: 0; overflow-y: auto; padding: 16px 20px; display: flex; flex-direction: column; gap: 16px; }
 
-    .wh-card { background: #FFFFFF; border: 1px solid #E2E8F0; border-radius: 10px; padding: 20px; }
     .card-title { margin: 0 0 16px; font-size: 15px; font-weight: 600; color: #374151; }
+    .form-card, .assets-card { padding: 20px; }
+    .form-card { flex: 0 0 auto; min-height: 380px; }
+    .assets-card { flex: 1 1 auto; min-height: 220px; display: flex; flex-direction: column; }
+    .assets-card-header { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 16px; }
+    .assets-card-header .card-title { margin-bottom: 0; }
+    .assets-expand-button { flex-shrink: 0; }
 
     .form-row { margin-bottom: 14px; }
     .form-row--split { display: flex; gap: 12px; }
     .form-row--meta { display: flex; gap: 12px; }
     .form-col { flex: 1; }
     .form-label { display: block; font-size: 12px; font-weight: 500; color: #64748B; margin-bottom: 4px; }
-    .input { width: 100%; height: 36px; padding: 0 10px; border: 1px solid #D1D5DB; border-radius: 8px; font-size: 13px; font-family: inherit; background: #FFFFFF; color: #1F2937; box-sizing: border-box; }
     .input:disabled { background: #F8FAFC; color: #475569; }
-    .input:focus { outline: none; border-color: #3B82F6; box-shadow: 0 0 0 2px rgba(59,130,246,0.15); }
-    .comment-area { height: auto; padding: 8px 10px; resize: vertical; }
     .readonly-value { font-size: 13px; color: #1F2937; padding: 6px 0; }
     .checkbox-row { display: flex; align-items: center; gap: 6px; font-size: 13px; color: #1F2937; cursor: pointer; height: 36px; }
     .checkbox-row input { margin: 0; }
     .form-actions { display: flex; gap: 8px; margin-top: 16px; }
     .error-msg { margin-top: 12px; padding: 8px 12px; background: #FEF2F2; border: 1px solid #FECACA; border-radius: 6px; font-size: 12px; color: #DC2626; }
 
-    .btn { display: inline-flex; align-items: center; justify-content: center; gap: 6px; height: 34px; padding: 0 14px; border-radius: 8px; font-size: 13px; font-weight: 500; cursor: pointer; transition: all 0.15s; white-space: nowrap; border: 1px solid transparent; font-family: inherit; }
-    .btn:disabled { opacity: 0.4; cursor: not-allowed; }
-    .btn-primary { background: #334155; color: #FFFFFF; border-color: #334155; }
-    .btn-primary:hover:not(:disabled) { background: #1E293B; }
-    .btn-secondary { background: #FFFFFF; border-color: #D1D5DB; color: #374151; }
-    .btn-secondary:hover:not(:disabled) { background: #F8FAFC; }
-    .btn-toggle { background: #FFFFFF; border-color: #D1D5DB; color: #1E293B; }
-    .btn-toggle:hover:not(:disabled) { background: #F8FAFC; }
-    .btn-danger { background: #FFFFFF; border-color: #FECACA; color: #B91C1C; }
-    .btn-danger:hover:not(:disabled) { background: #FEE2E2; }
+    .btn-toggle { color: #1E293B; }
 
     .loading-state, .error-state { display: flex; align-items: center; justify-content: center; gap: 12px; color: #64748B; font-size: 14px; padding: 40px; }
     .spinner { width: 24px; height: 24px; border: 3px solid #E2E8F0; border-top-color: #3B82F6; border-radius: 50%; animation: spin 0.8s linear infinite; }
+    .expanded-dialog-backdrop {
+      position: absolute;
+      inset: 0;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      padding: 24px;
+      background: rgba(15, 23, 42, 0.38);
+      z-index: 20;
+    }
+    .expanded-dialog {
+      width: min(1200px, 90vw);
+      height: min(760px, 85vh);
+      max-width: 100%;
+      max-height: 100%;
+      display: flex;
+      flex-direction: column;
+      min-height: 0;
+      background: #FFFFFF;
+      border: 1px solid #CBD5E1;
+      border-radius: 14px;
+      box-shadow: 0 24px 48px rgba(15, 23, 42, 0.18);
+    }
+    .expanded-dialog-header {
+      display: flex;
+      align-items: flex-start;
+      justify-content: space-between;
+      gap: 16px;
+      padding: 20px 24px 16px;
+      border-bottom: 1px solid #E2E8F0;
+      flex: 0 0 auto;
+    }
+    .expanded-dialog-heading { min-width: 0; }
+    .expanded-dialog-title { margin: 0; font-size: 18px; font-weight: 700; color: #0F172A; }
+    .expanded-dialog-subtitle { margin: 6px 0 0; font-size: 13px; color: #64748B; }
+    .expanded-dialog-body { flex: 1 1 auto; min-height: 0; padding: 16px 24px 24px; display: flex; flex-direction: column; }
+    @media (max-height: 900px) {
+      .form-card { min-height: 320px; }
+      .expanded-dialog-backdrop { padding: 16px; }
+    }
     @keyframes spin { to { transform: rotate(360deg); } }
   `]
 })
@@ -324,6 +419,10 @@ export class ObjectPanelComponent implements OnInit, OnDestroy {
   readonly showCreateForm = signal<boolean>(false);
   readonly showCreateModal = signal<boolean>(false);
   readonly modalDraft = signal<OperationDraftVm | null>(null);
+  readonly assignedAssetsExpanded = signal<boolean>(false);
+
+  readonly expandButtonRef = viewChild<ElementRef<HTMLButtonElement>>('expandButton');
+  readonly expandedDialogRef = viewChild<ElementRef<HTMLDivElement>>('expandedDialog');
 
   // ── Reactive Forms (fixes Save-stays-disabled after paste / autofill) ──
   // ngModel + signals misses programmatic value changes (paste, password
@@ -404,6 +503,7 @@ export class ObjectPanelComponent implements OnInit, OnDestroy {
       const id = this.selection.selectedObjectId();
       const flag = this.selection.createFlag();
       if (flag === 'new-object') {
+        this.assignedAssetsExpanded.set(false);
         this.showCreateForm.set(true);
         this.editMode.set(false);
         this.object.set(null);
@@ -413,12 +513,20 @@ export class ObjectPanelComponent implements OnInit, OnDestroy {
       }
       this.showCreateForm.set(false);
       if (id && id !== this.loadedId) {
+        this.assignedAssetsExpanded.set(false);
         this.loadedId = id;
         this.editMode.set(false);
         void this.loadObject(id);
       } else if (!id) {
+        this.assignedAssetsExpanded.set(false);
         this.loadedId = null;
         this.object.set(null);
+      }
+    });
+
+    effect(() => {
+      if (this.assignedAssetsExpanded()) {
+        setTimeout(() => this.expandedDialogRef()?.nativeElement.focus());
       }
     });
   }
@@ -549,6 +657,18 @@ export class ObjectPanelComponent implements OnInit, OnDestroy {
     }
   }
 
+  openAssignedAssetsExpanded(): void {
+    if (!this.object()) return;
+    this.assignedAssetsExpanded.set(true);
+  }
+
+  closeAssignedAssetsExpanded(restoreFocus: boolean = true): void {
+    this.assignedAssetsExpanded.set(false);
+    if (restoreFocus) {
+      setTimeout(() => this.expandButtonRef()?.nativeElement.focus());
+    }
+  }
+
   onReturn(row: IssuedAssetRow): void {
     const obj = this.object();
     if (!obj) return;
@@ -614,6 +734,16 @@ export class ObjectPanelComponent implements OnInit, OnDestroy {
     };
     this.modalDraft.set(draft);
     this.showCreateModal.set(true);
+  }
+
+  onReturnFromExpanded(row: IssuedAssetRow): void {
+    this.closeAssignedAssetsExpanded(false);
+    this.onReturn(row);
+  }
+
+  onWriteOffFromExpanded(row: IssuedAssetRow): void {
+    this.closeAssignedAssetsExpanded(false);
+    this.onWriteOff(row);
   }
 
   async onModalSave(draft: OperationDraftVm): Promise<void> {

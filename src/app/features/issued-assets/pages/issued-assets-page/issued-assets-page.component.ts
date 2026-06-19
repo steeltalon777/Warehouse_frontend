@@ -13,7 +13,7 @@ import { RepositorySelectionService } from '../../services/repository-selection.
   standalone: true,
   imports: [CommonModule, RepositoryTreeComponent, CategoryPanelComponent, ObjectPanelComponent, NewCategoryFormComponent],
   template: `
-    <div class="wh-page issued-assets-page">
+    <div class="wh-page issued-assets-page" data-testid="issue-repository-page">
       <!-- Page Header -->
       <div class="wh-page-header page-header">
         <div class="header-info">
@@ -24,7 +24,7 @@ import { RepositorySelectionService } from '../../services/repository-selection.
         </div>
       </div>
 
-      <!-- 40/60 workspace -->
+      <!-- Workspace stays inside the Django content area -->
       <div class="workspace">
         <div class="left-panel">
           <app-repository-tree />
@@ -58,6 +58,7 @@ import { RepositorySelectionService } from '../../services/repository-selection.
       display: flex;
       flex-direction: column;
       height: 100%;
+      min-height: 0;
       background: #F1F5F9;
       overflow: hidden;
     }
@@ -94,8 +95,8 @@ import { RepositorySelectionService } from '../../services/repository-selection.
     }
 
     .left-panel {
-      flex: 0 0 40%;
-      max-width: 40%;
+      flex: 0 0 clamp(280px, 25%, 420px);
+      max-width: 420px;
       min-width: 280px;
       display: flex;
       flex-direction: column;
