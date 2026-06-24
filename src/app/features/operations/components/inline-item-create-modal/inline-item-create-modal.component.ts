@@ -56,7 +56,11 @@ function generateClientKey(): string {
                 [ngModel]="sku()"
                 (ngModelChange)="onSkuChange($event)"
                 placeholder="Введите артикул"
+                maxlength="100"
               />
+              @if (fieldErrors()['sku']) {
+                <span class="field-error">{{ fieldErrors()['sku'] }}</span>
+              }
             </div>
 
             <!-- Ед. изм. -->
@@ -410,6 +414,7 @@ export class InlineItemCreateModalComponent implements OnInit, OnDestroy {
   // ─── SKU ─────────────────────────────────────────────────────────
   onSkuChange(value: string): void {
     this.sku.set(value);
+    this.clearFieldError('sku');
   }
 
   // ─── Unit search & selection ────────────────────────────────────
@@ -497,6 +502,12 @@ export class InlineItemCreateModalComponent implements OnInit, OnDestroy {
     }
     if (!this.unitId()) {
       errors['unitId'] = 'Выберите единицу измерения';
+    }
+    const skuValue = this.sku().trim();
+    if (skuValue.length > 100) {
+      errors['sku'] = 'SKU не должен превышать 100 символов';
+    } else if (skuValue && skuValue.replace(/\s/g, '').length === 0) {
+      errors['sku'] = 'SKU не может состоять только из пробелов';
     }
     this.fieldErrors.set(errors);
     return Object.keys(errors).length === 0;

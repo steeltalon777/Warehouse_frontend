@@ -115,18 +115,19 @@ function currentDateTimeLocal(): string {
 
     <!-- Create/Edit Modal -->
     @if (showCreateModal()) {
-      <app-operation-create-modal
-        [draft]="editingDraft()"
-        [sites]="sites()"
-        [isSaving]="service.isSaving()"
-        [isSubmitting]="service.isSubmitting()"
-        (save)="onDraftSave($event)"
-        (submit)="onDraftSubmit($event)"
-        (cancel)="onDraftCancel()"
-        (delete)="onDraftDelete($event)"
-        (cancelOperation)="onDraftOperationCancel($event)"
-        (acceptOperation)="onDraftAccept($event)"
-      />
+        <app-operation-create-modal
+          [draft]="editingDraft()"
+          [sites]="sites()"
+          [isSaving]="service.isSaving()"
+          [isSubmitting]="service.isSubmitting()"
+          [submitError]="createModalSubmitError()"
+          (save)="onDraftSave($event)"
+          (submit)="onDraftSubmit($event)"
+          (cancel)="onDraftCancel()"
+          (delete)="onDraftDelete($event)"
+          (cancelOperation)="onDraftOperationCancel($event)"
+          (acceptOperation)="onDraftAccept($event)"
+        />
     }
 
     <!-- Confirm Modal -->
@@ -310,6 +311,7 @@ export class OperationsPageComponent implements OnInit, OnDestroy {
   readonly editingDraft = signal<OperationDraftVm | null>(null);
   readonly confirmingOperation = signal<OperationListRowVm | null>(null);
   readonly invoiceLoadingOperationId = signal<string | null>(null);
+  readonly createModalSubmitError = signal<string>('');
 
   // ─── Derived data ────────────────────────────────────────────
   readonly isLoading = this.service.isLoading;
@@ -412,6 +414,7 @@ export class OperationsPageComponent implements OnInit, OnDestroy {
       effectiveAt: currentDateTimeLocal(),
       lines: [],
     });
+    this.createModalSubmitError.set('');
     this.showCreateModal.set(true);
   }
 
@@ -488,6 +491,7 @@ export class OperationsPageComponent implements OnInit, OnDestroy {
       const draft = this.service.mapDtoToDraftVm(dto);
       draft.lastSavedSnapshot = snapshotDraft(draft);
       this.editingDraft.set(draft);
+      this.createModalSubmitError.set('');
       this.showCreateModal.set(true);
     } catch {
       // error already in service.error
@@ -676,10 +680,15 @@ export class OperationsPageComponent implements OnInit, OnDestroy {
         const savedDraft = this.mergeDraftAfterSuccessfulSave(this.service.mapDtoToDraftVm(result), draft);
         savedDraft.lastSavedSnapshot = snapshotDraft(savedDraft);
         this.editingDraft.set(savedDraft);
+        this.createModalSubmitError.set('');
       }
       void this.loadList();
-    } catch {
-      // error already in service.error
+    } catch (err: any) {
+      const message = this.service.error()
+        || err?.message
+        || err?.error?.message
+        || 'Не удалось сохранить черновик';
+      this.createModalSubmitError.set(message);
     }
   }
 
@@ -692,9 +701,14 @@ export class OperationsPageComponent implements OnInit, OnDestroy {
       await this.service.submitOperation(result.id);
       this.showCreateModal.set(false);
       this.editingDraft.set(null);
+      this.createModalSubmitError.set('');
       void this.loadList();
-    } catch {
-      // error already in service.error
+    } catch (err: any) {
+      const message = this.service.error()
+        || err?.message
+        || err?.error?.message
+        || 'Не удалось подтвердить операцию';
+      this.createModalSubmitError.set(message);
     }
   }
 
@@ -798,8 +812,13 @@ export class OperationsPageComponent implements OnInit, OnDestroy {
       this.showCreateModal.set(false);
       this.editingDraft.set(null);
       void this.loadList();
-    } catch {
-      // error already in service.error
+    } catch (err: any) {
+      const message = this.service.error()
+        || err?.message
+        || err?.error?.message
+        || 'Не удалось подтвердить операцию';
+      this.createModalSubmitError.set(message);
+      this.showConfirmModal.set(false);
     }
   }
 

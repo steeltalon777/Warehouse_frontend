@@ -15,6 +15,7 @@ import { IssueObjectsService } from '../../../../core/services/issue-objects.ser
 import { ItemCacheSearchComponent } from '../item-cache-search/item-cache-search.component';
 import { OperationLinesTableComponent } from './operation-lines-table.component';
 import { InlineItemCreateModalComponent } from '../inline-item-create-modal/inline-item-create-modal.component';
+import { ErrorAlertComponent } from '../../../../shared/components/error-alert/error-alert.component';
 import { Item } from '../../../../core/models/nomenclature.models';
 import { IssueObject, IssueObjectType, ISSUE_OBJECT_TYPE_LABELS } from '../../../../core/models/issue-objects.models';
 import { snapshotDraft, isDraftClean } from './operation-draft-mappers';
@@ -37,7 +38,7 @@ function currentDateTimeLocal(): string {
 @Component({
   selector: 'app-operation-create-modal',
   standalone: true,
-  imports: [CommonModule, FormsModule, ItemCacheSearchComponent, OperationLinesTableComponent, InlineItemCreateModalComponent],
+  imports: [CommonModule, FormsModule, ItemCacheSearchComponent, OperationLinesTableComponent, InlineItemCreateModalComponent, ErrorAlertComponent],
   template: `
     <div class="wh-modal-overlay modal-overlay" [class.modal-overlay--pair]="isInlineModalOpen()">
       <div class="wh-modal modal-container">
@@ -47,6 +48,11 @@ function currentDateTimeLocal(): string {
         </div>
 
         <div class="wh-modal__body modal-body">
+          <app-error-alert
+            [message]="submitErrorLocal()"
+            testId="operation-create-submit-error"
+            (dismiss)="submitErrorLocal.set('')"
+          />
           <div class="modal-content-shell">
             <!-- First row: type + warehouse(s) -->
             <div class="form-row first-row">
@@ -506,6 +512,7 @@ export class OperationCreateModalComponent implements OnInit {
   sites = input.required<SiteDto[]>();
   isSaving = input<boolean>(false);
   isSubmitting = input<boolean>(false);
+  submitError = input<string>('');
   save = output<OperationDraftVm>();
   submit = output<OperationDraftVm>();
   cancel = output<void>();
@@ -546,6 +553,7 @@ export class OperationCreateModalComponent implements OnInit {
   });
 
   readonly savedOperationId = signal<string | null>(null);
+  readonly submitErrorLocal = signal<string>('');
 
   readonly hasUnsavedChanges = computed(() => {
     const d = this.localDraft();
@@ -796,6 +804,10 @@ export class OperationCreateModalComponent implements OnInit {
   }
 
   constructor() {
+    effect(() => {
+      this.submitErrorLocal.set(this.submitError());
+    });
+
     effect(() => {
       const d = this.draft();
       if (d) {
