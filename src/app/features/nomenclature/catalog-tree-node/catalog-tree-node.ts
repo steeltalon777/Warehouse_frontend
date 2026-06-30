@@ -13,6 +13,7 @@ import { CatalogTreeNodeVm } from '../../../core/models/nomenclature.models';
         [class.inactive]="!node().isActive"
         [class.error]="node().error"
         [class.pending-delete]="node().pendingAction === 'delete'"
+        [class.pending-merge]="node().pendingAction === 'merge'"
         [style.padding-left.px]="node().level * 16"
         (click)="select.emit(node())"
       >
@@ -45,10 +46,13 @@ import { CatalogTreeNodeVm } from '../../../core/models/nomenclature.models';
           @if (node().pendingAction === 'delete') {
             <span class="wh-badge badge badge-delete">удалено</span>
           }
-          @if (node().dirty && node().pendingAction !== 'delete') {
+          @if (node().pendingAction === 'merge') {
+            <span class="wh-badge badge badge-merge">сливается</span>
+          }
+          @if (node().dirty && node().pendingAction !== 'delete' && node().pendingAction !== 'merge') {
             <span class="wh-badge badge badge-dirty">изменено</span>
           }
-          @if (!node().isActive) {
+          @if (!node().isActive && node().pendingAction !== 'merge') {
             <span class="wh-badge badge badge-inactive">неактивно</span>
           }
           @if (node().error) {
@@ -103,6 +107,13 @@ import { CatalogTreeNodeVm } from '../../../core/models/nomenclature.models';
       border-color: #FECACA;
     }
     .tree-row.pending-delete .node-name { color: #991B1B; }
+    .tree-row.pending-merge {
+      background: #F0FDF4;
+      border-color: #86EFAC;
+    }
+    .tree-row.pending-merge .node-name {
+      color: #166534;
+    }
 
     .toggle-btn {
       flex-shrink: 0;
@@ -165,6 +176,14 @@ import { CatalogTreeNodeVm } from '../../../core/models/nomenclature.models';
     .badge-delete {
       background: #FEE2E2;
       color: #991B1B;
+      font-size: 10px;
+      font-weight: 500;
+      padding: 2px 8px;
+      border-radius: 999px;
+    }
+    .badge-merge {
+      background: #DCFCE7;
+      color: #166534;
       font-size: 10px;
       font-weight: 500;
       padding: 2px 8px;

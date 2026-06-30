@@ -82,7 +82,8 @@ export type CatalogPendingAction =
   | 'create'
   | 'update'
   | 'deactivate'
-  | 'delete';
+  | 'delete'
+  | 'merge';
 
 export interface CatalogTreeNodeVm {
   id: string;
@@ -111,6 +112,10 @@ export interface CatalogTreeNodeVm {
   state?: CatalogNodeState;
 }
 
+/**
+ * При action='merge':
+ *   payload = { target_entity_id: string, source_entity_id: string, comment?: string }
+ */
 export interface CatalogPendingChange {
   localId: string;
   entityType: 'category' | 'item' | 'unit';
@@ -131,7 +136,7 @@ export interface CatalogInlineEditEvent {
 export interface CatalogBatchChange {
   local_id: string;
   entity_type: 'unit' | 'category' | 'item';
-  action: 'create' | 'update' | 'deactivate' | 'delete';
+  action: 'create' | 'update' | 'deactivate' | 'delete' | 'merge';
   entity_id?: string | number;
   payload: Record<string, unknown>;
 }

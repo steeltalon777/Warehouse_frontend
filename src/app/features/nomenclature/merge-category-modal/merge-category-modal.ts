@@ -3,7 +3,6 @@ import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { firstValueFrom } from 'rxjs';
 import { BffApiService } from '../../../core/api/bff-api.service';
-import { CatalogAdminService } from '../../../core/services/catalog-admin.service';
 import { Category } from '../../../core/models/nomenclature.models';
 
 @Component({
@@ -18,14 +17,7 @@ import { Category } from '../../../core/models/nomenclature.models';
           <button class="modal-close" (click)="cancel.emit()">&times;</button>
         </div>
         <div class="modal-body">
-          @if (isSubmitting()) {
-            <div class="loading-state">Слияние...</div>
-          } @else if (error()) {
-            <div class="error-banner">{{ error() }}</div>
-            <div class="modal-actions">
-              <button class="btn btn-secondary" (click)="cancel.emit()">Закрыть</button>
-            </div>
-          } @else {
+
             <div class="source-info">
               <div class="source-name">{{ sourceCategory().name }}</div>
               <div class="source-meta">
@@ -89,7 +81,6 @@ import { Category } from '../../../core/models/nomenclature.models';
                 <button class="btn btn-primary" (click)="onSubmit()">Слияние категории</button>
               </div>
             }
-          }
         </div>
       </div>
     </div>
@@ -179,16 +170,15 @@ export class MergeCategoryModalComponent {
   readonly allCategories = input<Category[]>([]);
   readonly mergeComplete = output<void>();
   readonly cancel = output<void>();
+  readonly mergeRequested = output<{ sourceId: string; targetId: string; comment?: string }>();
 
   private readonly bffApi = inject(BffApiService);
-  private readonly catalogAdmin = inject(CatalogAdminService);
 
   readonly searchQuery = signal('');
   readonly searchResults = signal<Category[]>([]);
   readonly selectedTarget = signal<Category | null>(null);
   readonly comment = signal('');
-  readonly isSubmitting = signal(false);
-  readonly error = signal<string | null>(null);
+
 
   private searchTimer: ReturnType<typeof setTimeout> | null = null;
 
@@ -255,22 +245,13 @@ export class MergeCategoryModalComponent {
   async onSubmit(): Promise<void> {
     const target = this.selectedTarget();
     if (!target) return;
-    this.isSubmitting.set(true);
-    this.error.set(null);
-    try {
-      await firstValueFrom(
-        this.catalogAdmin.mergeCategory({
-          source_category_id: this.sourceCategory().id,
-          target_category_id: target.id,
-          comment: this.comment() || undefined,
-        })
-      );
-      this.mergeComplete.emit();
-    } catch (err: unknown) {
-      const msg = err instanceof Error ? err.message : 'Ошибка при слиянии категорий';
-      this.error.set(msg);
-      this.isSubmitting.set(false);
-    }
+
+    this.mergeRequested.emit({
+      sourceId: String(this.sourceCategory().id),
+      targetId: String(target.id),
+      comment: this.comment() || undefined,
+    });
+    this.mergeComplete.emit();
   }
 
 }

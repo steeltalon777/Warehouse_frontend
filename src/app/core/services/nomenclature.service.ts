@@ -936,7 +936,7 @@ export class NomenclatureService {
       const batchChanges: CatalogBatchChange[] = changes.map(c => ({
         local_id: c.localId,
         entity_type: c.entityType as 'unit' | 'category' | 'item',
-        action: c.action as 'create' | 'update' | 'deactivate' | 'delete',
+        action: c.action as 'create' | 'update' | 'deactivate' | 'delete' | 'merge',
         entity_id: c.entityId,
         payload: c.payload,
       }));

@@ -5,6 +5,8 @@ import { CatalogPendingChange } from '../models/nomenclature.models';
   providedIn: 'root'
 })
 export class CatalogChangeBufferService {
+  private readonly STORAGE_KEY = 'catalog_pending_changes';
+
   private readonly _changes = signal<CatalogPendingChange[]>([]);
   private readonly _disabled = signal<boolean>(false);
 
@@ -12,6 +14,30 @@ export class CatalogChangeBufferService {
   readonly count = computed(() => this._changes().length);
   readonly isEmpty = computed(() => this._changes().length === 0);
   readonly disabled = this._disabled.asReadonly();
+
+  constructor() {
+    const stored = this._loadFromStorage();
+    if (stored.length > 0) {
+      this._changes.set(stored);
+    }
+  }
+
+  private _saveToStorage(): void {
+    try {
+      sessionStorage.setItem(this.STORAGE_KEY, JSON.stringify(this._changes()));
+    } catch {
+      // Quota exceeded — silently ignore
+    }
+  }
+
+  private _loadFromStorage(): CatalogPendingChange[] {
+    try {
+      const raw = sessionStorage.getItem(this.STORAGE_KEY);
+      return raw ? JSON.parse(raw) : [];
+    } catch {
+      return [];
+    }
+  }
 
   setDisabled(value: boolean): void {
     this._disabled.set(value);
@@ -29,16 +55,19 @@ export class CatalogChangeBufferService {
     } else {
       this._changes.set([...current, change]);
     }
+    this._saveToStorage();
   }
 
   /** Remove a single change by localId */
   removeChange(localId: string): void {
     this._changes.set(this._changes().filter(c => c.localId !== localId));
+    this._saveToStorage();
   }
 
   /** Clear all pending changes */
   clearAll(): void {
     this._changes.set([]);
+    this._saveToStorage();
   }
 
   /** Check if entity has a pending change */
@@ -70,5 +99,6 @@ export class CatalogChangeBufferService {
   /** Replace all changes (used after successful apply) */
   setChanges(changes: CatalogPendingChange[]): void {
     this._changes.set(changes);
+    this._saveToStorage();
   }
 }

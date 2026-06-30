@@ -2,7 +2,6 @@ import { Component, input, output, signal, inject } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { firstValueFrom } from 'rxjs';
-import { CatalogAdminService } from '../../../core/services/catalog-admin.service';
 import { BffApiService } from '../../../core/api/bff-api.service';
 import { Item } from '../../../core/models/nomenclature.models';
 
@@ -19,11 +18,7 @@ import { Item } from '../../../core/models/nomenclature.models';
         </div>
 
         <div class="modal-body">
-          @if (isSubmitting()) {
-            <div class="loading">Слияние...</div>
-          } @else if (error()) {
-            <div class="error-banner">{{ error() }}</div>
-          } @else {
+
             <div class="source-info">
               <div class="source-row">
                 <span class="source-label">Название:</span>
@@ -116,7 +111,6 @@ import { Item } from '../../../core/models/nomenclature.models';
                 <button class="btn btn-primary" [disabled]="!canSubmit()" (click)="onSubmit()">Слияние ТМЦ</button>
               </div>
             }
-          }
         </div>
       </div>
     </div>
@@ -162,20 +156,19 @@ import { Item } from '../../../core/models/nomenclature.models';
   `]
 })
 export class MergeItemModalComponent {
-  private readonly catalogAdmin = inject(CatalogAdminService);
   private readonly bffApi = inject(BffApiService);
 
   readonly sourceItem = input.required<Item>();
   readonly mergeComplete = output<void>();
   readonly cancel = output<void>();
+  readonly mergeRequested = output<{ sourceId: string; targetId: string; comment?: string }>();
 
   searchQuery = '';
   readonly searchResults = signal<Item[]>([]);
   readonly selectedTarget = signal<Item | null>(null);
   unitConfirmed = false;
   comment = '';
-  readonly isSubmitting = signal(false);
-  readonly error = signal<string | null>(null);
+
 
   private searchTimer: ReturnType<typeof setTimeout> | null = null;
 
@@ -225,25 +218,13 @@ export class MergeItemModalComponent {
   async onSubmit(): Promise<void> {
     const target = this.selectedTarget();
     if (!target || !this.canSubmit()) return;
-    this.isSubmitting.set(true);
-    this.error.set(null);
 
-    try {
-      await firstValueFrom(
-        this.catalogAdmin.mergeItem({
-          source_item_id: this.sourceItem().id,
-          target_item_id: target.id,
-          comment: this.comment || undefined,
-        })
-      );
-      this.mergeComplete.emit();
-    } catch (err: unknown) {
-      const message = (err && typeof err === 'object' && 'message' in err)
-        ? (err as { message: string }).message
-        : 'Ошибка при слиянии. Попробуйте ещё раз.';
-      this.error.set(message);
-      this.isSubmitting.set(false);
-    }
+    this.mergeRequested.emit({
+      sourceId: String(this.sourceItem().id),
+      targetId: String(target.id),
+      comment: this.comment || undefined,
+    });
+    this.mergeComplete.emit();
   }
 
 }

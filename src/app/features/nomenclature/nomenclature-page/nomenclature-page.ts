@@ -123,14 +123,17 @@ import { Category, Item } from '../../../core/models/nomenclature.models';
           [sourceItem]="selectedItem()!"
           (cancel)="mergeItemModal.set(null)"
           (mergeComplete)="mergeItemModal.set(null)"
+          (mergeRequested)="onMergeRequested('item', $event)"
         />
       }
 
       @if (mergeCategoryModal()) {
         <app-merge-category-modal
           [sourceCategory]="selectedCategory()!"
+          [allCategories]="categories()"
           (cancel)="mergeCategoryModal.set(null)"
           (mergeComplete)="mergeCategoryModal.set(null)"
+          (mergeRequested)="onMergeRequested('category', $event)"
         />
       }
     </div>
@@ -422,5 +425,22 @@ export class NomenclaturePageComponent implements OnInit {
       const cat = this.service.findCategoryById(sel.id);
       if (cat) this.mergeCategoryModal.set(cat);
     }
+  }
+
+  onMergeRequested(
+    entityType: 'item' | 'category',
+    event: { sourceId: string; targetId: string; comment?: string }
+  ): void {
+    this.changeBuffer.addChange({
+      localId: `merge-${entityType}-${event.sourceId}-${Date.now()}`,
+      entityType: entityType,
+      entityId: event.sourceId,
+      action: 'merge',
+      payload: {
+        target_entity_id: event.targetId,
+        source_entity_id: event.sourceId,
+        comment: event.comment ?? null,
+      },
+    });
   }
 }
