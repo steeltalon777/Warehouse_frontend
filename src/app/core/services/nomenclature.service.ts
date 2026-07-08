@@ -417,6 +417,18 @@ export class NomenclatureService {
     this.forceVisibleIds.set(new Set());
   }
 
+  selectItemById(itemId: string): void {
+    const item = this.allItems().find(i => String(i.id) === String(itemId));
+    if (!item) return;
+
+    const categoryId = String(item.category_id ?? '');
+    if (categoryId) {
+      this.forceShowCategory(categoryId);
+    }
+
+    this.selectNode({ type: 'item', id: String(itemId) } as CatalogTreeNodeVm);
+  }
+
   // ─── Helpers: tree traversal ────────────────────────────────
 
   private collectFlat(nodes: CatalogTreeNodeVm[]): CatalogTreeNodeVm[] {
@@ -923,6 +935,21 @@ export class NomenclatureService {
 
   // ─── Batch apply ─────────────────────────────────────────────
 
+  /**
+   * Build a user-facing error message from failed batch records.
+   * Returns a general message with the first unique error detail.
+   */
+  private _buildBatchErrorMessage(errorRecords: Array<{ error_code?: string; error_message?: string }>): string {
+    if (errorRecords.length === 0) {
+      return 'Batch apply failed';
+    }
+    const uniqueMessages = [...new Set(
+      errorRecords.map(r => r.error_message || r.error_code || 'Unknown error')
+    )];
+    const detail = uniqueMessages.join('; ');
+    return `Ошибка сохранения (${errorRecords.length}): ${detail}`;
+  }
+
   async applyBatch(changes: CatalogPendingChange[]): Promise<void> {
     if (changes.length === 0) return;
     if (this.changeBuffer.disabled()) {
@@ -948,9 +975,20 @@ export class NomenclatureService {
       };
 
       const response = await firstValueFrom(this.bff.postData<CatalogBatchResponse>('/catalog/admin/batch', batchRequest));
+
+      // Check for application-level errors in batch response (HTTP 200, but status: "failed")
+      if (response.status === 'failed' || (response.summary?.error ?? 0) > 0) {
+        const errorRecords = (response.records ?? []).filter(r => r.status === 'error');
+        const message = this._buildBatchErrorMessage(errorRecords);
+        this.error.set(message);
+        throw new Error(message);
+      }
+
       await this.reloadBootstrapAfterBatch(changes, response);
     } catch (err: any) {
-      this.error.set(err?.message || 'Batch apply failed');
+      if (!this.error()) {
+        this.error.set(err?.message || 'Batch apply failed');
+      }
       throw err;
     } finally {
       this.isSaving.set(false);

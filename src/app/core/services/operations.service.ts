@@ -203,6 +203,23 @@ export class OperationsService {
     }
   }
 
+  async restoreOperation(id: string): Promise<OperationDto | null> {
+    this.isSubmitting.set(true);
+    this.error.set(null);
+    this.fieldErrors.set(null);
+    try {
+      const result = await firstValueFrom(
+        this.bff.postData<OperationDto>(`/operations/${id}/restore`, { restore: true })
+      );
+      return result;
+    } catch (err: any) {
+      this.normalizeError(err);
+      throw err;
+    } finally {
+      this.isSubmitting.set(false);
+    }
+  }
+
   async getOperation(id: string): Promise<OperationDto | null> {
     try {
       return await firstValueFrom(
@@ -347,7 +364,7 @@ export class OperationsService {
     let canPrint = false;
 
     if (role === 'observer') {
-      canEdit = isDraft && op.created_by_user_id === userId;
+      canEdit = false;
       canSubmit = false;
       canCancel = false;
       canPrint = isSubmitted;
@@ -370,6 +387,11 @@ export class OperationsService {
 
     if (isCancelled) {
       canCancel = false;
+    }
+
+    let canRestore = false;
+    if (role === 'root' && isCancelled) {
+      canRestore = true;
     }
 
     return {
@@ -405,6 +427,7 @@ export class OperationsService {
       canCancel,
       canPrint,
       canAccept: this.isAcceptanceApplicable(op),
+      canRestore,
     };
   }
 

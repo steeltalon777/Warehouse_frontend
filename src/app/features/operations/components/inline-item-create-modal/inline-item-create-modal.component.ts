@@ -47,22 +47,6 @@ function generateClientKey(): string {
               }
             </div>
 
-            <!-- SKU / артикул -->
-            <div class="field-row">
-              <label>SKU / артикул</label>
-              <input
-                type="text"
-                class="input"
-                [ngModel]="sku()"
-                (ngModelChange)="onSkuChange($event)"
-                placeholder="Введите артикул"
-                maxlength="100"
-              />
-              @if (fieldErrors()['sku']) {
-                <span class="field-error">{{ fieldErrors()['sku'] }}</span>
-              }
-            </div>
-
             <!-- Ед. изм. -->
             <div class="field-row">
               <label>Ед. изм. <span class="required">*</span></label>
@@ -354,7 +338,6 @@ export class InlineItemCreateModalComponent implements OnInit, OnDestroy {
 
   // State signals
   readonly name = signal('');
-  readonly sku = signal('');
   readonly unitId = signal('');
   readonly unitName = signal('');
   readonly categoryId = signal('');
@@ -398,6 +381,9 @@ export class InlineItemCreateModalComponent implements OnInit, OnDestroy {
     ).subscribe(query => {
       this.performCategorySearch(query);
     });
+
+    // Preload default unit "Штука"
+    this.loadDefaultUnit();
   }
 
   ngOnDestroy(): void {
@@ -405,16 +391,28 @@ export class InlineItemCreateModalComponent implements OnInit, OnDestroy {
     this.destroy$.complete();
   }
 
+  private loadDefaultUnit(): void {
+    this.catalogSearch.searchUnitsOnce('шт', 5).pipe(
+      takeUntil(this.destroy$)
+    ).subscribe({
+      next: (results) => {
+        const defaultUnit = results.find(
+          u => u.symbol?.toLowerCase() === 'шт' || u.name?.toLowerCase() === 'штука'
+        );
+        if (defaultUnit) {
+          this.selectUnit(defaultUnit);
+        }
+      },
+      error: () => {
+        // Fallback: оставить пустым
+      }
+    });
+  }
+
   // ─── Name ──────────────────────────────────────────────────────
   onNameChange(value: string): void {
     this.name.set(value);
     this.clearFieldError('name');
-  }
-
-  // ─── SKU ─────────────────────────────────────────────────────────
-  onSkuChange(value: string): void {
-    this.sku.set(value);
-    this.clearFieldError('sku');
   }
 
   // ─── Unit search & selection ────────────────────────────────────
@@ -503,12 +501,6 @@ export class InlineItemCreateModalComponent implements OnInit, OnDestroy {
     if (!this.unitId()) {
       errors['unitId'] = 'Выберите единицу измерения';
     }
-    const skuValue = this.sku().trim();
-    if (skuValue.length > 100) {
-      errors['sku'] = 'SKU не должен превышать 100 символов';
-    } else if (skuValue && skuValue.replace(/\s/g, '').length === 0) {
-      errors['sku'] = 'SKU не может состоять только из пробелов';
-    }
     this.fieldErrors.set(errors);
     return Object.keys(errors).length === 0;
   }
@@ -528,7 +520,7 @@ export class InlineItemCreateModalComponent implements OnInit, OnDestroy {
     const payload: OperationInlineItemDraftVm = {
       clientKey: generateClientKey(),
       name: this.name().trim(),
-      sku: this.sku().trim() || null,
+      sku: null,
       unitId: this.unitId(),
       unitName: this.unitName(),
       categoryId: this.categoryId() || null,

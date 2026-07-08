@@ -147,20 +147,25 @@ export interface CatalogBatchRequest {
   changes: CatalogBatchChange[];
 }
 
+export interface CatalogBatchRecord {
+  local_id: string;
+  entity_type: string;
+  action: string;
+  status: string;
+  entity_id?: number;
+  error_code?: string;
+  error_message?: string;
+}
+
 export interface CatalogBatchResponse {
   client_batch_id: string;
   mode: string;
   status: string;
-  summary: Record<string, number>;
-  records: Array<{
-    local_id: string;
-    entity_type: string;
-    action: string;
-    status: string;
-    entity_id?: number;
-    error_code?: string;
-    error_message?: string;
-  }>;
+  summary?: {
+    error?: number;
+    [key: string]: unknown;
+  };
+  records: CatalogBatchRecord[];
   server_time: string;
 }
 

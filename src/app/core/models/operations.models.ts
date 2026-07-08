@@ -134,6 +134,7 @@ export interface OperationListRowVm {
   canCancel: boolean;
   canPrint: boolean;
   canAccept: boolean;
+  canRestore?: boolean;
 }
 
 export interface OperationDraftVm {

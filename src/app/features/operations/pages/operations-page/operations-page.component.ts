@@ -127,6 +127,7 @@ function currentDateTimeLocal(): string {
           (delete)="onDraftDelete($event)"
           (cancelOperation)="onDraftOperationCancel($event)"
           (acceptOperation)="onDraftAccept($event)"
+          (restore)="onDraftRestore($event)"
         />
     }
 
@@ -790,6 +791,23 @@ export class OperationsPageComponent implements OnInit, OnDestroy {
   onDraftAccept(draft: OperationDraftVm): void {
     if (!draft.id) return;
     void this.router.navigate(['/operations', draft.id, 'acceptance']);
+  }
+
+  async onDraftRestore(draft: OperationDraftVm): Promise<void> {
+    if (!draft.id) return;
+    if (!confirm('Восстановить отменённую операцию как черновик?')) return;
+    try {
+      const dto = await this.service.restoreOperation(draft.id);
+      if (dto) {
+        const restoredDraft = this.service.mapDtoToDraftVm(dto);
+        restoredDraft.lastSavedSnapshot = snapshotDraft(restoredDraft);
+        this.editingDraft.set(restoredDraft);
+        this.createModalSubmitError.set('');
+      }
+      void this.loadList();
+    } catch {
+      // error already in service.error
+    }
   }
 
   async onRowDelete(row: OperationListRowVm): Promise<void> {

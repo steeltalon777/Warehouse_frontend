@@ -43,7 +43,15 @@ function currentDateTimeLocal(): string {
     <div class="wh-modal-overlay modal-overlay" [class.modal-overlay--pair]="isInlineModalOpen()">
       <div class="wh-modal modal-container">
         <div class="wh-modal__header modal-header">
-          <h2>{{ isEdit() ? 'Редактирование операции' : 'Новая операция' }}</h2>
+          <div class="header-title-group">
+            <h2>{{ isEdit() ? 'Редактирование операции' : 'Новая операция' }}</h2>
+            @if (localDraft().id) {
+              <div class="operation-uuid">
+                <span class="uuid-text">{{ localDraft().id }}</span>
+                <button class="btn-copy-uuid" (click)="copyUuid()" title="Копировать UUID">📋</button>
+              </div>
+            }
+          </div>
           <button class="wh-btn-icon btn-close" aria-label="Закрыть" (click)="cancel.emit()">×</button>
         </div>
 
@@ -59,34 +67,46 @@ function currentDateTimeLocal(): string {
               <!-- Operation type: 40% -->
               <div class="form-group form-group--type">
                 <label>Тип операции</label>
-                <select class="wh-form-input input" [ngModel]="localDraft().type" (ngModelChange)="onTypeModelChange($event)" [disabled]="isEdit() || isLockedFromAssetRow()">
-                  @for (t of typeOptions; track t.key) {
-                    <option [value]="t.key">{{ t.label }}</option>
-                  }
-                </select>
+                @if (!isReadonly()) {
+                  <select class="wh-form-input input" [ngModel]="localDraft().type" (ngModelChange)="onTypeModelChange($event)" [disabled]="isReadonly() || isLockedFromAssetRow()">
+                    @for (t of typeOptions; track t.key) {
+                      <option [value]="t.key">{{ t.label }}</option>
+                    }
+                  </select>
+                } @else {
+                  <span class="readonly-value readonly-type">{{ typeLabelForDisplay() }}</span>
+                }
               </div>
 
               <!-- Source warehouse: 30% for MOVE, 60% for others -->
               <div class="form-group" [class.form-group--move-source]="isMove()" [class.form-group--single-warehouse]="!isMove()">
                 <label>{{ sourceLabel() }}</label>
-                <select class="wh-form-input input" [ngModel]="isMove() ? (localDraft().sourceSiteId ?? '') : (logicalWarehouseSiteId() ?? '')" (ngModelChange)="isMove() ? onSourceSiteChange($event) : onLogicalWarehouseSiteChange($event)" [disabled]="isEdit()">
-                  <option value="">—</option>
-                  @for (site of sites(); track site.id) {
-                    <option [value]="site.id">{{ site.name }}</option>
-                  }
-                </select>
+                @if (!isReadonly()) {
+                  <select class="wh-form-input input" [ngModel]="isMove() ? (localDraft().sourceSiteId ?? '') : (logicalWarehouseSiteId() ?? '')" (ngModelChange)="isMove() ? onSourceSiteChange($event) : onLogicalWarehouseSiteChange($event)" [disabled]="isReadonly()">
+                    <option value="">—</option>
+                    @for (site of sites(); track site.id) {
+                      <option [value]="site.id">{{ site.name }}</option>
+                    }
+                  </select>
+                } @else {
+                  <span class="readonly-value">{{ sourceSiteName() }}</span>
+                }
               </div>
 
               <!-- Destination warehouse: 30%, only for MOVE -->
               @if (isMove()) {
                 <div class="form-group form-group--move-destination">
                   <label>Склад-получатель</label>
-                  <select class="wh-form-input input" [ngModel]="localDraft().destinationSiteId ?? ''" (ngModelChange)="onDestinationSiteChange($event)" [disabled]="isEdit()">
-                    <option value="">—</option>
-                    @for (site of sites(); track site.id) {
-                      <option [value]="site.id">{{ site.name }}</option>
-                    }
-                  </select>
+                  @if (!isReadonly()) {
+                    <select class="wh-form-input input" [ngModel]="localDraft().destinationSiteId ?? ''" (ngModelChange)="onDestinationSiteChange($event)" [disabled]="isReadonly()">
+                      <option value="">—</option>
+                      @for (site of sites(); track site.id) {
+                        <option [value]="site.id">{{ site.name }}</option>
+                      }
+                    </select>
+                  } @else {
+                    <span class="readonly-value">{{ destinationSiteName() }}</span>
+                  }
                 </div>
               }
             </div>
@@ -95,7 +115,11 @@ function currentDateTimeLocal(): string {
             @if (showPersonName()) {
               <div class="form-row">
                 <label>ФИО получателя / выдачи</label>
-                <input type="text" class="wh-form-input input" [ngModel]="localDraft().personName" (ngModelChange)="onPersonNameChange($event)" placeholder="Фамилия Имя Отчество" />
+                @if (!isReadonly()) {
+                  <input type="text" class="wh-form-input input" [ngModel]="localDraft().personName" (ngModelChange)="onPersonNameChange($event)" placeholder="Фамилия Имя Отчество" />
+                } @else {
+                  <span class="readonly-value">{{ localDraft().personName }}</span>
+                }
               </div>
             }
 
@@ -103,33 +127,37 @@ function currentDateTimeLocal(): string {
             @if (showIssueObjectSearch()) {
               <div class="form-row">
                 <label>Объект выдачи</label>
-                @if (localDraft().issueObjectName) {
-                  <div class="issue-object-selected">
-                    <span class="selected-label">{{ localDraft().issueObjectName }}</span>
-                    @if (!isLockedFromAssetRow()) {
-                      <button class="wh-btn-icon btn-icon-sm" (click)="clearIssueObject()" title="Изменить">✎</button>
-                    }
-                  </div>
+                @if (!isReadonly()) {
+                  @if (localDraft().issueObjectName) {
+                    <div class="issue-object-selected">
+                      <span class="selected-label">{{ localDraft().issueObjectName }}</span>
+                      @if (!isLockedFromAssetRow()) {
+                        <button class="wh-btn-icon btn-icon-sm" (click)="clearIssueObject()" title="Изменить">✎</button>
+                      }
+                    </div>
+                  } @else {
+                    <div class="issue-object-search">
+                      <input
+                        type="text"
+                        class="wh-form-input input"
+                        [ngModel]="issueObjectSearchQuery()"
+                        (ngModelChange)="onIssueObjectSearchChange($event)"
+                        placeholder="Поиск объекта выдачи..."
+                      />
+                      @if (issueObjectSearchResults().length > 0) {
+                        <div class="search-dropdown">
+                          @for (obj of issueObjectSearchResults(); track obj.id) {
+                            <button class="dropdown-item" (click)="selectIssueObject(obj)">
+                              <span class="item-title">{{ obj.display_name }}</span>
+                              <span class="item-subtitle">{{ objectTypeLabel(obj.object_type) }}{{ obj.code ? ' · ' + obj.code : '' }}</span>
+                            </button>
+                          }
+                        </div>
+                      }
+                    </div>
+                  }
                 } @else {
-                  <div class="issue-object-search">
-                    <input
-                      type="text"
-                      class="wh-form-input input"
-                      [ngModel]="issueObjectSearchQuery()"
-                      (ngModelChange)="onIssueObjectSearchChange($event)"
-                      placeholder="Поиск объекта выдачи..."
-                    />
-                    @if (issueObjectSearchResults().length > 0) {
-                      <div class="search-dropdown">
-                        @for (obj of issueObjectSearchResults(); track obj.id) {
-                          <button class="dropdown-item" (click)="selectIssueObject(obj)">
-                            <span class="item-title">{{ obj.display_name }}</span>
-                            <span class="item-subtitle">{{ objectTypeLabel(obj.object_type) }}{{ obj.code ? ' · ' + obj.code : '' }}</span>
-                          </button>
-                        }
-                      </div>
-                    }
-                  </div>
+                  <span class="readonly-value">{{ localDraft().issueObjectName || '—' }}</span>
                 }
               </div>
             }
@@ -138,68 +166,82 @@ function currentDateTimeLocal(): string {
             @if (showWriteOffSource() && !isLockedFromAssetRow()) {
               <div class="form-row">
                 <label>Источник списания</label>
-                <div class="radio-group">
-                  <label class="radio-item">
-                    <input type="radio" name="writeOffSource" [value]="'warehouse'" [ngModel]="localDraft().writeOffSource" (ngModelChange)="onWriteOffSourceChange('warehouse')" />
-                    <span>Со склада</span>
-                  </label>
-                  <label class="radio-item">
-                    <input type="radio" name="writeOffSource" [value]="'object'" [ngModel]="localDraft().writeOffSource" (ngModelChange)="onWriteOffSourceChange('object')" />
-                    <span>С объекта выдачи</span>
-                  </label>
-                </div>
+                @if (!isReadonly()) {
+                  <div class="radio-group">
+                    <label class="radio-item">
+                      <input type="radio" name="writeOffSource" [value]="'warehouse'" [ngModel]="localDraft().writeOffSource" (ngModelChange)="onWriteOffSourceChange('warehouse')" />
+                      <span>Со склада</span>
+                    </label>
+                    <label class="radio-item">
+                      <input type="radio" name="writeOffSource" [value]="'object'" [ngModel]="localDraft().writeOffSource" (ngModelChange)="onWriteOffSourceChange('object')" />
+                      <span>С объекта выдачи</span>
+                    </label>
+                  </div>
+                } @else {
+                  <span class="readonly-value">{{ writeOffSourceLabel() }}</span>
+                }
               </div>
             }
 
           <!-- Comment row: full-width, 2 rows -->
             <div class="form-row effective-at-row">
               <label>Дата проведения</label>
-              <input
-                type="datetime-local"
-                class="wh-form-input input effective-at-input"
-                [ngModel]="localDraft().effectiveAt"
-                (ngModelChange)="onEffectiveAtChange($event)"
-              />
+              @if (!isReadonly()) {
+                <input
+                  type="datetime-local"
+                  class="wh-form-input input effective-at-input"
+                  [ngModel]="localDraft().effectiveAt"
+                  (ngModelChange)="onEffectiveAtChange($event)"
+                />
+              } @else {
+                <span class="readonly-value">{{ localDraft().effectiveAt }}</span>
+              }
             </div>
 
             <div class="form-row">
               <label>Комментарий</label>
-              <textarea class="wh-form-input input comment-area" rows="2" [ngModel]="localDraft().comment" (ngModelChange)="onCommentChange($event)" placeholder="Комментарий к операции..."></textarea>
+              @if (!isReadonly()) {
+                <textarea class="wh-form-input input comment-area" rows="2" [ngModel]="localDraft().comment" (ngModelChange)="onCommentChange($event)" placeholder="Комментарий к операции..."></textarea>
+              } @else {
+                <span class="readonly-value">{{ localDraft().comment || '—' }}</span>
+              }
             </div>
 
           <!-- Add TMC row: 80% search + 20% disabled button -->
-            @if (!isObjectSourceFlow()) {
-              <div class="form-row add-tmc-row">
-                <div class="tmc-search-wrapper">
-                  <label>Добавить ТМЦ в операцию</label>
-                  <app-item-cache-search
-                    #itemSearch
-                    [placeholder]="'Поиск ТМЦ для добавления: название, SKU или хештег...'"
-                    [sourceSiteId]="relevantSiteId()"
-                    (itemSelected)="onNewItemSelected($event)"
-                  />
-                  @if (inlineItemsForSearch().length > 0) {
-                    <div class="inline-search-hint">
-                      <span class="hint-label">Временные позиции в операции:</span>
-                      @for (inline of inlineItemsForSearch(); track inline.clientKey) {
-                        <button class="inline-item-chip" (click)="onInlineSearchSelected(inline)">
-                          {{ inline.name }} ({{ inline.unitName }})
-                        </button>
-                      }
-                    </div>
-                  }
+            @if (!isReadonly()) {
+              @if (!isObjectSourceFlow()) {
+                <div class="form-row add-tmc-row">
+                  <div class="tmc-search-wrapper">
+                    <label>Добавить ТМЦ в операцию</label>
+                    <app-item-cache-search
+                      #itemSearch
+                      [placeholder]="'Поиск ТМЦ для добавления: название, SKU или хештег...'"
+                      [sourceSiteId]="relevantSiteId()"
+                      (itemSelected)="onNewItemSelected($event)"
+                    />
+                    @if (inlineItemsForSearch().length > 0) {
+                      <div class="inline-search-hint">
+                        <span class="hint-label">Временные позиции в операции:</span>
+                        @for (inline of inlineItemsForSearch(); track inline.clientKey) {
+                          <button class="inline-item-chip" (click)="onInlineSearchSelected(inline)">
+                            {{ inline.name }} ({{ inline.unitName }})
+                          </button>
+                        }
+                      </div>
+                    }
+                  </div>
+                  <button class="wh-btn wh-btn--secondary btn btn-tmc" title="Создать новую ТМЦ для операции" (click)="openInlineModal()">
+                    Создать ТМЦ
+                  </button>
                 </div>
-                <button class="wh-btn wh-btn--secondary btn btn-tmc" title="Создать новую ТМЦ для операции" (click)="openInlineModal()">
-                  Создать ТМЦ
-                </button>
-              </div>
-            } @else {
-              <div class="form-row object-source-hint">
-                <div class="hint-card">
-                  <span class="hint-icon" aria-hidden="true">ⓘ</span>
-                  <span>Позиция зафиксирована за объектом выдачи. Дополнительные позиции добавлять нельзя — доступно только то, что уже назначено на «{{ localDraft().issueObjectName || 'объект' }}».</span>
+              } @else {
+                <div class="form-row object-source-hint">
+                  <div class="hint-card">
+                    <span class="hint-icon" aria-hidden="true">ⓘ</span>
+                    <span>Позиция зафиксирована за объектом выдачи. Дополнительные позиции добавлять нельзя — доступно только то, что уже назначено на «{{ localDraft().issueObjectName || 'объект' }}».</span>
+                  </div>
                 </div>
-              </div>
+              }
             }
 
           <!-- Lines table component -->
@@ -227,18 +269,30 @@ function currentDateTimeLocal(): string {
           }
 
           <div class="footer-actions">
-            @if (isEdit()) {
-              <button class="wh-btn wh-btn--danger btn btn-delete" (click)="onDelete()" [disabled]="isSaving()">Удалить черновик</button>
+            @if (isReadonly()) {
+              @if (canRestoreOperation()) {
+                <button class="wh-btn wh-btn--secondary btn btn-restore" (click)="onRestore()">
+                  Восстановить как черновик
+                </button>
+              }
               @if (canCancelOperation()) {
                 <button class="wh-btn wh-btn--danger btn btn-cancel-operation" (click)="onCancelOperation()" [disabled]="isSubmitting()">Отменить операцию</button>
               }
-              @if (canAcceptOperation()) {
-                <button class="wh-btn wh-btn--secondary btn btn-accept" (click)="onAcceptOperation()">Приёмка</button>
+              <button class="wh-btn wh-btn--secondary btn btn-secondary" (click)="cancel.emit()">Закрыть</button>
+            } @else {
+              @if (isEdit()) {
+                <button class="wh-btn wh-btn--danger btn btn-delete" (click)="onDelete()" [disabled]="isSaving()">Удалить черновик</button>
+                @if (canCancelOperation()) {
+                  <button class="wh-btn wh-btn--danger btn btn-cancel-operation" (click)="onCancelOperation()" [disabled]="isSubmitting()">Отменить операцию</button>
+                }
+                @if (canAcceptOperation()) {
+                  <button class="wh-btn wh-btn--secondary btn btn-accept" (click)="onAcceptOperation()">Приёмка</button>
+                }
               }
+              <button class="wh-btn wh-btn--secondary btn btn-secondary" (click)="cancel.emit()">Отмена</button>
+              <button class="wh-btn wh-btn--primary btn btn-primary" [disabled]="isSaving() || !!saveDisabledReason()" (click)="onSave()">Сохранить черновик</button>
+              <button class="wh-btn wh-btn--success btn btn-submit" [disabled]="!canSubmitComputed() || isSubmitting()" [title]="submitDisabledReason()" (click)="onSubmit()">Подтвердить</button>
             }
-            <button class="wh-btn wh-btn--secondary btn btn-secondary" (click)="cancel.emit()">Отмена</button>
-            <button class="wh-btn wh-btn--primary btn btn-primary" [disabled]="isSaving() || !!saveDisabledReason()" (click)="onSave()">Сохранить черновик</button>
-            <button class="wh-btn wh-btn--success btn btn-submit" [disabled]="!canSubmitComputed() || isSubmitting()" [title]="submitDisabledReason()" (click)="onSubmit()">Подтвердить</button>
           </div>
         </div>
       </div>
@@ -502,6 +556,36 @@ function currentDateTimeLocal(): string {
     }
     .btn-icon-sm:hover { color: #3B82F6; }
 
+    .header-title-group {
+      display: flex;
+      flex-direction: column;
+      gap: 2px;
+    }
+    .operation-uuid {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      font-size: 11px;
+      color: #94A3B8;
+      font-family: monospace;
+    }
+    .btn-copy-uuid {
+      width: 20px; height: 20px;
+      border: none; background: transparent;
+      cursor: pointer; font-size: 13px;
+      padding: 0; line-height: 1;
+      display: inline-flex; align-items: center; justify-content: center;
+      border-radius: 4px;
+    }
+    .btn-copy-uuid:hover { background: #F1F5F9; }
+    .btn-copy-uuid--copied { color: #059669; }
+    .readonly-value {
+      display: block;
+      padding: 6px 0;
+      font-size: 13px;
+      color: #374151;
+      line-height: 1.5;
+    }
     .radio-group { display: flex; gap: 16px; }
     .radio-item { display: flex; align-items: center; gap: 6px; font-size: 13px; color: #374151; cursor: pointer; }
     .radio-item input { margin: 0; }
@@ -535,6 +619,10 @@ export class OperationCreateModalComponent implements OnInit {
 
   readonly isEdit = computed(() => !!this.localDraft().id);
   readonly isLockedFromAssetRow = computed(() => !!this.localDraft().lockedFromAssetRow);
+  readonly isReadonly = computed(() => {
+    const status = this.localDraft().status;
+    return status === 'submitted' || status === 'cancelled';
+  });
   readonly hasPrefilledAssetLine = computed(() => !!this.localDraft().prefilledAssetLine);
   readonly isMove = computed(() => this.localDraft().type === 'MOVE');
   readonly isObjectSourceFlow = computed(() => {
@@ -664,6 +752,46 @@ export class OperationCreateModalComponent implements OnInit {
     if (d.type !== 'MOVE' && d.type !== 'RECEIVE') return false;
     return d.status === 'submitted' && (d.acceptanceState === 'pending' || d.acceptanceState === 'in_progress');
   });
+
+  readonly typeLabelForDisplay = computed(() => {
+    const type = this.localDraft().type;
+    return OPERATION_TYPE_LABELS[type] || type;
+  });
+
+  readonly sourceSiteName = computed(() => {
+    const id = this.localDraft().sourceSiteId;
+    if (!id) return '—';
+    const site = this.sites().find(s => s.id === id);
+    return site?.name || `Склад #${id}`;
+  });
+
+  readonly destinationSiteName = computed(() => {
+    const id = this.localDraft().destinationSiteId;
+    if (!id) return '—';
+    const site = this.sites().find(s => s.id === id);
+    return site?.name || `Склад #${id}`;
+  });
+
+  readonly writeOffSourceLabel = computed(() => {
+    const s = this.localDraft().writeOffSource;
+    if (s === 'warehouse') return 'Со склада';
+    if (s === 'object') return 'С объекта выдачи';
+    return '—';
+  });
+
+  readonly canRestoreOperation = computed(() => {
+    const d = this.localDraft();
+    if (!d.id) return false;
+    if (d.status !== 'cancelled') return false;
+    const auth = this.authContextService.authContext();
+    return auth?.role === 'root';
+  });
+
+  readonly restore = output<OperationDraftVm>();
+
+  onRestore(): void {
+    this.restore.emit(this.localDraft());
+  }
 
   readonly isInlineModalOpen = signal(false);
 
@@ -1118,5 +1246,22 @@ export class OperationCreateModalComponent implements OnInit {
 
   onAcceptOperation(): void {
     this.acceptOperation.emit(this.localDraft());
+  }
+
+  async copyUuid(): Promise<void> {
+    const id = this.localDraft().id;
+    if (!id) return;
+    try {
+      await navigator.clipboard.writeText(id);
+    } catch {
+      const textarea = document.createElement('textarea');
+      textarea.value = id;
+      textarea.style.position = 'fixed';
+      textarea.style.opacity = '0';
+      document.body.appendChild(textarea);
+      textarea.select();
+      document.execCommand('copy');
+      document.body.removeChild(textarea);
+    }
   }
 }
