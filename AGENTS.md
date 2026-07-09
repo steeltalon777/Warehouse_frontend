@@ -54,10 +54,19 @@ Permanent standard:
 Агенты тестируют изменения на работающем dev-стенде. По умолчанию стенд запущен. Если нет — агент может запустить/перезапустить/пересобрать его через `make` из `/home/makc/AI_sandbox/warehouse_solution`.
 
 - Полный список `make`-команд и протокол восстановления стенда: `AGENTS.md` в корне workspace.
-- Основные команды: `make up` (запуск), `make restart` (перезапуск), `make build-angular` (ребилд фронтенда), `make status` (проверка).
+- Основные команды: `make up` (запуск), `make restart` (перезапуск), `make build-angular` (ребилд фронтенда), `make status` (проверка), `make test-e2e` (Playwright в Docker).
 - После сборки (`npm run build`) агент копирует актуальный bundle в `dist/`, который отдаёт Django.
+
+## E2E тестирование (Playwright)
+
+- Playwright spec и helpers лежат в `Warehouse_frontend/e2e/`.
+- Полный Docker-backed прогон: `make test-e2e` из корня workspace.
+- Локальная отладка браузера: `make test-e2e-headed`.
+- HTML-отчёт последнего прогона: `make test-e2e-report`.
+- CI использует тот же стек через `../.github/workflows/e2e-tests.yml`.
 
 ## Verification
 
 - Run `npm run build` after frontend changes once Angular scripts exist.
+- Use `make test-e2e` when the task touches Playwright coverage, browser flows, or CI parity.
 - Add frontend tests once Angular test tooling is initialized.

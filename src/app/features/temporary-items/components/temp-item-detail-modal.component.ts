@@ -12,7 +12,7 @@ import { TemporaryItemVm, TempItemDetail, TempItemBalancePerSite, TempItemOperat
     <div class="modal-overlay" (click)="onOverlayClick($event)">
       <div class="modal-container">
         <div class="modal-header">
-          <h2 class="modal-title">Временная ТМЦ: {{ item().name }}</h2>
+          <h2 class="modal-title">ТМЦ на проверке: {{ item().name }}</h2>
           <button class="modal-close" (click)="close.emit()" aria-label="Закрыть">&times;</button>
         </div>
 
@@ -38,11 +38,11 @@ import { TemporaryItemVm, TempItemDetail, TempItemBalancePerSite, TempItemOperat
                   <span class="meta-value">{{ detail()?.created_by_user_id || item().createdByUserId }}</span>
                 </div>
                 <div class="meta-item">
-                  <span class="meta-label">Системная категория</span>
+                  <span class="meta-label">Категория</span>
                   <span class="meta-value">{{ detail()?.category_name || item().categoryName || '—' }}</span>
                 </div>
                 <div class="meta-item">
-                  <span class="meta-label">Системная единица</span>
+                  <span class="meta-label">Единица измерения</span>
                   <span class="meta-value">{{ detail()?.unit_symbol || item().unitSymbol || '—' }}</span>
                 </div>
                 <div class="meta-item">
@@ -116,10 +116,12 @@ import { TemporaryItemVm, TempItemDetail, TempItemBalancePerSite, TempItemOperat
                   }
                 </button>
 
-                <!-- Merge with temp (deferred - always disabled) -->
-                <button class="action-btn" disabled title="Слияние временных ТМЦ между собой будет доступно в следующем обновлении." (click)="mergeTemp.emit(item())">
-                  Слить с другой временной ТМЦ
-                  <span class="btn-hint">Будет доступно в следующем обновлении</span>
+                <!-- Confirm - active for items needing review -->
+                <button class="action-btn action-btn--confirm"
+                  [disabled]="!item().canConvert && item().uiStatus !== 'needs_review'"
+                  [title]="item().canConvert ? '' : 'Подтвердить ТМЦ, созданную через операцию'"
+                  (click)="confirm.emit(item())">
+                  ✓ Подтвердить
                 </button>
 
                 <!-- Delete -->
@@ -184,6 +186,8 @@ import { TemporaryItemVm, TempItemDetail, TempItemBalancePerSite, TempItemOperat
     .action-btn--danger:hover:not(:disabled) { background: #FEF2F2; border-color: #FECACA; }
     .btn-hint { font-size: 11px; font-weight: 400; color: #94A3B8; }
     .action-btn--danger .btn-hint { color: #FCA5A5; }
+    .action-btn--confirm { color: #16A34A; border-color: #BBF7D0; }
+    .action-btn--confirm:hover:not(:disabled) { background: #F0FDF4; border-color: #86EFAC; }
   `]
 })
 export class TempItemDetailModalComponent implements OnInit {
@@ -195,6 +199,7 @@ export class TempItemDetailModalComponent implements OnInit {
   readonly convert = output<TemporaryItemVm>();
   readonly mergePermanent = output<TemporaryItemVm>();
   readonly mergeTemp = output<TemporaryItemVm>();
+  readonly confirm = output<TemporaryItemVm>();
   readonly deleteItem = output<TemporaryItemVm>();
 
   readonly TEMP_ITEM_UI_STATUS_COLORS = TEMP_ITEM_UI_STATUS_COLORS;

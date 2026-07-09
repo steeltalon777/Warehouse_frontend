@@ -1,6 +1,6 @@
 import { inject } from '@angular/core';
 import { CanActivateFn, Router } from '@angular/router';
-import { AuthContextService } from '../services/auth-context.service';
+import { AuthContextService, hasCatalogManagementAccess } from '../services/auth-context.service';
 
 export const catalogWriteGuard: CanActivateFn = async () => {
   const auth = inject(AuthContextService);
@@ -13,7 +13,6 @@ export const catalogWriteGuard: CanActivateFn = async () => {
     await auth.load();
   }
 
-  const role = auth.authContext()?.role;
-  if (role === 'root' || role === 'chief_storekeeper') return true;
+  if (hasCatalogManagementAccess(auth.authContext())) return true;
   return router.createUrlTree(['/catalog']);
 };

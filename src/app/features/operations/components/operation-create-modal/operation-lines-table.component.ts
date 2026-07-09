@@ -3,7 +3,7 @@ import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { OperationLineDraftVm, OperationType } from '../../../../core/models/operations.models';
 
-export type SortColumn = 'itemName' | 'quantity' | 'availableQuantity';
+export type SortColumn = 'itemName' | 'quantity' | 'availableQuantity' | 'lineNumber';
 export type SortDirection = 'asc' | 'desc';
 
 export interface LineQuantityChange {
@@ -36,7 +36,12 @@ export interface LineQuantityChange {
         <table class="wh-table lines-data-table">
           <thead>
             <tr>
-              <th class="col-num">№</th>
+              <th class="col-num" (click)="toggleSort('lineNumber')">
+                №
+                @if (sortColumn() === 'lineNumber') {
+                  <span class="sort-indicator">{{ sortDirection() === 'asc' ? '▲' : '▼' }}</span>
+                }
+              </th>
               <th class="col-name" (click)="toggleSort('itemName')">
                 ТМЦ
                 @if (sortColumn() === 'itemName') {
@@ -289,7 +294,7 @@ export class OperationLinesTableComponent {
   removeLine = output<string>();
   sortChange = output<{ column: SortColumn; direction: SortDirection }>();
 
-  readonly sortColumn = signal<SortColumn>('itemName');
+  readonly sortColumn = signal<SortColumn>('lineNumber');
   readonly sortDirection = signal<SortDirection>('asc');
   readonly nameFilter = signal<string>('');
 
@@ -321,6 +326,7 @@ export class OperationLinesTableComponent {
       let av: any;
       let bv: any;
       if (col === 'itemName') { av = a.itemName; bv = b.itemName; }
+      else if (col === 'lineNumber') { av = a.lineNumber ?? 0; bv = b.lineNumber ?? 0; }
       else if (col === 'quantity') { av = a.quantity ?? 0; bv = b.quantity ?? 0; }
       else if (col === 'availableQuantity') { av = a.availableQuantity ?? 0; bv = b.availableQuantity ?? 0; }
       if (av < bv) return dir === 'asc' ? -1 : 1;

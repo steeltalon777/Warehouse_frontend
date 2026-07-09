@@ -252,6 +252,7 @@ export class MergeCategoryModalComponent {
       comment: this.comment() || undefined,
     });
     this.mergeComplete.emit();
+    alert('Слияние выполнено успешно.');
   }
 
 }

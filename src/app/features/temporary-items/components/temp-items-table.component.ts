@@ -41,7 +41,11 @@ import { TemporaryItemVm, TempItemUiStatus, TEMP_ITEM_UI_STATUS_COLORS } from '.
         <tbody>
           @for (row of rows(); track row.id) {
             <tr class="data-row" (click)="rowClick.emit(row)">
-              <td class="col-name" [title]="row.name">{{ row.name }}</td>
+              <td class="col-name">
+                <a class="item-link" (click)="$event.stopPropagation(); navigateToCatalog.emit(row.id)" [title]="'Открыть в каталоге: ' + row.name">
+                  {{ row.name }}
+                </a>
+              </td>
               <td class="col-date">{{ row.createdAt }}</td>
               <td class="col-balance">{{ row.totalBalance }} {{ row.unitSymbol || '' }}</td>
               <td class="col-ops">{{ row.operationsCount }}</td>
@@ -56,6 +60,13 @@ import { TemporaryItemVm, TempItemUiStatus, TEMP_ITEM_UI_STATUS_COLORS } from '.
                   <button class="wh-btn-icon btn-icon" title="Открыть" (click)="rowClick.emit(row)">
                     <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>
                   </button>
+                  @if (row.uiStatus === 'needs_review') {
+                    <button class="wh-btn-icon btn-icon btn-confirm" title="Подтвердить" (click)="confirmItem.emit(row)">
+                      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <polyline points="20 6 9 17 4 12"/>
+                      </svg>
+                    </button>
+                  }
                   @if (row.canConvert) {
                     <button class="wh-btn-icon btn-icon" title="Преобразовать" (click)="convert.emit(row)">
                       <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 5v14M5 12h14"/></svg>
@@ -135,6 +146,10 @@ import { TemporaryItemVm, TempItemUiStatus, TEMP_ITEM_UI_STATUS_COLORS } from '.
     .btn-page { width: 28px; height: 28px; display: inline-flex; align-items: center; justify-content: center; border: 1px solid #D1D5DB; border-radius: 6px; background: #FFFFFF; font-size: 14px; color: #374151; cursor: pointer; }
     .btn-page:disabled { opacity: 0.4; cursor: not-allowed; }
     .page-current { font-size: 13px; font-weight: 600; color: #1E293B; min-width: 24px; text-align: center; }
+    .btn-confirm { color: #16A34A; }
+    .btn-confirm:hover { background: #F0FDF4; }
+    .item-link { color: #2563EB; text-decoration: none; cursor: pointer; }
+    .item-link:hover { text-decoration: underline; color: #1D4ED8; }
   `]
 })
 export class TempItemsTableComponent {
@@ -153,6 +168,8 @@ export class TempItemsTableComponent {
   readonly convert = output<TemporaryItemVm>();
   readonly merge = output<TemporaryItemVm>();
   readonly deleteItem = output<TemporaryItemVm>();
+  readonly confirmItem = output<TemporaryItemVm>();
+  readonly navigateToCatalog = output<string>();
 
   onPageSizeChange(event: Event): void {
     const value = parseInt((event.target as HTMLSelectElement).value, 10);

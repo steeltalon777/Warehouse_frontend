@@ -150,12 +150,14 @@ export function computeUiStatus(
   status: TemporaryItemStatus,
   totalBalance: number,
   hasPendingAcceptance: boolean,
+  requiresReview?: boolean,
 ): TempItemUiStatus {
   if (status === 'approved_as_item') return 'converted';
   if (status === 'merged_to_item') return 'merged';
   if (status === 'deleted') return 'delete_blocked';
 
   if (hasPendingAcceptance) return 'in_pending_acceptance';
+  if (requiresReview) return 'needs_review';
   if (totalBalance > 0) return 'needs_review';
   return 'can_delete';
 }
@@ -210,28 +212,41 @@ export function computeActionFlags(
   };
 }
 
+function deriveStatusFromReviewStatus(reviewStatus?: string): TemporaryItemStatus {
+  switch (reviewStatus) {
+    case 'confirmed': return 'approved_as_item';
+    case 'merged': return 'merged_to_item';
+    case 'archived': return 'deleted';
+    default: return 'active';
+  }
+}
+
 export function toTempItemVm(
   item: TemporaryItem,
   operationsCount: number,
   hasPendingAcceptance: boolean,
   role: string,
 ): TemporaryItemVm {
-  const uiStatus = computeUiStatus(item.status as TemporaryItemStatus, item.total_balance ?? 0, hasPendingAcceptance);
-  const flags = computeActionFlags(item.status as TemporaryItemStatus, item.total_balance ?? 0, hasPendingAcceptance, role);
+  const name = item.name || (item as any)['item_name'] || '';
+  const status: TemporaryItemStatus = item.status || deriveStatusFromReviewStatus(item.review_status);
+  const totalBalance = item.total_balance ?? 0;
+
+  const uiStatus = computeUiStatus(status, totalBalance, hasPendingAcceptance, item.requires_review);
+  const flags = computeActionFlags(status, totalBalance, hasPendingAcceptance, role);
 
   return {
     id: item.id,
-    name: item.name,
+    name,
     sku: item.sku,
     description: item.description,
     categoryName: item.category_name,
     unitSymbol: item.unit_symbol,
-    status: item.status as TemporaryItemStatus,
+    status,
     uiStatus,
     uiStatusLabel: TEMP_ITEM_UI_STATUS_LABELS[uiStatus],
     createdAt: formatDateTime(item.created_at),
     createdByUserId: item.created_by_user_id,
-    totalBalance: item.total_balance ?? 0,
+    totalBalance,
     operationsCount,
     ...flags,
     hasPendingAcceptance,

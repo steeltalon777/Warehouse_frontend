@@ -129,6 +129,17 @@ export class TempItemsService {
     }
   }
 
+  async confirmItem(id: string): Promise<boolean> {
+    try {
+      await firstValueFrom(
+        this.bffApi.postData(`/review-items/${id}/confirm`, {})
+      );
+      return true;
+    } catch {
+      return false;
+    }
+  }
+
   async mergeToPermanent(id: string, targetItemId: string, comment?: string): Promise<boolean> {
     try {
       const payload: TempItemMergePayload = { target_item_id: targetItemId };

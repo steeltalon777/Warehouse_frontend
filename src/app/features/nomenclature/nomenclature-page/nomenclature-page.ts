@@ -1,8 +1,8 @@
-import { Component, computed, inject, signal, OnInit } from '@angular/core';
+import { Component, computed, effect, inject, signal, OnInit } from '@angular/core';
 import { ActivatedRoute } from '@angular/router';
 import { NomenclatureService } from '../../../core/services/nomenclature.service';
 import { CatalogChangeBufferService } from '../../../core/services/catalog-change-buffer.service';
-import { AuthContextService } from '../../../core/services/auth-context.service';
+import { AuthContextService, canWriteCatalogForMode, CatalogMode } from '../../../core/services/auth-context.service';
 import { PageHeaderComponent } from '../page-header/page-header';
 import { SearchInputComponent } from '../search-input/search-input';
 import { ActionButtonsComponent } from '../action-buttons/action-buttons';
@@ -12,6 +12,10 @@ import { PendingChangesBarComponent } from '../pending-changes-bar/pending-chang
 import { MergeItemModalComponent } from '../merge-item-modal/merge-item-modal';
 import { MergeCategoryModalComponent } from '../merge-category-modal/merge-category-modal';
 import { Category, Item } from '../../../core/models/nomenclature.models';
+
+export function resolveCatalogMode(routeData: Record<string, unknown> | undefined): CatalogMode {
+  return routeData?.['catalogMode'] === 'editable' ? 'editable' : 'readonly';
+}
 
 @Component({
   selector: 'app-nomenclature-page',
@@ -31,8 +35,8 @@ import { Category, Item } from '../../../core/models/nomenclature.models';
       <!-- Page header -->
       <app-page-header
         [canWrite]="canWriteCatalog()"
-        [title]="catalogMode() === 'readonly' ? 'Каталог' : 'Номенклатура'"
-        [subtitle]="catalogMode() === 'readonly' ? 'Просмотр категорий, ТМЦ, единиц измерения и ключевых слов' : 'Категории, ТМЦ, SKU, единицы измерения и ключевые слова. Изменения копятся локально и применяются батчем.'"
+        [title]="pageTitle()"
+        [subtitle]="pageSubtitle()"
         [applyDisabled]="applyDisabled()"
         (applyAll)="onApplyAll()"
       />
@@ -82,7 +86,7 @@ import { Category, Item } from '../../../core/models/nomenclature.models';
                 [nodes]="currentTreeNodes()"
                 [visibleCount]="currentVisibleCount()"
                 [title]="activeTab() === 'catalog' ? 'Категории и ТМЦ' : 'Единицы измерения'"
-                [subtitle]="activeTab() === 'catalog' ? 'Дерево с inline-редактированием' : 'Список единиц измерения'"
+                [subtitle]="treeSubtitle()"
                 (select)="onSelectNode($event)"
                 (toggle)="onToggleExpand($event.id)"
               />
@@ -122,7 +126,7 @@ import { Category, Item } from '../../../core/models/nomenclature.models';
         <app-merge-item-modal
           [sourceItem]="selectedItem()!"
           (cancel)="mergeItemModal.set(null)"
-          (mergeComplete)="mergeItemModal.set(null)"
+          (mergeComplete)="onMergeComplete()"
           (mergeRequested)="onMergeRequested('item', $event)"
         />
       }
@@ -132,7 +136,7 @@ import { Category, Item } from '../../../core/models/nomenclature.models';
           [sourceCategory]="selectedCategory()!"
           [allCategories]="categories()"
           (cancel)="mergeCategoryModal.set(null)"
-          (mergeComplete)="mergeCategoryModal.set(null)"
+          (mergeComplete)="onMergeComplete()"
           (mergeRequested)="onMergeRequested('category', $event)"
         />
       }
@@ -218,10 +222,26 @@ export class NomenclaturePageComponent implements OnInit {
   private readonly changeBuffer = inject(CatalogChangeBufferService);
   private readonly auth = inject(AuthContextService);
 
-  readonly catalogMode = signal<'readonly' | 'editable'>('editable');
-  readonly canWriteCatalog = computed(() => {
-    const role = this.auth.authContext()?.role;
-    return role === 'root' || role === 'chief_storekeeper';
+  readonly catalogMode = signal<CatalogMode>('readonly');
+  readonly canWriteCatalog = computed(() => canWriteCatalogForMode(this.catalogMode(), this.auth.authContext()));
+  readonly pageTitle = computed(() => this.catalogMode() === 'readonly' ? 'Каталог' : 'Номенклатура');
+  readonly pageSubtitle = computed(() => {
+    if (this.catalogMode() === 'readonly') {
+      return 'Просмотр категорий, ТМЦ, единиц измерения и ключевых слов';
+    }
+
+    return 'Категории, ТМЦ, SKU, единицы измерения и ключевые слова. Изменения копятся локально и применяются батчем.';
+  });
+  readonly treeSubtitle = computed(() => {
+    if (this.activeTab() === 'catalog') {
+      return this.canWriteCatalog()
+        ? 'Дерево с локальной подготовкой изменений'
+        : 'Просмотр дерева категорий и ТМЦ';
+    }
+
+    return this.canWriteCatalog()
+      ? 'Список единиц измерения с локальной подготовкой изменений'
+      : 'Просмотр списка единиц измерения';
   });
 
   readonly activeTab = signal<'catalog' | 'units'>('catalog');
@@ -264,15 +284,36 @@ export class NomenclaturePageComponent implements OnInit {
   readonly categories = this.service.allCategories;
 
   readonly pendingCount = computed(() => this.changeBuffer.changes().length);
-  readonly applyDisabled = computed(() => this.pendingCount() === 0);
+  readonly applyDisabled = computed(() => !this.canWriteCatalog() || this.pendingCount() === 0);
+
+  constructor() {
+    effect(() => {
+      this.changeBuffer.setDisabled(!this.canWriteCatalog());
+    });
+  }
 
   ngOnInit(): void {
-    this.service.loadBootstrap();
+    void this.initialize();
+  }
 
-    const mode = this.route.snapshot.data['catalogMode'] as string | undefined;
+  private async initialize(): Promise<void> {
+    const mode = resolveCatalogMode(this.route.snapshot.data as Record<string, unknown> | undefined);
+    this.catalogMode.set(mode);
+
     if (mode === 'readonly') {
-      this.catalogMode.set('readonly');
       this.changeBuffer.clearAll();
+    }
+
+    if (!this.auth.authContext()) {
+      await this.auth.load();
+    }
+
+    await this.service.loadBootstrap();
+
+    // Deep-link: selectItem=123 — highlight item in tree after data loaded
+    const selectItemId = this.route.snapshot.queryParams['selectItem'];
+    if (selectItemId) {
+      this.service.selectItemById(selectItemId);
     }
   }
 
@@ -315,21 +356,29 @@ export class NomenclaturePageComponent implements OnInit {
   }
 
   onCreateCategory(): void {
+    if (!this.canWriteCatalog()) return;
+
     this.service.clearSelection();
     this.createModeEntity.set({ type: 'category', entity: null });
   }
 
   onCreateItem(): void {
+    if (!this.canWriteCatalog()) return;
+
     this.service.clearSelection();
     this.createModeEntity.set({ type: 'item', entity: null });
   }
 
   onCreateUnit(): void {
+    if (!this.canWriteCatalog()) return;
+
     this.service.clearSelection();
     this.createModeEntity.set({ type: 'unit', entity: null });
   }
 
   onSaveDraft(event: { id: string; payload: Record<string, unknown> }): void {
+    if (!this.canWriteCatalog()) return;
+
     const cm = this.createModeEntity();
     if (cm && event.id === '__new__') {
       const tmpId = `tmp-${cm.type}-${Date.now()}`;
@@ -360,6 +409,8 @@ export class NomenclaturePageComponent implements OnInit {
   }
 
   onDeactivate(id: string): void {
+    if (!this.canWriteCatalog()) return;
+
     const cm = this.createModeEntity();
     if (cm) return;
 
@@ -376,6 +427,8 @@ export class NomenclaturePageComponent implements OnInit {
   }
 
   onDelete(id: string): void {
+    if (!this.canWriteCatalog()) return;
+
     const cm = this.createModeEntity();
     if (cm) return;
 
@@ -392,6 +445,8 @@ export class NomenclaturePageComponent implements OnInit {
   }
 
   async onApplyAll(): Promise<void> {
+    if (!this.canWriteCatalog()) return;
+
     const changes = this.changeBuffer.changes();
     if (changes.length === 0) return;
 
@@ -411,10 +466,14 @@ export class NomenclaturePageComponent implements OnInit {
   }
 
   onResetAll(): void {
+    if (!this.canWriteCatalog()) return;
+
     this.changeBuffer.clearAll();
   }
 
   onMergeRequest(id: string): void {
+    if (!this.canWriteCatalog()) return;
+
     const sel = this.service.selectedEntity();
     if (!sel) return;
 
@@ -431,6 +490,8 @@ export class NomenclaturePageComponent implements OnInit {
     entityType: 'item' | 'category',
     event: { sourceId: string; targetId: string; comment?: string }
   ): void {
+    if (!this.canWriteCatalog()) return;
+
     this.changeBuffer.addChange({
       localId: `merge-${entityType}-${event.sourceId}-${Date.now()}`,
       entityType: entityType,
@@ -442,5 +503,12 @@ export class NomenclaturePageComponent implements OnInit {
         comment: event.comment ?? null,
       },
     });
+  }
+
+  async onMergeComplete(): Promise<void> {
+    this.mergeItemModal.set(null);
+    this.mergeCategoryModal.set(null);
+    this.service.clearSelection();
+    await this.service.loadBootstrap({ cacheBust: true });
   }
 }

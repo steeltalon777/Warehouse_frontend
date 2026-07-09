@@ -46,7 +46,7 @@ import { NomenclatureService } from '../../../core/services/nomenclature.service
             </div>
           }
         </div>
-      } @else if (createModeEntity(); as cm) {
+      } @else if (canWrite() && createModeEntity(); as cm) {
         <div class="panel-content">
           <div class="panel-header">
             <span class="wh-badge panel-badge" [class.badge-unit]="cm.type === 'unit'" [class.badge-category]="cm.type === 'category'" [class.badge-item]="cm.type === 'item'">
@@ -94,7 +94,7 @@ import { NomenclatureService } from '../../../core/services/nomenclature.service
             }
           </div>
         </div>
-      } @else if (nomenService.selectedEntity(); as sel) {
+      } @else if (canWrite() && nomenService.selectedEntity(); as sel) {
         <div class="panel-content">
           @if (sel.type === 'unit') {
             @if (resolvedUnit(); as unitData) {
@@ -176,7 +176,11 @@ import { NomenclatureService } from '../../../core/services/nomenclature.service
           </svg>
           <h3 class="empty-title">Выберите категорию, ТМЦ или единицу измерения</h3>
           <p class="empty-desc">
-            После выбора элемента здесь появится форма редактирования.
+            @if (canWrite()) {
+              После выбора элемента здесь появится форма редактирования.
+            } @else {
+              После выбора элемента здесь появится карточка с деталями.
+            }
           </p>
         </div>
       }

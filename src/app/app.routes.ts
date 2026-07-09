@@ -1,5 +1,17 @@
-import { Routes } from '@angular/router';
+import { Routes, UrlMatchResult, UrlSegment } from '@angular/router';
 import { catalogWriteGuard } from './core/guards/catalog-write.guard';
+
+export function catalogReadonlyMatcher(segments: UrlSegment[]): UrlMatchResult | null {
+  if (segments.length === 0 || segments[0].path !== 'catalog') {
+    return null;
+  }
+
+  if (segments[1]?.path === 'ssr') {
+    return null;
+  }
+
+  return { consumed: segments };
+}
 
 export const routes: Routes = [
   {
@@ -12,17 +24,7 @@ export const routes: Routes = [
     redirectTo: '/operations',
   },
   {
-    path: 'catalog',
-    data: { catalogMode: 'readonly' },
-    loadComponent: () => import('./features/nomenclature/nomenclature-page/nomenclature-page').then(m => m.NomenclaturePageComponent),
-  },
-  {
-    path: 'catalog/items',
-    data: { catalogMode: 'readonly' },
-    loadComponent: () => import('./features/nomenclature/nomenclature-page/nomenclature-page').then(m => m.NomenclaturePageComponent),
-  },
-  {
-    path: 'catalog/categories',
+    matcher: catalogReadonlyMatcher,
     data: { catalogMode: 'readonly' },
     loadComponent: () => import('./features/nomenclature/nomenclature-page/nomenclature-page').then(m => m.NomenclaturePageComponent),
   },

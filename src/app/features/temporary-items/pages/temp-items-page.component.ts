@@ -1,6 +1,7 @@
 import { Component, OnInit, inject, signal, HostListener } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
+import { Router } from '@angular/router';
 import { TempItemsService } from '../../../core/services/temp-items.service';
 import { TemporaryItemVm, TempItemsListFilters, TempItemsSort } from '../../../core/models/temp-items.models';
 import { TempItemsInfoCardComponent } from '../components/temp-items-info-card.component';
@@ -31,8 +32,8 @@ import { TempItemDeleteFormComponent } from '../components/temp-item-delete-form
       <!-- Header -->
       <div class="wh-page-header page-header">
         <div class="header-info">
-          <h1 class="page-title">Временные ТМЦ</h1>
-          <p class="page-subtitle">Управление временными позициями: преобразование, слияние и удаление.</p>
+          <h1 class="page-title">ТМЦ, требующие проверки</h1>
+          <p class="page-subtitle">Позиции, созданные через операции. Подтвердите или скорректируйте перед включением в каталог.</p>
         </div>
         <div class="header-actions">
           <button class="wh-btn wh-btn--secondary btn btn-secondary" (click)="onRefresh()" [disabled]="service.isLoading()">Обновить</button>
@@ -83,6 +84,8 @@ import { TempItemDeleteFormComponent } from '../components/temp-item-delete-form
             (convert)="onRowConvert($event)"
             (merge)="onRowMerge($event)"
             (deleteItem)="onRowDelete($event)"
+            (confirmItem)="onRowConfirm($event)"
+            (navigateToCatalog)="onNavigateToCatalog($event)"
           />
         }
       </div>
@@ -98,6 +101,7 @@ import { TempItemDeleteFormComponent } from '../components/temp-item-delete-form
         (mergePermanent)="onMergePermanentAction($event)"
         (mergeTemp)="onMergeTempAction($event)"
         (deleteItem)="onDeleteAction($event)"
+        (confirm)="onRowConfirm($event)"
       />
     }
 
@@ -156,6 +160,7 @@ import { TempItemDeleteFormComponent } from '../components/temp-item-delete-form
 })
 export class TempItemsPageComponent implements OnInit {
   readonly service = inject(TempItemsService);
+  private readonly router = inject(Router);
 
   readonly sortColumn = signal<string>('createdAt');
   readonly sortDirection = signal<'asc' | 'desc'>('desc');
@@ -247,6 +252,18 @@ export class TempItemsPageComponent implements OnInit {
   onRowDelete(item: TemporaryItemVm): void {
     this.deleteItem.set(item);
     this.showDeleteForm.set(true);
+  }
+
+  async onRowConfirm(item: TemporaryItemVm): Promise<void> {
+    if (!confirm(`Подтвердить ТМЦ «${item.name}»? Она будет убрана из списка проверки.`)) return;
+    const ok = await this.service.confirmItem(item.id);
+    if (ok) {
+      await this.loadList();
+    }
+  }
+
+  onNavigateToCatalog(itemId: string): void {
+    this.router.navigate(['/nomenclature'], { queryParams: { selectItem: itemId } });
   }
 
   closeModal(): void {

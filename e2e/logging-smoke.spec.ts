@@ -1,4 +1,5 @@
 import { test, expect } from '@playwright/test';
+import { loginAsRoot } from './helpers/login';
 
 /**
  * Smoke tests for V3.1 Logging infrastructure.
@@ -13,16 +14,8 @@ import { test, expect } from '@playwright/test';
  * - Angular bundle built and served through Django
  */
 test.describe('V3.1 Logging smoke', () => {
-
-  const BASE = process.env.E2E_BASE_URL || 'http://localhost:8001';
-
   test.beforeEach(async ({ page }) => {
-    // Login as admin
-    await page.goto(`${BASE}/users/login/`, { waitUntil: 'networkidle' });
-    await page.fill('input[name="username"]', process.env.E2E_USERNAME_ROOT || 'admin');
-    await page.fill('input[name="password"]', process.env.E2E_PASSWORD_ROOT || 'admin123');
-    await page.click('button[type="submit"]');
-    await page.waitForLoadState('networkidle');
+    await loginAsRoot(page);
   });
 
   test('[HTTP] interceptor logs 403 error in console', async ({ page }) => {
@@ -43,7 +36,7 @@ test.describe('V3.1 Logging smoke', () => {
     });
 
     // Navigate to operations page — data fetch will return 403
-    await page.goto(`${BASE}/operations/`, { waitUntil: 'networkidle', timeout: 15000 }).catch(() => {});
+    await page.goto('/operations/', { waitUntil: 'networkidle', timeout: 15000 }).catch(() => {});
     await page.waitForTimeout(2000);
 
     // Check that at least one [HTTP] message exists
@@ -71,7 +64,7 @@ test.describe('V3.1 Logging smoke', () => {
       }
     });
 
-    await page.goto(`${BASE}/operations/`, { waitUntil: 'networkidle', timeout: 15000 }).catch(() => {});
+    await page.goto('/operations/', { waitUntil: 'networkidle', timeout: 15000 }).catch(() => {});
     await page.waitForTimeout(1000);
 
     // Trigger an uncaught error via setTimeout

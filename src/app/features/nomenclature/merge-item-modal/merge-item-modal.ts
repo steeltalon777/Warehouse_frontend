@@ -225,6 +225,7 @@ export class MergeItemModalComponent {
       comment: this.comment || undefined,
     });
     this.mergeComplete.emit();
+    alert('Слияние выполнено успешно.');
   }
 
 }

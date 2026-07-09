@@ -1,32 +1,26 @@
 import { FullConfig } from '@playwright/test';
 
-async function globalSetup(config: FullConfig) {
-  const baseURL = process.env.E2E_BASE_URL || 'http://localhost:8001';
-
+async function probe(url: string, label: string) {
   try {
-    const response = await fetch(`${baseURL}/healthz/`);
+    const response = await fetch(url, { signal: AbortSignal.timeout(5000) });
     if (!response.ok) {
-      console.warn(`⚠ Django health check failed: ${response.status}`);
-    } else {
-      console.log('✓ Django health check passed');
+      console.warn(`⚠ ${label} health check failed: ${response.status}`);
+      return;
     }
-  } catch (e) {
-    console.warn('⚠ Django stand not available. Some tests may fail.');
-    console.warn('  Start the stand: Django :8001 + SyncServer :8000');
+
+    console.log(`✓ ${label} health check passed`);
+  } catch {
+    console.warn(`⚠ ${label} stand not available. Some tests may fail.`);
   }
+}
+
+async function globalSetup(config: FullConfig) {
+  const configuredBaseUrl = config.projects[0]?.use?.baseURL;
+  const baseURL = process.env.E2E_BASE_URL || (typeof configuredBaseUrl === 'string' ? configuredBaseUrl : 'http://localhost:8001');
+  await probe(`${baseURL}/healthz/`, 'Django');
 
   const syncHealthUrl = process.env.E2E_SYNC_HEALTH_URL || 'http://localhost:8000/api/v1/health';
-  try {
-    const response = await fetch(syncHealthUrl);
-    if (!response.ok) {
-      console.warn(`⚠ SyncServer health check failed: ${response.status}`);
-    } else {
-      console.log('✓ SyncServer health check passed');
-    }
-  } catch (e) {
-    console.warn('⚠ SyncServer stand not available. Some tests may fail.');
-    console.warn('  Start the stand: SyncServer :8000');
-  }
+  await probe(syncHealthUrl, 'SyncServer');
 }
 
 export default globalSetup;

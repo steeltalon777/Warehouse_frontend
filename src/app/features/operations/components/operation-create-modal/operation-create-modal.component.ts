@@ -275,6 +275,9 @@ function currentDateTimeLocal(): string {
                   Восстановить как черновик
                 </button>
               }
+              @if (canDeleteCancelled()) {
+                <button class="wh-btn wh-btn--danger btn btn-delete" (click)="onDelete()" [disabled]="isSaving()">Удалить</button>
+              }
               @if (canCancelOperation()) {
                 <button class="wh-btn wh-btn--danger btn btn-cancel-operation" (click)="onCancelOperation()" [disabled]="isSubmitting()">Отменить операцию</button>
               }
@@ -785,6 +788,18 @@ export class OperationCreateModalComponent implements OnInit {
     if (d.status !== 'cancelled') return false;
     const auth = this.authContextService.authContext();
     return auth?.role === 'root';
+  });
+
+  readonly canDeleteCancelled = computed(() => {
+    const d = this.localDraft();
+    if (!d.id) return false;
+    if (d.status !== 'cancelled') return false;
+    const auth = this.authContextService.authContext();
+    const role = auth?.role ?? 'observer';
+    if (role === 'root') return true;
+    if (role === 'chief_storekeeper') return true;
+    if (role === 'storekeeper') return !!d.createdByUserId && d.createdByUserId === auth?.userId;
+    return false;
   });
 
   readonly restore = output<OperationDraftVm>();

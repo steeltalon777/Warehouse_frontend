@@ -512,9 +512,10 @@ export class OperationsService {
     const auth = this.authContextService.authContext();
     const role = auth?.role ?? 'observer';
     const isDraft = op.status === 'draft';
-    if (role === 'root') return isDraft || op.status === 'submitted';
-    if (role === 'chief_storekeeper') return isDraft;
-    if (role === 'storekeeper') return isDraft && op.created_by_user_id === auth?.userId;
+    const isCancelled = op.status === 'cancelled';
+    if (role === 'root') return isDraft || op.status === 'submitted' || isCancelled;
+    if (role === 'chief_storekeeper') return isDraft || isCancelled;
+    if (role === 'storekeeper') return (isDraft || isCancelled) && op.created_by_user_id === auth?.userId;
     return false;
   }
 
