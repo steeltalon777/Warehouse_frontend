@@ -2,6 +2,7 @@ import { TestBed } from '@angular/core/testing';
 import { OperationsService } from './operations.service';
 import { BffApiService } from '../api/bff-api.service';
 import { AuthContextService } from './auth-context.service';
+import { CatalogSearchService } from './catalog-search.service';
 import { of, throwError } from 'rxjs';
 import { OperationDto, OperationStatus, OperationType } from '../models/operations.models';
 
@@ -28,11 +29,13 @@ describe('OperationsService', () => {
       load: vi.fn(),
     };
 
+    const searchMock = { resolveItems: vi.fn() };
     TestBed.configureTestingModule({
       providers: [
         OperationsService,
         { provide: BffApiService, useValue: bffMock },
         { provide: AuthContextService, useValue: authMock },
+        { provide: CatalogSearchService, useValue: searchMock },
       ],
     });
 

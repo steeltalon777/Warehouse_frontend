@@ -1,7 +1,8 @@
 import { Injectable, signal, computed, OnDestroy } from '@angular/core';
-import { Observable, Subject, of, timer } from 'rxjs';
+import { Observable, Subject, of, throwError, timer } from 'rxjs';
 import { switchMap, filter, debounceTime, distinctUntilChanged, takeUntil, catchError, map, tap } from 'rxjs/operators';
 import { BffApiService } from '../api/bff-api.service';
+import { ConsistencyMode, ResolvedItemDto, ItemResolveStatus } from '../models/operations.models';
 
 export interface CatalogSearchItem {
   id: string;
@@ -90,9 +91,13 @@ export class CatalogSearchService implements OnDestroy {
     this.destroy$.complete();
   }
 
-  // ─── Item Search ────────────────────────────────────────────────
+  // ─── Item Search with Consistency (TZ D1/D2) ────────────────────
 
-  searchItems(query: string, limit: number = this.defaultLimit, sourceSiteId?: string, includeBalance?: boolean): void {
+  private _lastSourceSiteId?: string;
+  private _lastIncludeBalance?: boolean;
+  private _lastConsistency?: ConsistencyMode;
+
+  searchItems(query: string, limit: number = this.defaultLimit, sourceSiteId?: string, includeBalance?: boolean, consistency?: ConsistencyMode): void {
     this.itemSearchQuery.set(query);
 
     if (!query || query.trim().length < 2) {
@@ -101,14 +106,46 @@ export class CatalogSearchService implements OnDestroy {
       return;
     }
 
-    // Store params for the search pipeline
     this._lastSourceSiteId = sourceSiteId;
     this._lastIncludeBalance = includeBalance;
+    this._lastConsistency = consistency;
     this.searchQuery$.next(query);
   }
 
-  private _lastSourceSiteId?: string;
-  private _lastIncludeBalance?: boolean;
+  /**
+   * TZ D2: refresh current search with authoritative mode.
+   * Cancels the current debounced stream and re-runs the current query
+   * directly with consistency=authoritative.
+   */
+  refreshItemsAuthoritative(): void {
+    const currentQuery = this.itemSearchQuery();
+    if (!currentQuery || currentQuery.trim().length < 2) return;
+
+    this._lastConsistency = 'authoritative';
+    this.isSearchingItems.set(true);
+    this.itemSearchError.set(null);
+
+    this.performItemSearch(
+      currentQuery,
+      this.defaultLimit,
+      this._lastSourceSiteId,
+      this._lastIncludeBalance,
+      'authoritative',
+    ).pipe(
+      takeUntil(this.destroy$),
+      catchError(err => {
+        console.error('Authoritative item search error:', err);
+        this.itemSearchError.set(err.message || 'Ошибка авторитетного поиска');
+        this.itemResults.set([]);
+        this.isSearchingItems.set(false);
+        return of({ results: [] } as CatalogSearchResults<CatalogSearchItem>);
+      })
+    ).subscribe(response => {
+      this.itemResults.set(response.results || []);
+      this.isSearchingItems.set(false);
+      this._lastConsistency = undefined;
+    });
+  }
 
   private initCategorySearch(): void {
     // reserved — category search implementation coming in a future PR.
@@ -123,7 +160,13 @@ export class CatalogSearchService implements OnDestroy {
         this.isSearchingItems.set(true);
         this.itemSearchError.set(null);
       }),
-      switchMap(query => this.performItemSearch(query, this.defaultLimit, this._lastSourceSiteId, this._lastIncludeBalance)),
+      switchMap(query => this.performItemSearch(
+        query,
+        this.defaultLimit,
+        this._lastSourceSiteId,
+        this._lastIncludeBalance,
+        this._lastConsistency,
+      )),
       catchError(err => {
         console.error('Item search error:', err);
         this.itemSearchError.set(err.message || 'Ошибка поиска');
@@ -136,10 +179,17 @@ export class CatalogSearchService implements OnDestroy {
     });
   }
 
-  private performItemSearch(query: string, limit: number = this.defaultLimit, sourceSiteId?: string, includeBalance?: boolean): Observable<CatalogSearchResults<CatalogSearchItem>> {
+  private performItemSearch(
+    query: string,
+    limit: number = this.defaultLimit,
+    sourceSiteId?: string,
+    includeBalance?: boolean,
+    consistency?: ConsistencyMode,
+  ): Observable<CatalogSearchResults<CatalogSearchItem>> {
     const params: Record<string, string | number | boolean> = { q: query, limit };
     if (sourceSiteId) params['source_site_id'] = sourceSiteId;
     if (includeBalance) params['include_balance'] = true;
+    if (consistency) params['consistency'] = consistency;
     return this.bff.getData<CatalogSearchResults<CatalogSearchItem>>(
       `${this.basePath}/items`,
       params
@@ -150,6 +200,25 @@ export class CatalogSearchService implements OnDestroy {
     this.itemSearchQuery.set('');
     this.itemResults.set([]);
     this.itemSearchError.set(null);
+  }
+
+  // ─── Batch Item Resolver (TZ D2/D3) ───────────────────────────
+
+  /**
+   * Batch-resolve item IDs via the BFF resolver endpoint.
+   * Used by operation-create-modal before Save/Submit.
+   */
+  resolveItems(itemIds: (string | number)[]): Observable<ResolvedItemDto[]> {
+    if (!itemIds.length) return of([]);
+    return this.bff.postData<{ results: ResolvedItemDto[] }>('/catalog/read/items/resolve', {
+      item_ids: itemIds.map(id => String(id)),
+    }).pipe(
+      map(resp => resp.results || []),
+      catchError(err => {
+        console.error('Item resolve error:', err);
+        return throwError(() => err);
+      }),
+    );
   }
 
   // ─── Category Search ───────────────────────────────────────────
@@ -268,13 +337,14 @@ export class CatalogSearchService implements OnDestroy {
 
   // ─── Direct Search Methods (for one-off calls) ─────────────────
 
-  searchItemsOnce(query: string, limit: number = this.defaultLimit, sourceSiteId?: string, includeBalance?: boolean): Observable<CatalogSearchItem[]> {
+  searchItemsOnce(query: string, limit: number = this.defaultLimit, sourceSiteId?: string, includeBalance?: boolean, consistency?: ConsistencyMode): Observable<CatalogSearchItem[]> {
     if (!query || query.trim().length < 2) {
       return of([]);
     }
     const params: Record<string, string | number | boolean> = { q: query, limit };
     if (sourceSiteId) params['source_site_id'] = sourceSiteId;
     if (includeBalance) params['include_balance'] = true;
+    if (consistency) params['consistency'] = consistency;
     return this.bff.getData<CatalogSearchResults<CatalogSearchItem>>(
       `${this.basePath}/items`,
       params

@@ -25,6 +25,7 @@ export interface OperationDto {
   display_number?: string;
   type: OperationType;
   status: OperationStatus;
+  version?: number;
   site_id?: string | null;
   site_name?: string | null;
   source_site_id?: string | null;
@@ -137,10 +138,70 @@ export interface OperationListRowVm {
   canRestore?: boolean;
 }
 
+// ─── Resolver (TZ-V3.2 §4.3) ───────────────────────────────────────
+
+export type ItemResolveStatus = 'active' | 'merged' | 'inactive' | 'deleted' | 'missing';
+
+export interface ResolvedItemDto {
+  request_id: string;
+  status: ItemResolveStatus;
+  canonical_item_id?: string;
+  item?: {
+    id: string;
+    name: string;
+    sku?: string;
+    unit_id?: string;
+    unit_symbol?: string;
+    category_id?: string;
+    category_name?: string;
+    is_active: boolean;
+  } | null;
+}
+
+export interface ItemsResolveResponse {
+  results: ResolvedItemDto[];
+}
+
+export type ConsistencyMode = 'fast' | 'authoritative';
+
+export interface LineErrorDto {
+  item_id: string;
+  status: ItemResolveStatus;
+  canonical_item_id?: string;
+}
+
+export interface PersistError {
+  code: string;
+  message: string;
+  fields?: Record<string, string>;
+  current_version?: number;
+  request_id?: string;
+  status?: string;
+  retry_safe?: boolean;
+}
+
+export type PersistStatus =
+  | 'idle'
+  | 'validating_items'
+  | 'saving'
+  | 'saved'
+  | 'rejected'
+  | 'conflict'
+  | 'checking_outcome'
+  | 'saved_after_check'
+  | 'safe_to_retry'
+  | 'outcome_unknown';
+
+export interface PersistState {
+  status: PersistStatus;
+  error?: PersistError;
+}
+
 export interface OperationDraftVm {
   id?: string;
   type: OperationType;
   status: OperationStatus;
+  version?: number;
   createdByUserId?: string | null;
   sourceSiteId?: string | null;
   destinationSiteId?: string | null;

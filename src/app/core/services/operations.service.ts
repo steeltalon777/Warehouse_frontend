@@ -12,9 +12,15 @@ import {
   OperationInlineItemDraftVm,
   SiteDto,
   BalanceDto,
+  ResolvedItemDto,
+  ItemResolveStatus,
+  PersistState,
+  PersistStatus,
+  PersistError,
   OPERATION_TYPE_LABELS,
   OPERATION_STATUS_LABELS,
 } from '../models/operations.models';
+import { CatalogSearchService } from './catalog-search.service';
 import { firstValueFrom } from 'rxjs';
 import { AuthContextService } from './auth-context.service';
 
@@ -46,9 +52,18 @@ export class OperationsService {
   readonly isSaving = signal<boolean>(false);
   readonly isSubmitting = signal<boolean>(false);
 
+  // ─── Persist state machine (TZ D4) ───────────────────────────
+  readonly persistState = signal<PersistState>({ status: 'idle' });
+  readonly persistStatus = computed(() => this.persistState().status);
+  readonly persistError = computed(() => this.persistState().error);
+
+  /** Immutable snapshot captured before any await in a persist operation. */
+  private _persistSnapshot: OperationDraftVm | null = null;
+
   constructor(
     private bff: BffApiService,
     private authContextService: AuthContextService,
+    private catalogSearch: CatalogSearchService,
   ) {
     this.authContextService.load();
   }
@@ -113,19 +128,108 @@ export class OperationsService {
     }
   }
 
+  // ─── Persist helpers ─────────────────────────────────────────
+
+  private _newClientRequestId(): string {
+    try {
+      return crypto.randomUUID();
+    } catch {
+      return `${Date.now()}-${Math.random().toString(36).slice(2, 10)}`;
+    }
+  }
+
+  /** Snapshot the draft before any async step (TZ D4: immutable snapshot). */
+  captureSnapshot(draft: OperationDraftVm): OperationDraftVm {
+    this._persistSnapshot = JSON.parse(JSON.stringify(draft));
+    return this._persistSnapshot!;
+  }
+
+  /** Compare current draft to the pre-persist snapshot (bail if changed). */
+  isSnapshotValid(draft: OperationDraftVm): boolean {
+    if (!this._persistSnapshot) return true;
+    return this._persistSnapshot.id === draft.id
+      && this._persistSnapshot.comment === draft.comment
+      && this._persistSnapshot.lines.length === draft.lines.length;
+  }
+
+  /**
+   * TZ D3: batch-resolve persisted (non-temporary) item IDs in the draft.
+   * Returns per-line resolve statuses. Blocks Save/Submit for unusable items.
+   */
+  async validateLinesBeforePersist(draft: OperationDraftVm): Promise<Map<string, ResolvedItemDto>> {
+    const persistedIds: string[] = draft.lines
+      .filter(l => l.itemId && !l.isTemporary && !l.inlineItem)
+      .map(l => String(l.itemId));
+
+    if (!persistedIds.length) return new Map();
+
+    this.persistState.set({ status: 'validating_items' });
+
+    try {
+      const results = await firstValueFrom(
+        this.catalogSearch.resolveItems(persistedIds)
+      );
+      const map = new Map<string, ResolvedItemDto>();
+      for (const r of results) {
+        map.set(r.request_id, r);
+      }
+      return map;
+    } catch (err: any) {
+      this.persistState.set({
+        status: 'rejected',
+        error: { code: err.code || 'resolve_error', message: err.message || 'Ошибка проверки ТМЦ' },
+      });
+      throw err;
+    }
+  }
+
+  /** Check if a line's resolved status blocks persist. */
+  isItemUnusable(status: ItemResolveStatus | undefined): boolean {
+    if (!status) return false;
+    return status === 'merged' || status === 'inactive' || status === 'deleted' || status === 'missing';
+  }
+
+  // ─── Persist state machine transitions ───────────────────────
+
+  private setPersist(status: PersistStatus, error?: PersistError): void {
+    const current = this.persistState();
+    // Do not overwrite a later revision with a stale response (TZ D4).
+    if (current.status === 'saved' || current.status === 'saved_after_check') return;
+    this.persistState.set({ status, error });
+  }
+
+  private resetPersist(): void {
+    this._persistSnapshot = null;
+    this.persistState.set({ status: 'idle' });
+  }
+
   // ─── CRUD ────────────────────────────────────────────────────
 
   async createOperation(draft: OperationDraftVm): Promise<OperationDto | null> {
     this.isSaving.set(true);
     this.error.set(null);
     this.fieldErrors.set(null);
+    this.setPersist('saving');
     try {
+      // Always include client_request_id for idempotency (TZ C5/D1)
       const payload = this.buildPayload(draft, { includeEffectiveAt: true, isCreate: true });
+      payload['client_request_id'] = payload['client_request_id'] || this._newClientRequestId();
       const result = await firstValueFrom(
         this.bff.postData<OperationDto>('/operations', payload)
       );
+      if (result?.version != null) {
+        draft.version = result.version;
+      }
+      this.setPersist('saved');
       return result;
     } catch (err: any) {
+      if (err.code === 'operation_outcome_unknown') {
+        this.setPersist('outcome_unknown', err);
+      } else if (err.code === 'operation_version_conflict' || err.code === 'conflict') {
+        this.setPersist('conflict', err);
+      } else {
+        this.setPersist('rejected', err);
+      }
       this.normalizeError(err);
       throw err;
     } finally {
@@ -137,17 +241,41 @@ export class OperationsService {
     this.isSaving.set(true);
     this.error.set(null);
     this.fieldErrors.set(null);
+    this.setPersist('saving');
     try {
       const payload = this.buildPayload(draft, { includeEffectiveAt: false, isCreate: false });
+      // Include expected_version for versioned updates (TZ D5)
+      if (draft.version != null) {
+        payload['expected_version'] = draft.version;
+      }
       const result = await firstValueFrom(
         this.bff.patchData<OperationDto>(`/operations/${id}`, payload)
       );
+      if (result?.version != null) {
+        draft.version = result.version;
+      } else if (draft.version != null) {
+        draft.version = draft.version + 1;
+      }
+
       const effectiveAt = this.toIsoDateTime(draft.effectiveAt);
-      if (!effectiveAt) return result;
-      return await firstValueFrom(
-        this.bff.patchData<OperationDto>(`/operations/${id}/effective-at`, { effective_at: effectiveAt })
-      );
+      if (effectiveAt) {
+        const effectiveResult = await firstValueFrom(
+          this.bff.patchData<OperationDto>(`/operations/${id}/effective-at`, { effective_at: effectiveAt })
+        );
+        if (effectiveResult?.version != null) {
+          draft.version = effectiveResult.version;
+        }
+      }
+      this.setPersist('saved');
+      return result;
     } catch (err: any) {
+      if (err.code === 'operation_outcome_unknown') {
+        this.setPersist('outcome_unknown', err);
+      } else if (err.code?.includes('version_conflict') || err.code === 'conflict') {
+        this.setPersist('conflict', err);
+      } else {
+        this.setPersist('rejected', err);
+      }
       this.normalizeError(err);
       throw err;
     } finally {
@@ -155,21 +283,72 @@ export class OperationsService {
     }
   }
 
-  async submitOperation(id: string): Promise<void> {
+  async submitOperation(id: string, draft?: OperationDraftVm): Promise<void> {
     this.isSubmitting.set(true);
     this.error.set(null);
     this.fieldErrors.set(null);
+    this.setPersist('saving');
     try {
+      const payload: Record<string, unknown> = { submit: true };
+      if (draft?.version != null) {
+        payload['expected_version'] = draft.version;
+      }
       await firstValueFrom(
-        this.bff.postData<unknown>(`/operations/${id}/submit`, { submit: true })
+        this.bff.postData<unknown>(`/operations/${id}/submit`, payload)
       );
+      this.setPersist('saved');
     } catch (err: any) {
+      if (err.code === 'operation_outcome_unknown') {
+        this.setPersist('outcome_unknown', err);
+      } else if (err.code?.includes('version_conflict') || err.code === 'conflict') {
+        this.setPersist('conflict', err);
+      } else {
+        this.setPersist('rejected', err);
+      }
       this.normalizeError(err);
       throw err;
     } finally {
       this.isSubmitting.set(false);
     }
   }
+
+  /**
+   * TZ D5: Save+Submit in one logical flow.
+   * Returns 'saved' if save succeeded but submit was rejected, so the modal
+   * can show "черновик сохранён, подтверждение не выполнено".
+   */
+  async saveAndSubmit(draft: OperationDraftVm): Promise<OperationDto | null> {
+    if (draft.id) {
+      // Update existing draft
+      const updated = await this.updateOperation(draft.id, draft);
+      if (!updated) return null;
+      draft.id = updated.id;
+      draft.version = updated.version;
+      try {
+        await this.submitOperation(updated.id, draft);
+      } catch {
+        // Submit failed — save was successful, return the saved operation
+        // so the modal shows partial lifecycle.
+        this.setPersist('saved');
+      }
+      return updated;
+    } else {
+      // Create then submit
+      const created = await this.createOperation(draft);
+      if (!created?.id) return null;
+      draft.id = created.id;
+      draft.version = created.version;
+      try {
+        await this.submitOperation(created.id, draft);
+        this.setPersist('saved');
+      } catch {
+        this.setPersist('saved');
+      }
+      return created;
+    }
+  }
+
+  // ─── Single operation CRUD ───────────────────────────────────
 
   async deleteOperation(id: string): Promise<void> {
     this.isSaving.set(true);
@@ -231,6 +410,46 @@ export class OperationsService {
     }
   }
 
+  // ─── Fingerprint / Ambiguous outcome recovery (TZ D6) ────────
+
+  /**
+   * Build a fingerprint for the current draft to use in GET recovery
+   * after a response loss. Normalized ordered lines and editable fields.
+   * NOT written to local/session storage (TZ D6).
+   */
+  buildFingerprint(draft: OperationDraftVm): string {
+    const normalizedLines = draft.lines
+      .filter(l => l.quantity != null && l.quantity > 0)
+      .map(l => ({
+        itemId: l.itemId || null,
+        qty: l.quantity,
+        comment: l.error || null,
+        isTemporary: l.isTemporary,
+        inlineKey: l.inlineItem?.clientKey || null,
+        inlineName: l.inlineItem?.name || null,
+      }));
+    // Sort by itemId then inlineKey for reproducible key
+    normalizedLines.sort((a, b) => {
+      const aKey = a.itemId || a.inlineKey || '';
+      const bKey = b.itemId || b.inlineKey || '';
+      return aKey.localeCompare(bKey);
+    });
+    const payload = {
+      type: draft.type,
+      site: draft.sourceSiteId || draft.destinationSiteId || null,
+      effectiveAt: draft.effectiveAt || null,
+      comment: draft.comment || null,
+      lines: normalizedLines,
+    };
+    try {
+      return btoa(JSON.stringify(payload));
+    } catch {
+      return JSON.stringify(payload);
+    }
+  }
+
+  // ─── mapDtoToDraftVm ─────────────────────────────────────────
+
   mapDtoToDraftVm(dto: OperationDto): OperationDraftVm {
     const lines: OperationLineDraftVm[] = (dto.lines ?? []).map((l, idx) => {
       const hasInline = !!l.temporary_draft_payload || !!l.is_draft_temporary;
@@ -276,6 +495,7 @@ export class OperationsService {
       id: dto.id,
       type: dto.type,
       status: dto.status,
+      version: dto.version,
       createdByUserId: dto.created_by_user_id ?? null,
       sourceSiteId: mappedSourceSiteId,
       destinationSiteId: mappedDestinationSiteId,
@@ -301,7 +521,6 @@ export class OperationsService {
         this.bff.getData('/catalog/sites')
       );
       const rawSites: any[] = result?.sites ?? [];
-      // BFF returns site_id (number), map to id (string) for SiteDto
       const mapped: SiteDto[] = rawSites.map(s => ({
         id: String(s.site_id ?? ''),
         name: String(s.name ?? ''),
@@ -440,7 +659,7 @@ export class OperationsService {
         const dd = String(d.getDate()).padStart(2, '0');
         const MM = String(d.getMonth() + 1).padStart(2, '0');
         const yy = String(d.getFullYear()).slice(-2);
-        return `${op.site_id}/${hh}${mm}/${dd}${MM}${yy}`;
+        return `${dd}${MM}${yy}/${hh}${mm}/${op.site_id}`;
       } catch { }
     }
     return op.id.slice(0, 8).toUpperCase();
@@ -537,16 +756,10 @@ export class OperationsService {
       return null;
     };
 
-    // Determine site_id and conditional site fields per operation type
     let siteId: string | number | null = null;
     let includeSourceSite = false;
     let includeDestinationSite = false;
 
-    // Object-source flows (ISSUE_RETURN, WRITE_OFF from object) still need
-    // a physical site_id on the server (return / write-off target warehouse).
-    // The object itself is only the logical source for register math, not a
-    // warehouse. Fall back to the user's default site when the draft has no
-    // site selected.
     const isObjectSourceFlow =
       draft.type === 'ISSUE_RETURN' ||
       (draft.type === 'WRITE_OFF' && draft.writeOffSource === 'object');
@@ -557,16 +770,13 @@ export class OperationsService {
     if (draft.type === 'RECEIVE') {
       siteId = safeId(draft.destinationSiteId);
       includeDestinationSite = true;
-      // RECEIVE does not send source_site_id
     } else if (draft.type === 'MOVE') {
       siteId = safeId(draft.sourceSiteId);
       includeSourceSite = true;
       includeDestinationSite = true;
     } else {
-      // EXPENSE, WRITE_OFF, ISSUE, ISSUE_RETURN, CORRECTION
       siteId = safeId(draft.sourceSiteId ?? fallbackSiteId);
       includeSourceSite = true;
-      // Non-MOVE non-RECEIVE does not send destination_site_id
     }
 
     const hasInlineLines = draft.lines.some(l => l.inlineItem);
@@ -599,8 +809,9 @@ export class OperationsService {
         }),
     };
 
-    if (options.isCreate && hasInlineLines) {
-      payload['client_request_id'] = this.generateClientRequestId();
+    // Always include client_request_id for new operations (TZ C5)
+    if (options.isCreate) {
+      payload['client_request_id'] = this._newClientRequestId();
     }
 
     if (options.includeEffectiveAt) {
@@ -628,14 +839,6 @@ export class OperationsService {
     }
 
     return payload;
-  }
-
-  private generateClientRequestId(): string {
-    try {
-      return `op-inline-${crypto.randomUUID()}`;
-    } catch {
-      return `op-inline-${Date.now()}-${Math.random().toString(36).slice(2, 10)}`;
-    }
   }
 
   private toDateTimeLocalValue(value: string | null | undefined): string | null {
