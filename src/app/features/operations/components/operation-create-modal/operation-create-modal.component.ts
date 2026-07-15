@@ -1,4 +1,4 @@
-import { Component, input, output, signal, computed, effect, inject, OnInit, ViewChild } from '@angular/core';
+import { Component, input, output, signal, computed, effect, inject, OnInit, OnDestroy, ViewChild } from '@angular/core';
 import { AuthContextService } from '../../../../core/services/auth-context.service';
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
@@ -13,6 +13,7 @@ import {
 import { OperationsService } from '../../../../core/services/operations.service';
 import { IssueObjectsService } from '../../../../core/services/issue-objects.service';
 import { DiagnosticsSessionService } from '../../../../core/services/diagnostics-session.service';
+import { DiagnosticsService } from '../../../../core/diagnostics/diagnostics.service';
 import { BffApiService } from '../../../../core/api/bff-api.service';
 import { ItemCacheSearchComponent } from '../item-cache-search/item-cache-search.component';
 import { OperationLinesTableComponent } from './operation-lines-table.component';
@@ -628,7 +629,7 @@ function currentDateTimeLocal(): string {
     .radio-item input { margin: 0; }
   `]
 })
-export class OperationCreateModalComponent implements OnInit {
+export class OperationCreateModalComponent implements OnInit, OnDestroy {
   draft = input.required<OperationDraftVm | null>();
   sites = input.required<SiteDto[]>();
   isSaving = input<boolean>(false);
@@ -652,6 +653,7 @@ export class OperationCreateModalComponent implements OnInit {
   private readonly authContextService = inject(AuthContextService);
   private readonly issueObjectsService = inject(IssueObjectsService);
   private readonly diagnostics = inject(DiagnosticsSessionService);
+  private readonly diag = inject(DiagnosticsService);
   private readonly bff = inject(BffApiService);
 
   readonly localDraft = signal<OperationDraftVm>({
@@ -1011,6 +1013,10 @@ export class OperationCreateModalComponent implements OnInit {
         this.localDraft.set(normalized);
         // Track saved operation ID and snapshot
         this.savedOperationId.set(d.id ?? null);
+        // Diagnostics TZ Stage 3 WP-4: form_opened event
+        this.diag.track('form_opened', {
+          draft: { draftId: normalized.draftId, idempotencyKey: normalized.idempotencyKey, type: normalized.type },
+        });
       }
     });
 
@@ -1305,7 +1311,19 @@ export class OperationCreateModalComponent implements OnInit {
   }
 
   async onSubmit(): Promise<void> {
-    if (!this.canSubmitComputed()) return;
+    // Diagnostics TZ Stage 3 WP-4: validation_failed if canSubmit is false
+    if (!this.canSubmitComputed()) {
+      this.diag.track('validation_failed', {
+        draft: this.localDraft(),
+        reason: this.submitDisabledReason() || 'cannot submit',
+      });
+      return;
+    }
+    // Diagnostics: submit_clicked
+    this.diag.track('submit_clicked', {
+      draft: this.localDraft(),
+      itemsCount: this.localDraft().lines.length,
+    });
     await this.refreshBeforePersist();
     this.bff.setCurrentDraftId(this.localDraft().draftId ?? null);
     try {
@@ -1313,6 +1331,20 @@ export class OperationCreateModalComponent implements OnInit {
     } finally {
       this.bff.setCurrentDraftId(null);
     }
+  }
+
+  ngOnDestroy(): void {
+    // Diagnostics TZ Stage 3 WP-4: form_closed
+    this.diag.track('form_closed', {
+      draft: this.localDraft(),
+      hasUnsavedChanges: this.hasUnsavedChangesForDiagnostics(),
+    });
+  }
+
+  private hasUnsavedChangesForDiagnostics(): boolean {
+    const d = this.localDraft();
+    if (!d.lastSavedSnapshot) return d.lines.length > 0;
+    return d.lastSavedSnapshot !== JSON.stringify(d);
   }
 
   onDelete(): void {

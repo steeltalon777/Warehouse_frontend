@@ -24,6 +24,7 @@ import {
 } from '../models/operations.models';
 import { CatalogSearchService } from './catalog-search.service';
 import { DiagnosticsSessionService } from './diagnostics-session.service';
+import { DiagnosticsService } from '../diagnostics/diagnostics.service';
 import { firstValueFrom } from 'rxjs';
 import { AuthContextService } from './auth-context.service';
 
@@ -68,6 +69,7 @@ export class OperationsService {
     private authContextService: AuthContextService,
     private catalogSearch: CatalogSearchService,
     private diagnostics: DiagnosticsSessionService,
+    private diag: DiagnosticsService,
   ) {
     this.authContextService.load();
   }
@@ -206,6 +208,13 @@ export class OperationsService {
     this.error.set(null);
     this.fieldErrors.set(null);
     this.setPersist('saving');
+    // Diagnostics TZ Stage 3 WP-4: request_started
+    this.diag.track('request_started', {
+      draft,
+      httpMethod: 'POST',
+      httpUrl: '/operations',
+    });
+    const startTime = performance.now();
     try {
       // Always include client_request_id for idempotency (TZ C5/D1).
       // buildPayload uses draft.idempotencyKey (stable per draft); only as
@@ -218,14 +227,34 @@ export class OperationsService {
         draft.version = result.version;
       }
       this.setPersist('saved');
+      // Diagnostics: request_succeeded
+      this.diag.track('request_succeeded', {
+        draft,
+        durationMs: Math.round(performance.now() - startTime),
+      });
       return result;
     } catch (err: any) {
+      // Diagnostics: outcome_unknown vs request_failed
       if (err.code === 'operation_outcome_unknown') {
+        this.diag.track('outcome_unknown', {
+          draft,
+          errorCode: err.code,
+          httpStatus: err.status,
+        });
         this.setPersist('outcome_unknown', err);
-      } else if (err.code === 'operation_version_conflict' || err.code === 'conflict') {
-        this.setPersist('conflict', err);
       } else {
-        this.setPersist('rejected', err);
+        this.diag.track('request_failed', {
+          draft,
+          httpMethod: 'POST',
+          httpUrl: '/operations',
+          httpStatus: err.status,
+          errorCode: err.code,
+        });
+        if (err.code === 'operation_version_conflict' || err.code === 'conflict') {
+          this.setPersist('conflict', err);
+        } else {
+          this.setPersist('rejected', err);
+        }
       }
       this.normalizeError(err);
       throw err;
@@ -285,6 +314,12 @@ export class OperationsService {
     this.error.set(null);
     this.fieldErrors.set(null);
     this.setPersist('saving');
+    this.diag.track('request_started', {
+      draft,
+      httpMethod: 'POST',
+      httpUrl: `/operations/${id}/submit`,
+    });
+    const startTime = performance.now();
     try {
       const payload: Record<string, unknown> = { submit: true };
       if (draft?.version != null) {
@@ -294,13 +329,31 @@ export class OperationsService {
         this.bff.postData<unknown>(`/operations/${id}/submit`, payload)
       );
       this.setPersist('saved');
+      this.diag.track('request_succeeded', {
+        draft,
+        durationMs: Math.round(performance.now() - startTime),
+      });
     } catch (err: any) {
       if (err.code === 'operation_outcome_unknown') {
+        this.diag.track('outcome_unknown', {
+          draft,
+          errorCode: err.code,
+          httpStatus: err.status,
+        });
         this.setPersist('outcome_unknown', err);
-      } else if (err.code?.includes('version_conflict') || err.code === 'conflict') {
-        this.setPersist('conflict', err);
       } else {
-        this.setPersist('rejected', err);
+        this.diag.track('request_failed', {
+          draft,
+          httpMethod: 'POST',
+          httpUrl: `/operations/${id}/submit`,
+          httpStatus: err.status,
+          errorCode: err.code,
+        });
+        if (err.code?.includes('version_conflict') || err.code === 'conflict') {
+          this.setPersist('conflict', err);
+        } else {
+          this.setPersist('rejected', err);
+        }
       }
       this.normalizeError(err);
       throw err;

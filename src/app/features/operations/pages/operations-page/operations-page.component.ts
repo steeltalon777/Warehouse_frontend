@@ -6,6 +6,7 @@ import { OperationsService } from '../../../../core/services/operations.service'
 import { AuthContextService } from '../../../../core/services/auth-context.service';
 import { CatalogSearchService } from '../../../../core/services/catalog-search.service';
 import { DocumentsService } from '../../../../core/services/documents.service';
+import { DiagnosticsService } from '../../../../core/diagnostics/diagnostics.service';
 import { snapshotDraft } from '../../components/operation-create-modal/operation-draft-mappers';
 import {
   OperationsFilterVm,
@@ -320,6 +321,7 @@ type OperationSubmitState =
 })
 export class OperationsPageComponent implements OnInit, OnDestroy {
   readonly service = inject(OperationsService);
+  private readonly diag = inject(DiagnosticsService);
   private authContextService = inject(AuthContextService);
   private catalogSearchService = inject(CatalogSearchService);
   private documentsService = inject(DocumentsService);
@@ -409,6 +411,11 @@ export class OperationsPageComponent implements OnInit, OnDestroy {
     if (this.searchTimer) {
       clearTimeout(this.searchTimer);
       this.searchTimer = null;
+    }
+    // Diagnostics TZ Stage 3 WP-4: navigation_away_with_unsaved
+    const draft = this.editingDraft();
+    if (draft && this.createModalSubmitError() === '') {
+      this.diag.track('navigation_away_with_unsaved', { draft });
     }
   }
 
@@ -765,6 +772,13 @@ export class OperationsPageComponent implements OnInit, OnDestroy {
       this.applySubmitResult(result);
       await this.refreshListAfterSubmit();
     } catch (err: any) {
+      // Diagnostics TZ Stage 3 WP-4: response_processing_failed (after HTTP success but processing failed)
+      if (err?.code !== 'operation_outcome_unknown' && !err?.status) {
+        this.diag.track('response_processing_failed', {
+          draft,
+          errorCode: err?.code,
+        });
+      }
       await this.handleSubmitError(err, draft.idempotencyKey, draft);
     }
   }
