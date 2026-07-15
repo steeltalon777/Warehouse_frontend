@@ -1,5 +1,6 @@
 import { Routes, UrlMatchResult, UrlSegment } from '@angular/router';
 import { catalogWriteGuard } from './core/guards/catalog-write.guard';
+import { unsavedDraftGuard } from './core/guards/unsaved-draft.guard';
 
 export function catalogReadonlyMatcher(segments: UrlSegment[]): UrlMatchResult | null {
   if (segments.length === 0 || segments[0].path !== 'catalog') {
@@ -37,6 +38,7 @@ export const routes: Routes = [
   {
     path: 'operations',
     loadComponent: () => import('./features/operations/pages/operations-page/operations-page.component').then(m => m.OperationsPageComponent),
+    canDeactivate: [unsavedDraftGuard],
   },
   {
     path: 'operations/:operationId/acceptance',

@@ -1,4 +1,4 @@
-import { Component, OnDestroy, OnInit, signal, computed, inject, effect } from '@angular/core';
+import { Component, HostListener, OnDestroy, OnInit, signal, computed, inject, effect } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { Router } from '@angular/router';
@@ -7,6 +7,7 @@ import { AuthContextService } from '../../../../core/services/auth-context.servi
 import { CatalogSearchService } from '../../../../core/services/catalog-search.service';
 import { DocumentsService } from '../../../../core/services/documents.service';
 import { DiagnosticsService } from '../../../../core/diagnostics/diagnostics.service';
+import { DraftStorageService } from '../../../../core/services/draft-storage.service';
 import { snapshotDraft } from '../../components/operation-create-modal/operation-draft-mappers';
 import {
   OperationsFilterVm,
@@ -322,6 +323,7 @@ type OperationSubmitState =
 export class OperationsPageComponent implements OnInit, OnDestroy {
   readonly service = inject(OperationsService);
   private readonly diag = inject(DiagnosticsService);
+  private readonly draftStorage = inject(DraftStorageService);
   private authContextService = inject(AuthContextService);
   private catalogSearchService = inject(CatalogSearchService);
   private documentsService = inject(DocumentsService);
@@ -771,6 +773,9 @@ export class OperationsPageComponent implements OnInit, OnDestroy {
       const result = await this.service.submitWithResult(draft);
       this.applySubmitResult(result);
       await this.refreshListAfterSubmit();
+      // TZ Stage 4 WP-1: draft cleared after successful submit
+      this.draftStorage.clear();
+      this.diag.track('draft_cleared', { draft });
     } catch (err: any) {
       // Diagnostics TZ Stage 3 WP-4: response_processing_failed (after HTTP success but processing failed)
       if (err?.code !== 'operation_outcome_unknown' && !err?.status) {
@@ -1030,5 +1035,34 @@ export class OperationsPageComponent implements OnInit, OnDestroy {
   onConfirmCancel(): void {
     this.showConfirmModal.set(false);
     this.confirmingOperation.set(null);
+  }
+
+  // ─── TZ Stage 4: draft protection ──────────────────────────────
+
+  /**
+   * Public hook used by the CanDeactivate guard.
+   * Returns true only when the create modal is open AND the active draft
+   * has unsaved changes (per the snapshot-based dirty check).
+   */
+  editingDraftHasChanges(): boolean {
+    if (!this.showCreateModal()) return false;
+    const draft = this.editingDraft();
+    if (!draft) return false;
+    // No snapshot yet → dirty if there's anything to lose (any lines).
+    if (!draft.lastSavedSnapshot) return (draft.lines?.length ?? 0) > 0;
+    return snapshotDraft(draft) !== draft.lastSavedSnapshot;
+  }
+
+  /**
+   * Browser unload hook. Per contract §6: fires for tab close / refresh
+   * / external navigation, but NOT for in-app routing (that's the guard).
+   */
+  @HostListener('window:beforeunload', ['$event'])
+  onBeforeUnload(event: BeforeUnloadEvent): void {
+    if (this.editingDraftHasChanges()) {
+      event.preventDefault();
+      // Required for some browsers (e.g. Chrome) to actually show the prompt.
+      event.returnValue = '';
+    }
   }
 }

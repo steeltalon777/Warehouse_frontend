@@ -15,7 +15,12 @@ export type DiagnosticEventType =
   | 'outcome_unknown'
   | 'response_processing_failed'
   | 'navigation_away_with_unsaved'
-  | 'unexpected_error';
+  | 'unexpected_error'
+  // TZ Stage 4 (draft protection):
+  | 'draft_autosaved'
+  | 'draft_restored'
+  | 'draft_lost'
+  | 'draft_cleared';
 
 export type DiagnosticSeverity = 'debug' | 'info' | 'warning' | 'error' | 'critical';
 

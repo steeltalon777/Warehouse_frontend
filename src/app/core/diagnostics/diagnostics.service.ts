@@ -96,7 +96,11 @@ export class DiagnosticsService {
       case 'validation_failed':
       case 'outcome_unknown':
       case 'navigation_away_with_unsaved':
+      case 'draft_lost':
         return 'warning';
+      case 'draft_autosaved':
+        return 'debug';
+      // draft_restored, draft_cleared fall through to 'info'.
       default:
         return 'info';
     }

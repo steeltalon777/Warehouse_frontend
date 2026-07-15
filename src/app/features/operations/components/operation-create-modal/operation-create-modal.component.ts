@@ -14,6 +14,7 @@ import { OperationsService } from '../../../../core/services/operations.service'
 import { IssueObjectsService } from '../../../../core/services/issue-objects.service';
 import { DiagnosticsSessionService } from '../../../../core/services/diagnostics-session.service';
 import { DiagnosticsService } from '../../../../core/diagnostics/diagnostics.service';
+import { DraftStorageService } from '../../../../core/services/draft-storage.service';
 import { BffApiService } from '../../../../core/api/bff-api.service';
 import { ItemCacheSearchComponent } from '../item-cache-search/item-cache-search.component';
 import { OperationLinesTableComponent } from './operation-lines-table.component';
@@ -55,7 +56,7 @@ function currentDateTimeLocal(): string {
               </div>
             }
           </div>
-          <button class="wh-btn-icon btn-close" aria-label="Закрыть" (click)="cancel.emit()">×</button>
+          <button class="wh-btn-icon btn-close" aria-label="Закрыть" (click)="onCancelClick()">×</button>
         </div>
 
         <div class="wh-modal__body modal-body">
@@ -302,7 +303,7 @@ function currentDateTimeLocal(): string {
               @if (canCancelOperation()) {
                 <button class="wh-btn wh-btn--danger btn btn-cancel-operation" (click)="onCancelOperation()" [disabled]="isSubmitting()">Отменить операцию</button>
               }
-              <button class="wh-btn wh-btn--secondary btn btn-secondary" (click)="cancel.emit()">Закрыть</button>
+              <button class="wh-btn wh-btn--secondary btn btn-secondary" (click)="onCancelClick()">Закрыть</button>
             } @else {
               @if (isEdit()) {
                 <button class="wh-btn wh-btn--danger btn btn-delete" (click)="onDelete()" [disabled]="isSaving()">Удалить черновик</button>
@@ -313,7 +314,7 @@ function currentDateTimeLocal(): string {
                   <button class="wh-btn wh-btn--secondary btn btn-accept" (click)="onAcceptOperation()">Приёмка</button>
                 }
               }
-              <button class="wh-btn wh-btn--secondary btn btn-secondary" (click)="cancel.emit()">Отмена</button>
+              <button class="wh-btn wh-btn--secondary btn btn-secondary" (click)="onCancelClick()">Отмена</button>
               <button class="wh-btn wh-btn--primary btn btn-primary" [disabled]="isSaving() || !!saveDisabledReason()" (click)="onSave()">Сохранить черновик</button>
               <button class="wh-btn wh-btn--success btn btn-submit" [disabled]="!canSubmitComputed() || isSubmitting()" [title]="submitDisabledReason()" (click)="onSubmit()">Подтвердить</button>
             }
@@ -654,6 +655,7 @@ export class OperationCreateModalComponent implements OnInit, OnDestroy {
   private readonly issueObjectsService = inject(IssueObjectsService);
   private readonly diagnostics = inject(DiagnosticsSessionService);
   private readonly diag = inject(DiagnosticsService);
+  private readonly draftStorage = inject(DraftStorageService);
   private readonly bff = inject(BffApiService);
 
   readonly localDraft = signal<OperationDraftVm>({
@@ -994,6 +996,27 @@ export class OperationCreateModalComponent implements OnInit, OnDestroy {
       this.submitErrorLocal.set(this.submitError());
     });
 
+    // TZ Stage 4 WP-1: debounced autosave (2s of inactivity)
+    let autosaveTimer: ReturnType<typeof setTimeout> | null = null;
+    effect(() => {
+      const draft = this.localDraft();
+      if (autosaveTimer !== null) {
+        clearTimeout(autosaveTimer);
+        autosaveTimer = null;
+      }
+      if (draft.lines.length === 0) return;
+      const draftSnapshot = draft;
+      autosaveTimer = setTimeout(() => {
+        autosaveTimer = null;
+        if (this.draftStorage.save(draftSnapshot)) {
+          this.diag.track('draft_autosaved', {
+            draft: draftSnapshot,
+            itemsCount: draftSnapshot.lines.length,
+          });
+        }
+      }, 2_000);
+    });
+
     effect(() => {
       const d = this.draft();
       if (d) {
@@ -1063,6 +1086,58 @@ export class OperationCreateModalComponent implements OnInit, OnDestroy {
   }
 
   ngOnInit(): void {
+    this.attemptRestore();
+  }
+
+  /**
+   * TZ Stage 4 WP-1: prompt user to restore a saved draft on modal open.
+   * Skipped if the modal is being opened with an explicit draft from the
+   * parent (i.e. editing an existing operation).
+   */
+  private attemptRestore(): void {
+    if (this.draft()) return; // parent provided a draft — nothing to restore
+    const saved = this.draftStorage.load();
+    if (!saved) return;
+    const ok = confirm('Найден несохранённый черновик. Восстановить?');
+    if (!ok) {
+      this.draftStorage.clear();
+      return;
+    }
+    try {
+      const parsed = JSON.parse(saved.draft);
+      // Reconstruct a minimal OperationDraftVm from the snapshot. Real
+      // restoration would need a full draft mapper; for v1 we hydrate
+      // the keys we care about (lines, type, idempotencyKey, draftId).
+      const restored: OperationDraftVm = {
+        type: (parsed.type as OperationType) ?? 'RECEIVE',
+        status: 'draft',
+        effectiveAt: parsed.effectiveAt ?? currentDateTimeLocal(),
+        sourceSiteId: parsed.sourceSiteId ?? null,
+        destinationSiteId: parsed.destinationSiteId ?? null,
+        personName: parsed.personName ?? null,
+        issueObjectId: parsed.issueObjectId ?? null,
+        issueObjectName: parsed.issueObjectName ?? null,
+        writeOffSource: parsed.writeOffSource ?? null,
+        comment: parsed.comment ?? null,
+        lines: (parsed.lines ?? []).map((l: any) => ({
+          localId: l.localId,
+          itemId: l.itemId ?? null,
+          quantity: l.quantity ?? null,
+          inlineItem: l.inlineItem ?? null,
+        })) as OperationLineDraftVm[],
+        draftId: saved.draftId,
+        idempotencyKey: saved.idempotencyKey,
+      };
+      this.localDraft.set(restored);
+      this.savedOperationId.set(null);
+      this.diag.track('draft_restored', {
+        draft: { draftId: saved.draftId, idempotencyKey: saved.idempotencyKey },
+        itemsCount: saved.itemsCount,
+      });
+    } catch {
+      // Corrupt payload — drop it.
+      this.draftStorage.clear();
+    }
   }
 
   private updateLineStockHint(line: OperationLineDraftVm): void {
@@ -1308,6 +1383,23 @@ export class OperationCreateModalComponent implements OnInit, OnDestroy {
 
   onSaveComplete(savedId: string): void {
     this.savedOperationId.set(savedId);
+  }
+
+  /**
+   * TZ Stage 4 WP-1: confirm before discarding an unsaved draft on
+   * any cancel / close path.
+   */
+  onCancelClick(): void {
+    if (this.hasUnsavedChanges() && (this.localDraft().lines?.length ?? 0) > 0) {
+      const ok = confirm('У вас есть несохранённые изменения. Закрыть без сохранения?');
+      if (!ok) return;
+      this.diag.track('draft_lost', {
+        draft: this.localDraft(),
+        itemsCount: this.localDraft().lines.length,
+      });
+    }
+    this.draftStorage.clear();
+    this.cancel.emit();
   }
 
   async onSubmit(): Promise<void> {
