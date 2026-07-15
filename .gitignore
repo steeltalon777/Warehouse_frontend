@@ -58,3 +58,5 @@ repo_map_*.json
 test-results-old/
 /.playwright
 /blob-report
+test-results/
+playwright-html-report/
