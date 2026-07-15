@@ -665,7 +665,7 @@ export class OperationsPageComponent implements OnInit, OnDestroy {
         const dd = String(d.getDate()).padStart(2, '0');
         const MM = String(d.getMonth() + 1).padStart(2, '0');
         const yy = String(d.getFullYear()).slice(-2);
-        return `${op.site_id}/${hh}${mm}/${dd}${MM}${yy}`;
+        return `${dd}${MM}${yy}/${hh}${mm}/${op.site_id}`;
       } catch { }
     }
     return op.id.slice(0, 8).toUpperCase();
