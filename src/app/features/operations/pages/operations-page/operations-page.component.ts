@@ -16,6 +16,7 @@ import {
   OperationStatus,
   STATUS_TABS,
   OperationDto,
+  OperationSubmitResult,
   OPERATION_TYPE_LABELS,
   OPERATION_STATUS_LABELS,
 } from '../../../../core/models/operations.models';
@@ -35,6 +36,18 @@ function currentDateTimeLocal(): string {
     pad(now.getDate()),
   ].join('-') + `T${pad(now.getHours())}:${pad(now.getMinutes())}`;
 }
+
+type OperationSubmitState =
+  | 'editing'
+  | 'submitting'
+  | 'submitted'
+  | 'outcome_unknown'
+  | 'resolving'
+  | 'retry_allowed'
+  | 'submit_failed'
+  | 'refreshing_list'
+  | 'refresh_failed'
+  | 'completed';
 
 @Component({
   selector: 'app-operations-page',
@@ -118,11 +131,16 @@ function currentDateTimeLocal(): string {
         <app-operation-create-modal
           [draft]="editingDraft()"
           [sites]="sites()"
-          [isSaving]="service.isSaving()"
-          [isSubmitting]="service.isSubmitting()"
-          [submitError]="createModalSubmitError()"
-          (save)="onDraftSave($event)"
-          (submit)="onDraftSubmit($event)"
+           [isSaving]="service.isSaving()"
+           [isSubmitting]="service.isSubmitting() || submitState() === 'submitting' || submitState() === 'resolving'"
+           [submitError]="createModalSubmitError()"
+           [submitState]="submitState()"
+           [submitMessage]="submitMessage()"
+           (save)="onDraftSave($event)"
+           (submit)="onDraftSubmit($event)"
+           (retrySubmit)="onDraftSubmit($event)"
+           (resolveSubmit)="onResolveDraftSubmit($event)"
+           (retryRefresh)="onRetryListRefresh()"
           (cancel)="onDraftCancel()"
           (delete)="onDraftDelete($event)"
           (cancelOperation)="onDraftOperationCancel($event)"
@@ -133,12 +151,26 @@ function currentDateTimeLocal(): string {
 
     <!-- Confirm Modal -->
     @if (showConfirmModal()) {
-      <app-operation-confirm-modal
-        [operation]="confirmingOperation()"
-        [isSubmitting]="service.isSubmitting()"
-        (confirm)="onConfirmSubmit()"
-        (cancel)="onConfirmCancel()"
-      />
+       <app-operation-confirm-modal
+         [operation]="confirmingOperation()"
+         [isSubmitting]="service.isSubmitting() || submitState() === 'submitting' || submitState() === 'resolving'"
+         (confirm)="onConfirmSubmit()"
+         (cancel)="onConfirmCancel()"
+       />
+       @if (submitMessage()) {
+         <div class="confirm-result-banner" [class.confirm-result-banner--warning]="submitState() === 'outcome_unknown' || submitState() === 'retry_allowed' || submitState() === 'refresh_failed'">
+           {{ submitMessage() }}
+           @if (submitState() === 'outcome_unknown') {
+             <button class="btn btn-secondary" (click)="onResolveConfirmSubmit()">Проверить результат</button>
+           }
+           @if (submitState() === 'retry_allowed') {
+             <button class="btn btn-primary" (click)="onConfirmSubmit()">Повторить</button>
+           }
+           @if (submitState() === 'refresh_failed') {
+             <button class="btn btn-secondary" (click)="onRetryListRefresh()">Обновить список</button>
+           }
+         </div>
+       }
     }
   `,
   styles: [`
@@ -262,6 +294,28 @@ function currentDateTimeLocal(): string {
       border-radius: 8px;
       font-size: 14px;
     }
+    .confirm-result-banner {
+      position: fixed;
+      left: 50%;
+      bottom: 24px;
+      z-index: 1200;
+      transform: translateX(-50%);
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      padding: 12px 16px;
+      background: #ECFDF5;
+      border: 1px solid #A7F3D0;
+      border-radius: 8px;
+      color: #047857;
+      box-shadow: 0 8px 24px rgba(15, 23, 42, 0.18);
+      font-size: 14px;
+    }
+    .confirm-result-banner--warning {
+      background: #FFFBEB;
+      border-color: #FDE68A;
+      color: #92400E;
+    }
   `]
 })
 export class OperationsPageComponent implements OnInit, OnDestroy {
@@ -313,6 +367,10 @@ export class OperationsPageComponent implements OnInit, OnDestroy {
   readonly confirmingOperation = signal<OperationListRowVm | null>(null);
   readonly invoiceLoadingOperationId = signal<string | null>(null);
   readonly createModalSubmitError = signal<string>('');
+  readonly submitState = signal<OperationSubmitState>('editing');
+  readonly lastSubmitResult = signal<OperationSubmitResult | null>(null);
+  readonly submitMessage = signal<string>('');
+  private lastSubmittedDraft: OperationDraftVm | null = null;
 
   // ─── Derived data ────────────────────────────────────────────
   readonly isLoading = this.service.isLoading;
@@ -416,6 +474,7 @@ export class OperationsPageComponent implements OnInit, OnDestroy {
       lines: [],
     });
     this.createModalSubmitError.set('');
+    this.resetSubmitUx();
     this.showCreateModal.set(true);
   }
 
@@ -500,6 +559,7 @@ export class OperationsPageComponent implements OnInit, OnDestroy {
   }
 
   onRowSubmit(row: OperationListRowVm): void {
+    this.resetSubmitUx();
     this.confirmingOperation.set(row);
     this.showConfirmModal.set(true);
   }
@@ -694,23 +754,126 @@ export class OperationsPageComponent implements OnInit, OnDestroy {
   }
 
   async onDraftSubmit(draft: OperationDraftVm): Promise<void> {
+    if (this.submitState() === 'submitting' || this.submitState() === 'resolving') return;
+    this.lastSubmittedDraft = draft;
+    this.submitState.set('submitting');
+    this.createModalSubmitError.set('');
+    this.submitMessage.set('');
+
     try {
-      const result = draft.id
-        ? await this.service.updateOperation(draft.id, draft)
-        : await this.service.createOperation(draft);
-      if (!result) return;
-      await this.service.submitOperation(result.id);
+      const result = await this.service.submitWithResult(draft);
+      this.applySubmitResult(result);
+      await this.refreshListAfterSubmit();
+    } catch (err: any) {
+      await this.handleSubmitError(err, draft.idempotencyKey, draft);
+    }
+  }
+
+  async onResolveDraftSubmit(draft: OperationDraftVm): Promise<void> {
+    await this.resolveUnknownOutcome(draft.idempotencyKey, draft);
+  }
+
+  async onRetryListRefresh(): Promise<void> {
+    await this.refreshListAfterSubmit();
+  }
+
+  private async handleSubmitError(err: any, idempotencyKey?: string, draft?: OperationDraftVm): Promise<void> {
+    const code = err?.code ?? err?.error?.code;
+    if (code === 'operation_outcome_unknown' && idempotencyKey) {
+      this.submitState.set('outcome_unknown');
+      this.submitMessage.set('Результат операции неизвестен. Проверяем операцию по ключу.');
+      await this.resolveUnknownOutcome(idempotencyKey, draft);
+      return;
+    }
+
+    this.submitState.set('submit_failed');
+    this.createModalSubmitError.set(this.submitErrorMessage(code, err));
+  }
+
+  private async resolveUnknownOutcome(idempotencyKey?: string, draft?: OperationDraftVm): Promise<void> {
+    if (!idempotencyKey || this.submitState() === 'resolving') {
+      this.submitState.set('outcome_unknown');
+      this.submitMessage.set('Не удалось проверить результат. Попробуйте позже.');
+      return;
+    }
+
+    this.submitState.set('resolving');
+    const resolution = await this.service.resolveByIdempotencyKey(idempotencyKey);
+    if (resolution.resolution === 'existing_operation' && resolution.operation) {
+      const operation = resolution.operation;
+      if (draft) {
+        draft.id = operation.id;
+        draft.status = operation.status;
+        draft.version = operation.version;
+      }
+      this.applySubmitResult({
+        operationId: operation.id,
+        displayNumber: operation.display_number ?? operation.number ?? operation.id,
+        status: operation.status,
+        submitted: operation.status === 'submitted',
+        serverRequestId: resolution.serverRequestId,
+        idempotencyKey,
+      });
+      await this.refreshListAfterSubmit();
+      return;
+    }
+
+    if (resolution.resolution === 'no_operation_found') {
+      this.submitState.set('retry_allowed');
+      this.submitMessage.set('Операция не найдена на сервере. Повторить с тем же ключом?');
+      return;
+    }
+
+    this.submitState.set('outcome_unknown');
+    this.submitMessage.set('Не удалось проверить результат. Попробуйте позже.');
+  }
+
+  private applySubmitResult(result: OperationSubmitResult): void {
+    this.lastSubmitResult.set(result);
+    this.submitState.set('submitted');
+    this.submitMessage.set(`Операция №${result.displayNumber} проведена`);
+    this.createModalSubmitError.set('');
+    this.editingDraft.update(current => current ? { ...current, id: result.operationId, status: result.status } : current);
+  }
+
+  private async refreshListAfterSubmit(): Promise<void> {
+    this.submitState.set('refreshing_list');
+    try {
+      await this.loadList();
+      this.submitState.set('completed');
       this.showCreateModal.set(false);
       this.editingDraft.set(null);
-      this.createModalSubmitError.set('');
-      void this.loadList();
-    } catch (err: any) {
-      const message = this.service.error()
-        || err?.message
-        || err?.error?.message
-        || 'Не удалось подтвердить операцию';
-      this.createModalSubmitError.set(message);
+      this.showConfirmModal.set(false);
+      this.confirmingOperation.set(null);
+      this.lastSubmittedDraft = null;
+    } catch {
+      this.submitState.set('refresh_failed');
+      this.submitMessage.set('Операция проведена, но список не обновился — обновите страницу');
     }
+  }
+
+  private submitErrorMessage(code: string | undefined, err: any): string {
+    const messages: Record<string, string> = {
+      idempotency_payload_conflict: 'Конфликт: этот ключ уже использован с другими данными.',
+      operation_submit_failed: 'Не удалось подтвердить операцию.',
+      syncserver_unavailable: 'Сервер недоступен. Проверьте соединение.',
+      forbidden: 'Доступ запрещён.',
+      not_found: 'Ресурс не найден.',
+      unexpected_error: 'Произошла непредвиденная ошибка.',
+      operation_version_conflict: 'Операция была изменена в другой вкладке.',
+    };
+    return messages[code ?? '']
+      ?? this.service.error()
+      ?? err?.message
+      ?? err?.error?.message
+      ?? 'Не удалось подтвердить операцию';
+  }
+
+  private resetSubmitUx(): void {
+    this.submitState.set('editing');
+    this.lastSubmitResult.set(null);
+    this.submitMessage.set('');
+    this.lastSubmittedDraft = null;
   }
 
   private mergeDraftAfterSuccessfulSave(serverDraft: OperationDraftVm, currentDraft: OperationDraftVm): OperationDraftVm {
@@ -838,6 +1001,16 @@ export class OperationsPageComponent implements OnInit, OnDestroy {
       this.createModalSubmitError.set(message);
       this.showConfirmModal.set(false);
     }
+  }
+
+  /**
+   * Manual resolve from the confirm modal's "Проверить результат" button.
+   * Reuses the private resolveUnknownOutcome() with the active draft's key.
+   */
+  async onResolveConfirmSubmit(): Promise<void> {
+    const draft = this.editingDraft() ?? (this.confirmingOperation() as unknown as OperationDraftVm | null);
+    const idempotencyKey = draft?.idempotencyKey;
+    await this.resolveUnknownOutcome(idempotencyKey, draft ?? undefined);
   }
 
   onConfirmCancel(): void {

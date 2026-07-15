@@ -1,7 +1,8 @@
 import { Injectable } from '@angular/core';
 import { HttpClient, HttpHeaders, HttpParams } from '@angular/common/http';
 import { Observable, throwError } from 'rxjs';
-import { catchError, map, timeout } from 'rxjs/operators';
+import { catchError, map, tap, timeout } from 'rxjs/operators';
+import { DiagnosticsSessionService } from '../services/diagnostics-session.service';
 
 export interface BffApiError {
   code: string;
@@ -34,8 +35,19 @@ export class BffApiService {
   /** Mutation-specific timeout (TZ C5): write requests abort after 30 s */
   private readonly MUTATION_TIMEOUT_MS = 30_000;
   private readonly WAREHOUSE_CLIENT_HEADER = '3.2-angular';
+  /** Optional X-Client-Draft-Id for operations endpoints (TZ C5 §3.1). */
+  private _currentDraftId: string | null = null;
 
-  constructor(private http: HttpClient) {}
+  constructor(
+    private http: HttpClient,
+    private diagnostics: DiagnosticsSessionService,
+  ) {}
+
+  /** Set the draft id that will be sent as X-Client-Draft-Id on the next
+   *  mutation call. Pass null to clear. Used for operations endpoints. */
+  setCurrentDraftId(draftId: string | null): void {
+    this._currentDraftId = draftId || null;
+  }
 
   get<T>(path: string, params?: Record<string, string | number | boolean>): Observable<BffApiResponse<T>> {
     let httpParams = new HttpParams();
@@ -61,9 +73,12 @@ export class BffApiService {
   post<T>(path: string, body?: unknown): Observable<BffApiResponse<T>> {
     return this.http.post<BffApiResponse<T>>(`${this.baseUrl}${path}`, body ?? {}, {
       withCredentials: true,
-      headers: this.getMutationHeaders()
+      headers: this.getMutationHeaders(),
+      observe: 'response'
     }).pipe(
       timeout(this.MUTATION_TIMEOUT_MS),
+      tap(res => this.captureServerRequestId(res.headers)),
+      map(res => res.body as BffApiResponse<T>),
       catchError(this.handleError)
     );
   }
@@ -75,9 +90,12 @@ export class BffApiService {
   put<T>(path: string, body?: unknown): Observable<BffApiResponse<T>> {
     return this.http.put<BffApiResponse<T>>(`${this.baseUrl}${path}`, body ?? {}, {
       withCredentials: true,
-      headers: this.getMutationHeaders()
+      headers: this.getMutationHeaders(),
+      observe: 'response'
     }).pipe(
       timeout(this.MUTATION_TIMEOUT_MS),
+      tap(res => this.captureServerRequestId(res.headers)),
+      map(res => res.body as BffApiResponse<T>),
       catchError(this.handleError)
     );
   }
@@ -89,9 +107,12 @@ export class BffApiService {
   patch<T>(path: string, body?: unknown): Observable<BffApiResponse<T>> {
     return this.http.patch<BffApiResponse<T>>(`${this.baseUrl}${path}`, body ?? {}, {
       withCredentials: true,
-      headers: this.getMutationHeaders()
+      headers: this.getMutationHeaders(),
+      observe: 'response'
     }).pipe(
       timeout(this.MUTATION_TIMEOUT_MS),
+      tap(res => this.captureServerRequestId(res.headers)),
+      map(res => res.body as BffApiResponse<T>),
       catchError(this.handleError)
     );
   }
@@ -103,15 +124,26 @@ export class BffApiService {
   delete<T>(path: string): Observable<BffApiResponse<T>> {
     return this.http.delete<BffApiResponse<T>>(`${this.baseUrl}${path}`, {
       withCredentials: true,
-      headers: this.getMutationHeaders()
+      headers: this.getMutationHeaders(),
+      observe: 'response'
     }).pipe(
       timeout(this.MUTATION_TIMEOUT_MS),
+      tap(res => this.captureServerRequestId(res.headers)),
+      map(res => res.body as BffApiResponse<T>),
       catchError(this.handleError)
     );
   }
 
   deleteData<T>(path: string): Observable<T> {
     return this.delete<T>(path).pipe(map(res => res.data as T));
+  }
+
+  /** Store X-Request-Id from response headers (TZ C5 §3.3). */
+  private captureServerRequestId(headers: HttpHeaders): void {
+    const id = headers.get('X-Request-Id');
+    if (id) {
+      this.diagnostics.lastServerRequestId = id;
+    }
   }
 
   private getCsrfHeaders(): HttpHeaders {
@@ -123,10 +155,17 @@ export class BffApiService {
     return headers;
   }
 
-  /** Headers for mutating requests: CSRF + Warehouse client version (TZ C5). */
+  /** Headers for mutating requests: CSRF + Warehouse client version + diagnostics (TZ C5 §3.1). */
   private getMutationHeaders(): HttpHeaders {
     let headers = this.getCsrfHeaders();
     headers = headers.set('X-Warehouse-Client', this.WAREHOUSE_CLIENT_HEADER);
+    headers = headers.set('X-Client-Session-Id', this.diagnostics.sessionId);
+    headers = headers.set('X-Client-Tab-Id', this.diagnostics.tabId);
+    headers = headers.set('X-Client-Request-Id', this.diagnostics.newRequestId());
+    headers = headers.set('X-Frontend-Version', this.diagnostics.frontendVersion);
+    if (this._currentDraftId) {
+      headers = headers.set('X-Client-Draft-Id', this._currentDraftId);
+    }
     return headers;
   }
 

@@ -510,6 +510,35 @@ describe('OperationsService', () => {
     const draft = service.mapDtoToDraftVm(dto);
     expect(draft.lines).toHaveLength(0);
   });
+
+  // ─── computeClientDisplayNumber (WP cleanup F2) ─────────────────────
+  // Per contract: client-side fallback when the server doesn't return
+  // display_number. The format is `${site_id}/${hh}${mm}/${dd}${MM}${yy}`.
+  // This was accidentally changed in WP-3; reverted in cleanup. Keep this
+  // test as a guard against future regressions.
+
+  it('computeClientDisplayNumber keeps the legacy site-prefixed format', () => {
+    const dto: OperationDto = {
+      id: 'op-1',
+      type: 'RECEIVE',
+      status: 'draft',
+      created_by_user_id: 'u1',
+      // 15 July 2026, 09:42 local time
+      created_at: '2026-07-15T09:42:00',
+      updated_at: '2026-07-15T09:42:00',
+      site_id: '7',
+    };
+
+    // mapDtoToDraftVm falls back to computeClientDisplayNumber when
+    // display_number / number are missing.
+    const draft = service.mapDtoToDraftVm(dto);
+    // Format: `${site_id}/${hh}${mm}/${dd}${MM}${yy}` → "7/0942/150726"
+    expect(draft.displayNumber).toMatch(/^7\/\d{4}\/\d{6}$/);
+    // Belt-and-braces: verify the exact parts are in the right order.
+    expect(draft.displayNumber.startsWith('7/')).toBe(true);
+    // The date part must come last (ddMMYY), not before the time.
+    expect(draft.displayNumber).toBe('7/0942/150726');
+  });
 });
 
 function makeOperation(status: OperationStatus, overrides: Partial<OperationDto> = {}): OperationDto {

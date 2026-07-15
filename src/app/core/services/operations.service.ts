@@ -17,10 +17,13 @@ import {
   PersistState,
   PersistStatus,
   PersistError,
+  OperationSubmitResult,
+  IdempotencyResolution,
   OPERATION_TYPE_LABELS,
   OPERATION_STATUS_LABELS,
 } from '../models/operations.models';
 import { CatalogSearchService } from './catalog-search.service';
+import { DiagnosticsSessionService } from './diagnostics-session.service';
 import { firstValueFrom } from 'rxjs';
 import { AuthContextService } from './auth-context.service';
 
@@ -64,6 +67,7 @@ export class OperationsService {
     private bff: BffApiService,
     private authContextService: AuthContextService,
     private catalogSearch: CatalogSearchService,
+    private diagnostics: DiagnosticsSessionService,
   ) {
     this.authContextService.load();
   }
@@ -130,14 +134,6 @@ export class OperationsService {
 
   // ─── Persist helpers ─────────────────────────────────────────
 
-  private _newClientRequestId(): string {
-    try {
-      return crypto.randomUUID();
-    } catch {
-      return `${Date.now()}-${Math.random().toString(36).slice(2, 10)}`;
-    }
-  }
-
   /** Snapshot the draft before any async step (TZ D4: immutable snapshot). */
   captureSnapshot(draft: OperationDraftVm): OperationDraftVm {
     this._persistSnapshot = JSON.parse(JSON.stringify(draft));
@@ -171,7 +167,7 @@ export class OperationsService {
       );
       const map = new Map<string, ResolvedItemDto>();
       for (const r of results) {
-        map.set(r.request_id, r);
+        map.set(String(r.requested_id), r);
       }
       return map;
     } catch (err: any) {
@@ -211,9 +207,10 @@ export class OperationsService {
     this.fieldErrors.set(null);
     this.setPersist('saving');
     try {
-      // Always include client_request_id for idempotency (TZ C5/D1)
+      // Always include client_request_id for idempotency (TZ C5/D1).
+      // buildPayload uses draft.idempotencyKey (stable per draft); only as
+      // last-resort fallback does it generate a new UUID via diagnostics.
       const payload = this.buildPayload(draft, { includeEffectiveAt: true, isCreate: true });
-      payload['client_request_id'] = payload['client_request_id'] || this._newClientRequestId();
       const result = await firstValueFrom(
         this.bff.postData<OperationDto>('/operations', payload)
       );
@@ -309,6 +306,47 @@ export class OperationsService {
       throw err;
     } finally {
       this.isSubmitting.set(false);
+    }
+  }
+
+  async submitWithResult(draft: OperationDraftVm): Promise<OperationSubmitResult> {
+    const operation = draft.id
+      ? await this.updateOperation(draft.id, draft)
+      : await this.createOperation(draft);
+    if (!operation) {
+      throw new Error('Не удалось сохранить операцию перед подтверждением');
+    }
+
+    await this.submitOperation(operation.id, draft);
+
+    return {
+      operationId: operation.id,
+      displayNumber: operation.display_number ?? operation.number ?? operation.id,
+      status: 'submitted',
+      submitted: true,
+      serverRequestId: this.diagnostics.lastServerRequestId ?? undefined,
+      idempotencyKey: draft.idempotencyKey,
+    };
+  }
+
+  async resolveByIdempotencyKey(key: string): Promise<IdempotencyResolution> {
+    try {
+      const result = await firstValueFrom(
+        this.bff.getData<{ items: OperationDto[]; total_count: number }>(
+          `/operations?client_request_id=${encodeURIComponent(key)}`
+        )
+      );
+      if (result?.items?.length) {
+        return {
+          found: true,
+          operation: result.items[0],
+          resolution: 'existing_operation',
+          serverRequestId: this.diagnostics.lastServerRequestId ?? undefined,
+        };
+      }
+      return { found: false, resolution: 'no_operation_found' };
+    } catch {
+      return { found: false, resolution: 'resolution_failed' };
     }
   }
 
@@ -659,7 +697,7 @@ export class OperationsService {
         const dd = String(d.getDate()).padStart(2, '0');
         const MM = String(d.getMonth() + 1).padStart(2, '0');
         const yy = String(d.getFullYear()).slice(-2);
-        return `${dd}${MM}${yy}/${hh}${mm}/${op.site_id}`;
+        return `${op.site_id}/${hh}${mm}/${dd}${MM}${yy}`;
       } catch { }
     }
     return op.id.slice(0, 8).toUpperCase();
@@ -809,9 +847,12 @@ export class OperationsService {
         }),
     };
 
-    // Always include client_request_id for new operations (TZ C5)
+    // Always include client_request_id for new operations (TZ C5).
+    // Use the draft's stable idempotencyKey so retries hit the same record;
+    // only fall back to a freshly-generated UUID for legacy code paths
+    // (back-compat per TZ C5 §11.3).
     if (options.isCreate) {
-      payload['client_request_id'] = this._newClientRequestId();
+      payload['client_request_id'] = draft.idempotencyKey ?? this.diagnostics.newIdempotencyKey();
     }
 
     if (options.includeEffectiveAt) {

@@ -12,6 +12,8 @@ import {
 } from '../../../../core/models/operations.models';
 import { OperationsService } from '../../../../core/services/operations.service';
 import { IssueObjectsService } from '../../../../core/services/issue-objects.service';
+import { DiagnosticsSessionService } from '../../../../core/services/diagnostics-session.service';
+import { BffApiService } from '../../../../core/api/bff-api.service';
 import { ItemCacheSearchComponent } from '../item-cache-search/item-cache-search.component';
 import { OperationLinesTableComponent } from './operation-lines-table.component';
 import { InlineItemCreateModalComponent } from '../inline-item-create-modal/inline-item-create-modal.component';
@@ -61,6 +63,15 @@ function currentDateTimeLocal(): string {
             testId="operation-create-submit-error"
             (dismiss)="submitErrorLocal.set('')"
           />
+          @if (submitMessage()) {
+            <div
+              class="submit-result-banner"
+              [class.submit-result-banner--warning]="submitState() === 'outcome_unknown' || submitState() === 'retry_allowed' || submitState() === 'refresh_failed'"
+              data-testid="operation-submit-result"
+            >
+              {{ submitMessage() }}
+            </div>
+          }
           <div class="modal-content-shell">
             <!-- First row: type + warehouse(s) -->
             <div class="form-row first-row">
@@ -269,6 +280,15 @@ function currentDateTimeLocal(): string {
           }
 
           <div class="footer-actions">
+            @if (submitState() === 'outcome_unknown') {
+              <button class="wh-btn wh-btn--secondary btn btn-secondary" (click)="resolveSubmit.emit(localDraft())">Проверить результат</button>
+            }
+            @if (submitState() === 'retry_allowed') {
+              <button class="wh-btn wh-btn--success btn btn-submit" (click)="retrySubmit.emit(localDraft())">Повторить с тем же ключом</button>
+            }
+            @if (submitState() === 'refresh_failed') {
+              <button class="wh-btn wh-btn--secondary btn btn-secondary" (click)="retryRefresh.emit()">Обновить список</button>
+            }
             @if (isReadonly()) {
               @if (canRestoreOperation()) {
                 <button class="wh-btn wh-btn--secondary btn btn-restore" (click)="onRestore()">
@@ -484,6 +504,20 @@ function currentDateTimeLocal(): string {
       color: #F97316;
       flex: 1;
     }
+    .submit-result-banner {
+      margin-bottom: 12px;
+      padding: 10px 12px;
+      background: #ECFDF5;
+      border: 1px solid #A7F3D0;
+      border-radius: 8px;
+      color: #047857;
+      font-size: 13px;
+    }
+    .submit-result-banner--warning {
+      background: #FFFBEB;
+      border-color: #FDE68A;
+      color: #92400E;
+    }
 
     .btn {
       display: inline-flex; align-items: center; justify-content: center;
@@ -600,8 +634,13 @@ export class OperationCreateModalComponent implements OnInit {
   isSaving = input<boolean>(false);
   isSubmitting = input<boolean>(false);
   submitError = input<string>('');
+  submitState = input<string>('editing');
+  submitMessage = input<string>('');
   save = output<OperationDraftVm>();
   submit = output<OperationDraftVm>();
+  retrySubmit = output<OperationDraftVm>();
+  resolveSubmit = output<OperationDraftVm>();
+  retryRefresh = output<void>();
   cancel = output<void>();
   delete = output<OperationDraftVm>();
   cancelOperation = output<OperationDraftVm>();
@@ -612,6 +651,8 @@ export class OperationCreateModalComponent implements OnInit {
   private readonly service = inject(OperationsService);
   private readonly authContextService = inject(AuthContextService);
   private readonly issueObjectsService = inject(IssueObjectsService);
+  private readonly diagnostics = inject(DiagnosticsSessionService);
+  private readonly bff = inject(BffApiService);
 
   readonly localDraft = signal<OperationDraftVm>({
     type: 'MOVE',
@@ -954,7 +995,20 @@ export class OperationCreateModalComponent implements OnInit {
     effect(() => {
       const d = this.draft();
       if (d) {
-        this.localDraft.set(this.normalizeDraftForType(d.type, { ...d, effectiveAt: d.effectiveAt ?? currentDateTimeLocal(), lines: [...d.lines] }));
+        const normalized = this.normalizeDraftForType(d.type, { ...d, effectiveAt: d.effectiveAt ?? currentDateTimeLocal(), lines: [...d.lines] });
+        // TZ C5 §5.3 / §11.3: ensure draftId + idempotencyKey exist for both
+        // new drafts and legacy drafts loaded without them. When the draft is
+        // bound to an existing server-side id (edit of saved operation), we
+        // still need a draftId for the X-Client-Draft-Id header on subsequent
+        // mutations; idempotencyKey is reused if present, otherwise generated
+        // here for back-compat.
+        if (!normalized.draftId) {
+          normalized.draftId = this.diagnostics.newDraftId();
+        }
+        if (!normalized.idempotencyKey) {
+          normalized.idempotencyKey = this.diagnostics.newIdempotencyKey();
+        }
+        this.localDraft.set(normalized);
         // Track saved operation ID and snapshot
         this.savedOperationId.set(d.id ?? null);
       }
@@ -1238,7 +1292,12 @@ export class OperationCreateModalComponent implements OnInit {
   async onSave(): Promise<void> {
     if (this.saveDisabledReason()) return;
     await this.refreshBeforePersist();
-    this.save.emit(this.localDraft());
+    this.bff.setCurrentDraftId(this.localDraft().draftId ?? null);
+    try {
+      this.save.emit(this.localDraft());
+    } finally {
+      this.bff.setCurrentDraftId(null);
+    }
   }
 
   onSaveComplete(savedId: string): void {
@@ -1248,7 +1307,12 @@ export class OperationCreateModalComponent implements OnInit {
   async onSubmit(): Promise<void> {
     if (!this.canSubmitComputed()) return;
     await this.refreshBeforePersist();
-    this.submit.emit(this.localDraft());
+    this.bff.setCurrentDraftId(this.localDraft().draftId ?? null);
+    try {
+      this.submit.emit(this.localDraft());
+    } finally {
+      this.bff.setCurrentDraftId(null);
+    }
   }
 
   onDelete(): void {

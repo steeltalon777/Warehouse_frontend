@@ -143,23 +143,25 @@ export interface OperationListRowVm {
 export type ItemResolveStatus = 'active' | 'merged' | 'inactive' | 'deleted' | 'missing';
 
 export interface ResolvedItemDto {
-  request_id: string;
+  requested_id: number;
   status: ItemResolveStatus;
-  canonical_item_id?: string;
+  canonical_item_id?: number | null;
+  canonical_status?: string | null;
+  reason?: string | null;
   item?: {
-    id: string;
-    name: string;
+    id?: string;
+    name?: string;
     sku?: string;
     unit_id?: string;
     unit_symbol?: string;
     category_id?: string;
     category_name?: string;
-    is_active: boolean;
+    is_active?: boolean;
   } | null;
 }
 
 export interface ItemsResolveResponse {
-  results: ResolvedItemDto[];
+  items: ResolvedItemDto[];
 }
 
 export type ConsistencyMode = 'fast' | 'authoritative';
@@ -201,6 +203,11 @@ export interface OperationDraftVm {
   id?: string;
   type: OperationType;
   status: OperationStatus;
+  /** UUID of the draft form instance (TZ C5 §2). Lives in session+tab scope. */
+  draftId?: string;
+  /** Idempotency key for createOperation. Stable across retries for the
+   *  same draft. Used as `client_request_id` in API requests. */
+  idempotencyKey?: string;
   version?: number;
   createdByUserId?: string | null;
   sourceSiteId?: string | null;
@@ -244,6 +251,23 @@ export interface OperationDraftVm {
    * modal was opened from the row.
    */
   assignedAssetAvailableQty?: number | null;
+}
+
+export interface OperationSubmitResult {
+  operationId: string;
+  displayNumber: string;
+  status: OperationStatus;
+  submitted: boolean;
+  serverRequestId?: string;
+  clientRequestId?: string;
+  idempotencyKey?: string;
+}
+
+export interface IdempotencyResolution {
+  found: boolean;
+  operation?: OperationDto;
+  resolution: 'existing_operation' | 'no_operation_found' | 'resolution_failed';
+  serverRequestId?: string;
 }
 
 export interface OperationInlineItemDraftVm {
