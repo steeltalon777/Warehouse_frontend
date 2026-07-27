@@ -3,8 +3,8 @@ import { defineConfig } from '@playwright/test';
 
 const baseURL = process.env.E2E_BASE_URL || 'http://localhost:8001';
 const isCI = !!process.env.CI;
-const testResultsDir = path.resolve(__dirname, '..', 'test-results');
-const reportDir = path.resolve(__dirname, '..', 'playwright-html-report');
+const testResultsDir = path.resolve(__dirname, '..', 'playwright-tz-results');
+const reportDir = path.resolve(__dirname, '..', 'playwright-tz-report');
 
 export default defineConfig({
   testDir: '.',
@@ -15,7 +15,7 @@ export default defineConfig({
   use: {
     baseURL,
     headless: true,
-    viewport: { width: 1280, height: 720 },
+    viewport: { width: 1920, height: 1080 },
     screenshot: 'only-on-failure',
     trace: 'retain-on-failure',
     video: 'retain-on-failure',

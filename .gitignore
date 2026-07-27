@@ -60,3 +60,10 @@ test-results-old/
 /blob-report
 test-results/
 playwright-html-report/
+
+# playwright-tz-output-dirs
+/playwright-tz-results
+/playwright-tz-report
+
+# fhd-screenshots-tz
+/.fhd-screenshots/
