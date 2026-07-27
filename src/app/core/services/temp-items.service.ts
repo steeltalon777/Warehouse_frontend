@@ -15,7 +15,7 @@ export class TempItemsService {
   readonly items = signal<TemporaryItemVm[]>([]);
   readonly totalCount = signal(0);
   readonly page = signal(1);
-  readonly pageSize = signal(25);
+  readonly pageSize = signal(20);
   readonly isLoading = signal(false);
   readonly error = signal<string | null>(null);
   readonly role = signal<string>('storekeeper');
@@ -29,7 +29,7 @@ export class TempItemsService {
     filters?: TempItemsListFilters,
     sort?: TempItemsSort,
     page: number = 1,
-    pageSize: number = 25,
+    pageSize: number = 20,
   ): Promise<void> {
     this.isLoading.set(true);
     this.error.set(null);

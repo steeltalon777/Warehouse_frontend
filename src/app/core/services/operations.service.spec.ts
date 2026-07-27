@@ -3,6 +3,8 @@ import { OperationsService } from './operations.service';
 import { BffApiService } from '../api/bff-api.service';
 import { AuthContextService } from './auth-context.service';
 import { CatalogSearchService } from './catalog-search.service';
+import { DiagnosticsSessionService } from './diagnostics-session.service';
+import { DiagnosticsService } from '../diagnostics/diagnostics.service';
 import { of, throwError } from 'rxjs';
 import { OperationDto, OperationStatus, OperationType } from '../models/operations.models';
 
@@ -13,6 +15,7 @@ describe('OperationsService', () => {
     getData: ReturnType<typeof vi.fn>;
     postData: ReturnType<typeof vi.fn>;
     patchData: ReturnType<typeof vi.fn>;
+    deleteData: ReturnType<typeof vi.fn>;
   };
   let authMock: { authContext: ReturnType<typeof vi.fn>; load: ReturnType<typeof vi.fn> };
 
@@ -22,6 +25,7 @@ describe('OperationsService', () => {
       getData: vi.fn(),
       postData: vi.fn(),
       patchData: vi.fn(),
+      deleteData: vi.fn(),
     };
 
     authMock = {
@@ -30,12 +34,24 @@ describe('OperationsService', () => {
     };
 
     const searchMock = { resolveItems: vi.fn() };
+    const diagnosticsSessionMock = {
+      lastServerRequestId: null,
+      newIdempotencyKey: vi.fn(() => 'idem-fallback-uuid'),
+    };
+    const diagnosticsMock = { track: vi.fn() };
+
     TestBed.configureTestingModule({
       providers: [
-        OperationsService,
-        { provide: BffApiService, useValue: bffMock },
-        { provide: AuthContextService, useValue: authMock },
-        { provide: CatalogSearchService, useValue: searchMock },
+        {
+          provide: OperationsService,
+          useFactory: () => new OperationsService(
+            bffMock as unknown as BffApiService,
+            authMock as unknown as AuthContextService,
+            searchMock as unknown as CatalogSearchService,
+            diagnosticsSessionMock as unknown as DiagnosticsSessionService,
+            diagnosticsMock as unknown as DiagnosticsService,
+          ),
+        },
       ],
     });
 

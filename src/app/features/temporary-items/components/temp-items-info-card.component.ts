@@ -80,8 +80,8 @@ import { Component, input } from '@angular/core';
   `]
 })
 export class TempItemsInfoCardComponent {
-  readonly totalActive = input.required<number>();
-  readonly needsReviewCount = input.required<number>();
-  readonly inPendingCount = input.required<number>();
-  readonly canDeleteCount = input.required<number>();
+  readonly totalActive = input<number>(0);
+  readonly needsReviewCount = input<number>(0);
+  readonly inPendingCount = input<number>(0);
+  readonly canDeleteCount = input<number>(0);
 }

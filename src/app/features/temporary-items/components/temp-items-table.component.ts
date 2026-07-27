@@ -98,9 +98,9 @@ import { TemporaryItemVm, TempItemUiStatus, TEMP_ITEM_UI_STATUS_COLORS } from '.
           <div class="page-size">
             <span>На странице:</span>
             <select [value]="pageSize()" (change)="onPageSizeChange($event)">
-              <option value="25">25</option>
+              <option value="10">10</option>
+              <option value="20">20</option>
               <option value="50">50</option>
-              <option value="100">100</option>
             </select>
           </div>
           <div class="page-info">
@@ -154,12 +154,12 @@ import { TemporaryItemVm, TempItemUiStatus, TEMP_ITEM_UI_STATUS_COLORS } from '.
 })
 export class TempItemsTableComponent {
   readonly Math = Math;
-  readonly rows = input.required<TemporaryItemVm[]>();
+  readonly rows = input<TemporaryItemVm[]>([]);
   readonly sortColumn = input<string>('');
   readonly sortDir = input<'asc' | 'desc'>('desc');
-  readonly pageSize = input.required<number>();
-  readonly page = input.required<number>();
-  readonly totalCount = input.required<number>();
+  readonly pageSize = input<number>(20);
+  readonly page = input<number>(1);
+  readonly totalCount = input<number>(0);
 
   readonly sort = output<string>();
   readonly pageChange = output<number>();

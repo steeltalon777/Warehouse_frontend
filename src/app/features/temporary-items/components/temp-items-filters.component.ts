@@ -102,7 +102,15 @@ export interface TempItemsFilterValues {
   `]
 })
 export class TempItemsFiltersComponent {
-  readonly filters = input.required<TempItemsFilterValues>();
+  readonly filters = input<TempItemsFilterValues>({
+    search: '',
+    uiStatus: null,
+    hasBalance: null,
+    hasPendingAcceptance: null,
+    createdAfter: '',
+    createdBefore: '',
+    createdByUserId: '',
+  });
   readonly filtersChange = output<Partial<TempItemsFilterValues>>();
   readonly reset = output<void>();
 
