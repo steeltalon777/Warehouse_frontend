@@ -209,6 +209,9 @@ export interface OperationDraftVm {
    *  same draft. Used as `client_request_id` in API requests. */
   idempotencyKey?: string;
   version?: number;
+  /** Client-side fallback when server doesn't return display_number.
+   *  Format: `${site_id}/${hh}${mm}/${dd}${MM}${yy}`. */
+  displayNumber?: string;
   createdByUserId?: string | null;
   sourceSiteId?: string | null;
   destinationSiteId?: string | null;

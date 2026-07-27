@@ -587,6 +587,7 @@ export class OperationsService {
       type: dto.type,
       status: dto.status,
       version: dto.version,
+      displayNumber: dto.display_number ?? dto.number ?? this.computeClientDisplayNumber(dto),
       createdByUserId: dto.created_by_user_id ?? null,
       sourceSiteId: mappedSourceSiteId,
       destinationSiteId: mappedDestinationSiteId,
@@ -750,7 +751,7 @@ export class OperationsService {
         const dd = String(d.getDate()).padStart(2, '0');
         const MM = String(d.getMonth() + 1).padStart(2, '0');
         const yy = String(d.getFullYear()).slice(-2);
-        return `${dd}${MM}${yy}/${hh}${mm}/${op.site_id}`;
+        return `${op.site_id}/${hh}${mm}/${dd}${MM}${yy}`;
       } catch { }
     }
     return op.id.slice(0, 8).toUpperCase();
