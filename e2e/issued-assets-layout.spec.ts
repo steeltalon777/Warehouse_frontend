@@ -293,6 +293,7 @@ test.describe('Issued assets repository layout', () => {
 
     await expect(page.getByRole('heading', { name: 'Новая операция' })).toBeVisible();
     await expect(page.getByTestId('issue-object-detail')).toContainText(OBJECT_NAME);
+    await page.once('dialog', dialog => dialog.accept());
     await page.locator('.modal-overlay').getByRole('button', { name: 'Закрыть' }).click();
     await expect(page.getByRole('heading', { name: 'Новая операция' })).toHaveCount(0);
   });
@@ -310,6 +311,7 @@ test.describe('Issued assets repository layout', () => {
     await expect(page.getByRole('heading', { name: 'Новая операция' })).toBeVisible();
     await expect(page.getByTestId('issued-assets-expand-button')).not.toBeFocused();
     await expect(page.getByTestId('issue-object-detail')).toContainText(OBJECT_NAME);
+    await page.once('dialog', dialog => dialog.accept());
     await page.locator('.modal-overlay').getByRole('button', { name: 'Закрыть' }).click();
     await expect(page.getByRole('heading', { name: 'Новая операция' })).toHaveCount(0);
   });

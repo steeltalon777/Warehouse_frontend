@@ -13,7 +13,7 @@ test.describe('Admin Hardening v3.1F', () => {
     await page.fill('input[name="username"]', ADMIN_USER);
     await page.fill('input[name="password"]', ADMIN_PASS);
     await page.click('input[type="submit"]');
-    await expect(page.locator('text=Администрирование')).toBeVisible({ timeout: 10000 });
+    await expect(page.getByRole('heading', { name: 'Администрирование сайта' })).toBeVisible({ timeout: 10000 });
   });
 
   test('POST action works, direct GET fails on sync', async ({ page }) => {
