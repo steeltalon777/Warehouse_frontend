@@ -43,12 +43,12 @@ describe('OperationsService', () => {
     TestBed.configureTestingModule({
       providers: [
         // Plain DI: let Angular's real injector construct OperationsService
-        // via its 5-arg constructor (see operations.service.ts:67). The
-        // previous useFactory workaround was needed when esbuild did not
-        // emit 'design:paramtypes'; under @angular/build:unit-test the
-        // constructor metadata is supplied by ngtsc and the workaround is
-        // unnecessary. Running through the real DI graph also catches a
-        // larger class of regressions than the manual 'new'.
+        // via its 5-arg constructor (see operations.service.ts:67). Under
+        // @angular/build:unit-test, ngtsc emits constructor metadata, so
+        // the dependencies are resolved reflectively; a manual factory +
+        // five 'as unknown as' casts is no longer needed. Running through
+        // the real DI graph also catches a larger class of regressions
+        // (e.g. accidental DI changes) than a manual instantiation.
         OperationsService,
         { provide: BffApiService, useValue: bffMock },
         { provide: AuthContextService, useValue: authMock },
