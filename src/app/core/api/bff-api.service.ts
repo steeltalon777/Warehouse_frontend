@@ -211,6 +211,14 @@ export class BffApiService {
       requestId = apiError.error?.request_id;
       status = apiError.error?.status;
       retrySafe = apiError.error?.retry_safe;
+
+      // BFF structured errors (error.error?.error) bypass the HTTP-status
+      // branches below. Override message/code for well-known codes that
+      // acceptance.service and submit-error surface rely on.
+      if (error.status === 403) {
+        message = 'Доступ запрещён.';
+        code = 'forbidden';
+      }
     } else if (error.status === 0) {
       message = 'Сервер недоступен. Проверьте соединение.';
       code = 'syncserver_unavailable';

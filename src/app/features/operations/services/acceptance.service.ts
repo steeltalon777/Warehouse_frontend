@@ -106,7 +106,7 @@ export class AcceptanceService {
       return { operation: result, hasLost };
     } catch (err: any) {
       const status = err?.status;
-      if (status === 403) {
+      if (status === 403 || err?.code === 'forbidden') {
         this.error.set('Доступ запрещён.');
       } else if (status === 409) {
         this.error.set('Конфликт: данные изменились, перезагружаю...');
