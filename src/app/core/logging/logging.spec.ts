@@ -1,13 +1,16 @@
 import { TestBed } from '@angular/core/testing';
-import { HttpClient } from '@angular/common/http';
-import { provideHttpClient, withInterceptors } from '@angular/common/http';
+import { HttpClient, provideHttpClient, withInterceptors } from '@angular/common/http';
 import { HttpTestingController, provideHttpClientTesting } from '@angular/common/http/testing';
+import { Router } from '@angular/router';
+
+import { DiagnosticsService } from '../diagnostics/diagnostics.service';
 import { httpErrorInterceptor } from './http-error.interceptor';
 import { GlobalErrorHandler } from './global-error-handler';
 
 describe('Logging infrastructure', () => {
   afterEach(() => {
     vi.restoreAllMocks();
+    TestBed.resetTestingModule();
   });
 
   describe('HttpErrorInterceptor', () => {
@@ -16,6 +19,9 @@ describe('Logging infrastructure', () => {
         providers: [
           provideHttpClient(withInterceptors([httpErrorInterceptor])),
           provideHttpClientTesting(),
+          // DiagnosticsService injects DIAGNOSTICS_QUEUE_PORT; provide a stub
+          // so the real provider chain is not pulled into the test module.
+          { provide: DiagnosticsService, useValue: { track: vi.fn() } },
         ],
       });
 
@@ -45,6 +51,7 @@ describe('Logging infrastructure', () => {
         providers: [
           provideHttpClient(withInterceptors([httpErrorInterceptor])),
           provideHttpClientTesting(),
+          { provide: DiagnosticsService, useValue: { track: vi.fn() } },
         ],
       });
 
@@ -64,7 +71,17 @@ describe('Logging infrastructure', () => {
 
   describe('GlobalErrorHandler', () => {
     it('should log Error with [GlobalError] prefix', () => {
-      const handler = new GlobalErrorHandler();
+      TestBed.configureTestingModule({
+        providers: [
+          GlobalErrorHandler,
+          // GlobalErrorHandler uses field-initializer `inject()` for both deps,
+          // so plain `new` will throw NG0203. Use the TestBed injector.
+          { provide: DiagnosticsService, useValue: { track: vi.fn() } },
+          { provide: Router, useValue: { url: '/test' } },
+        ],
+      });
+
+      const handler = TestBed.inject(GlobalErrorHandler);
       const consoleSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
 
       expect(() => handler.handleError(new Error('test error'))).toThrow();
@@ -79,7 +96,15 @@ describe('Logging infrastructure', () => {
     });
 
     it('should rethrow the error', () => {
-      const handler = new GlobalErrorHandler();
+      TestBed.configureTestingModule({
+        providers: [
+          GlobalErrorHandler,
+          { provide: DiagnosticsService, useValue: { track: vi.fn() } },
+          { provide: Router, useValue: { url: '/test' } },
+        ],
+      });
+
+      const handler = TestBed.inject(GlobalErrorHandler);
       expect(() => handler.handleError(new Error('test'))).toThrow('test');
     });
   });
