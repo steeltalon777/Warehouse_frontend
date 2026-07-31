@@ -42,16 +42,19 @@ describe('OperationsService', () => {
 
     TestBed.configureTestingModule({
       providers: [
-        {
-          provide: OperationsService,
-          useFactory: () => new OperationsService(
-            bffMock as unknown as BffApiService,
-            authMock as unknown as AuthContextService,
-            searchMock as unknown as CatalogSearchService,
-            diagnosticsSessionMock as unknown as DiagnosticsSessionService,
-            diagnosticsMock as unknown as DiagnosticsService,
-          ),
-        },
+        // Plain DI: let Angular's real injector construct OperationsService
+        // via its 5-arg constructor (see operations.service.ts:67). The
+        // previous useFactory workaround was needed when esbuild did not
+        // emit 'design:paramtypes'; under @angular/build:unit-test the
+        // constructor metadata is supplied by ngtsc and the workaround is
+        // unnecessary. Running through the real DI graph also catches a
+        // larger class of regressions than the manual 'new'.
+        OperationsService,
+        { provide: BffApiService, useValue: bffMock },
+        { provide: AuthContextService, useValue: authMock },
+        { provide: CatalogSearchService, useValue: searchMock },
+        { provide: DiagnosticsSessionService, useValue: diagnosticsSessionMock },
+        { provide: DiagnosticsService, useValue: diagnosticsMock },
       ],
     });
 
