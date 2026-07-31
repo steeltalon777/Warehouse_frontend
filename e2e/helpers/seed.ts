@@ -110,8 +110,13 @@ async function createOperation(
   const csrf = await getCsrfToken(page);
   const headers: Record<string, string> = { 'Content-Type': 'application/json' };
   if (csrf) headers['X-CSRFToken'] = csrf;
+  // SyncServer requires a non-empty client_request_id. Keep caller override support.
+  const body = {
+    ...payload,
+    client_request_id: payload.client_request_id ?? crypto.randomUUID(),
+  };
   const response = await page.request.post('/bff/api/v1/operations', {
-    data: payload,
+    data: body,
     headers,
     failOnStatusCode: false,
   });
@@ -120,8 +125,8 @@ async function createOperation(
     console.warn('createOperation failed', response.status(), text);
     return null;
   }
-  const body = await response.json();
-  return body?.data?.id ?? body?.data?.operation_id ?? null;
+  const responseBody = await response.json();
+  return responseBody?.data?.id ?? responseBody?.data?.operation_id ?? null;
 }
 
 async function getOperationNumber(page: Page, operationId: string): Promise<string | null> {
