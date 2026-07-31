@@ -3,18 +3,6 @@ import { TempItemDetailModalComponent } from './temp-item-detail-modal.component
 import { TempItemsService } from '../../../core/services/temp-items.service';
 import { TemporaryItemVm } from '../../../core/models/temp-items.models';
 
-/**
- * Workaround for vitest zoneless environment: see temp-items-table.spec.ts
- * for the rationale. `setInput` does not trigger CD here.
- */
-function overrideInputs(
-  instance: TempItemDetailModalComponent,
-  values: { item: TemporaryItemVm | null },
-): void {
-  const anyInstance = instance as unknown as Record<string, unknown>;
-  Object.defineProperty(anyInstance, 'item', { get: () => () => values.item, configurable: true });
-}
-
 describe('TempItemDetailModalComponent', () => {
   let serviceMock: { loadDetail: ReturnType<typeof vi.fn>; loadOperations: ReturnType<typeof vi.fn> };
 
@@ -39,7 +27,8 @@ describe('TempItemDetailModalComponent', () => {
 
   it('loads detail and operations on init', async () => {
     const fixture = TestBed.createComponent(TempItemDetailModalComponent);
-    overrideInputs(fixture.componentInstance, { item: mockItem });
+    // item is an `input.required(...)`; setInput must precede the first CD.
+    fixture.componentRef.setInput('item', mockItem);
     fixture.detectChanges();
     // ngOnInit awaits loadDetail + loadOperations; flush microtasks.
     await Promise.resolve();

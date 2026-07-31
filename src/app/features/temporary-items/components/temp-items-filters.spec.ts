@@ -1,20 +1,6 @@
 import { TestBed } from '@angular/core/testing';
 import { TempItemsFiltersComponent, TempItemsFilterValues } from './temp-items-filters.component';
 
-/**
- * Workaround for vitest zoneless environment: see temp-items-table.spec.ts
- * for the rationale. `setInput` does not trigger CD here.
- */
-function overrideInputs(
-  instance: TempItemsFiltersComponent,
-  values: { filters?: TempItemsFilterValues },
-): void {
-  const anyInstance = instance as unknown as Record<string, unknown>;
-  if (values.filters !== undefined) {
-    Object.defineProperty(anyInstance, 'filters', { get: () => () => values.filters, configurable: true });
-  }
-}
-
 const defaultFilters: TempItemsFilterValues = {
   search: '', uiStatus: null, hasBalance: null, hasPendingAcceptance: null,
   createdAfter: '', createdBefore: '', createdByUserId: '',
@@ -29,7 +15,7 @@ describe('TempItemsFiltersComponent', () => {
 
   it('emits filtersChange on status dropdown change', () => {
     const fixture = TestBed.createComponent(TempItemsFiltersComponent);
-    overrideInputs(fixture.componentInstance, { filters: defaultFilters });
+    fixture.componentRef.setInput('filters', defaultFilters);
     fixture.detectChanges();
 
     let emitted: any;
@@ -43,7 +29,7 @@ describe('TempItemsFiltersComponent', () => {
 
   it('emits reset on reset button click', () => {
     const fixture = TestBed.createComponent(TempItemsFiltersComponent);
-    overrideInputs(fixture.componentInstance, { filters: defaultFilters });
+    fixture.componentRef.setInput('filters', defaultFilters);
     fixture.detectChanges();
 
     let emitted = false;
