@@ -1,387 +1,575 @@
-# TZ: Fix vitest zoneless setup for Angular DI + change detection
+# TZ: Frontend unit tests — migrate to `@angular/build:unit-test` and eliminate spec drift
 
-> **Status:** DRAFT — problem statement for the architect. This file is not an
-> executable TZ yet. The architect should expand it into a proper TZ with
-> acceptance criteria, levels, evidence, and parallel workstreams.
+> **Status:** EXECUTABLE. Architect-finalized on 2026-07-31 on top of the
+> investigator draft (commit `e6ef250`). Supersedes the draft's §5 approach
+> menu: the architect selected the approach, corrected three root-cause
+> misattributions, and added a newly discovered blocker (spec type drift
+> that fails the official builder before any test runs).
 
-## Execution Checklist (architect to fill in)
+## Execution Checklist
 
-- [ ] 0. Context verified
-- [ ] 1. Architecture boundaries confirmed
-- [ ] 2. Implementation approach selected (see §5)
-- [ ] 3. vitest transformer / config migrated
-- [ ] 4. tsconfig.spec.json adjusted (if needed)
-- [ ] 5. src/test-setup.ts aligned
-- [ ] 6. All 15 currently-failing spec files green
-- [ ] 7. Workarounds in operations.service.spec.ts and temp-items/*.spec.ts
-      reverted (or kept with explicit justification)
-- [ ] 8. `npm run test:unit` (or equivalent) passes locally
-- [ ] 9. CI pipeline green
-- [ ] 10. Documentation updated (`AGENTS.md`, `README.md`, `package.json` scripts)
-- [ ] 11. Final acceptance review
+- [ ] 0. Context verified (baseline reproduced and recorded)
+- [ ] 1. Architecture boundaries confirmed (approach, scope, non-negotiables)
+- [ ] 2. L1 — spec type drift fixed (8 errors in 5 files); builder runs tests
+- [ ] 3. L2 — toolchain gate: `npx ng test --watch=false` executes; groups A/C/D green or gate-stopped
+- [ ] 4. L3 — `logging.spec.ts` DI setup fixed (group B)
+- [ ] 5. L4 — `operations.service.spec.ts` `useFactory` workaround reverted
+- [ ] 6. L5 — `temp-items/*` `overrideInputs` workaround reverted (4 files)
+- [ ] 7. L6 — standalone vitest path removed (`vitest.config.ts`, `src/test-setup.ts`), `test:unit` script added
+- [ ] 8. L7 — docs updated (`Warehouse_frontend/AGENTS.md`, root `AGENTS.md`, ADR-0024)
+- [ ] 9. L8 — CI unit-test workflow added
+- [ ] 10. L9 — final acceptance review with evidence table
 
-## Context
+## Check Rules
 
-`Warehouse_frontend` runs `npx vitest` as its unit-test runner (see
-`vitest.config.ts`). The runner is configured with `environment: 'jsdom'`
-and `setupFiles: ['src/test-setup.ts']`. Vitest uses esbuild as its default
-TypeScript transformer, which — for this repo — does not emit
-`experimentalDecorators` metadata (`__metadata("design:paramtypes", [...])`)
-that Angular DI relies on for constructor-injected services.
+- Architect created this checklist and the acceptance criteria.
+- Executor checks L0–L8 items only after running the required verification for that level.
+- QA verifier checks L9 only after reviewing the evidence table.
+- If a check is skipped, it stays unchecked with a reason in the report.
+- If a level's acceptance criteria fail and no prescribed remedy applies, the
+  executor STOPS, leaves the box unchecked, and reports. Do not improvise
+  outside the stated scope.
 
-The repo also has no `zone.js` import in `src/test-setup.ts` (zone-based
-change detection is not initialized), so signal-based inputs and
-`fixture.componentRef.setInput(...)` do not trigger change detection
-reliably in test runs.
+## 1. Context
 
-As a result of these two combined issues, **15 unit tests in 4 spec files
-are currently red** as of commit `b6175c8` (2026-07-27). Two of the affected
-files have already received manual workarounds in earlier passes; the
-remaining 4 file groups still need a systematic fix.
+`Warehouse_frontend` unit tests currently have **two divergent runners**:
 
-This is the leftover from a previous closure pass on
-`TZ_FRONTEND_SHARED_STYLE_SYSTEM.md` and
-`TZ_OPERATIONS_ACCEPTANCE_PLAYWRIGHT.md` (commits `00c4187`, `8de71e4`,
-`b6175c8`). Those TZs marked the vitest issues as out of scope; this TZ
-consolidates them.
+1. **Standalone `npx vitest run`** via `vitest.config.ts` + `src/test-setup.ts`.
+   Uses esbuild for TypeScript — which performs **zero Angular compilation**:
+   no `design:paramtypes` decorator metadata, no signal `input()` detection,
+   no `templateUrl` inlining, and no type-checking.
+2. **Official `npx ng test`** via `@angular/build:unit-test` (already declared
+   in `angular.json`, line 74–76; `package.json` script `"test": "ng test"`).
+   Uses the real Angular toolchain (ngtsc + esbuild) and runs vitest under
+   the hood in Angular 21. Currently **fails at build time** on spec type
+   drift (§3.4), so zero tests execute.
 
-## Authoritative sources
+A prior TZ (`TZ_OPERATIONS_ACCEPTANCE_PLAYWRIGHT.md`, evidence line 586)
+already recorded `npx ng test --watch=false` as the intended canonical
+command and marked it blocked by the same type drift. This TZ removes that
+blocker and makes the official runner the only unit-test path.
 
-- `Warehouse_frontend/vitest.config.ts` — current vitest config
-- `Warehouse_frontend/src/test-setup.ts` — current test-bed init
-- `Warehouse_frontend/tsconfig.spec.json` — current spec tsconfig
-- `Warehouse_frontend/package.json` — current `test:unit` script
-- `Warehouse_frontend/AGENTS.md` — verification matrix
-- `Functional and WorkLogik.md` — domain layer (out of scope for this TZ)
-
-## Scope (in scope)
-
-- `Warehouse_frontend/vitest.config.ts` — may need transformer / plugin changes
-- `Warehouse_frontend/src/test-setup.ts` — may need zone.js or zoneless provider
-- `Warehouse_frontend/tsconfig.spec.json` — may need `emitDecoratorMetadata`
-- `Warehouse_frontend/package.json` — may need new dev-deps (`@swc/core`,
-  `unplugin-swc`, `@analogjs/vitest-angular`, etc.)
-- The 4 currently-failing spec files:
-  - `Warehouse_frontend/src/app/app.spec.ts` (2 fails)
-  - `Warehouse_frontend/src/app/core/logging/logging.spec.ts` (4 fails)
-  - `Warehouse_frontend/src/app/core/services/auth-context.service.spec.ts` (7 fails)
-  - `Warehouse_frontend/src/app/features/nomenclature/nomenclature-page/nomenclature-page.spec.ts` (2 fails)
-- Revert existing manual workarounds once the systematic fix is in place:
-  - `src/app/core/services/operations.service.spec.ts` (useFactory workaround)
-  - `src/app/features/temporary-items/components/temp-items-{table,filters,info-card,detail-modal}.spec.ts` (Object.defineProperty workaround)
-
-## Out of scope
-
-- Changes to `Warehouse_frontend/e2e/**` (Playwright uses its own runner, not vitest)
-- Changes to `Warehouse_web/**` and `SyncServer/**` (their own test stacks)
-- New test cases (this TZ only fixes existing tests, does not add new ones)
-- Production-code changes beyond what is strictly required by the fix
-- Refactor of `OperationsService`, `AuthContextService`, `LoggingService`, etc.
-  unless the chosen fix requires it
-- Migration to a different test runner (Jest, Karma, etc.) unless architect
-  explicitly chooses that path
-
-## 1. Problem statement
-
-`npx vitest` in `Warehouse_frontend` does not produce a working test
-environment for Angular services and components that rely on:
-
-1. Constructor-injected dependencies (Angular DI through `__metadata`).
-2. Signal-based change detection (Angular signals + zoneless CD).
-3. `inject()` calls outside constructor / factory function contexts.
-4. `HttpClientTestingController` intercepting requests to a real
-   `HttpClient` instance built from the angular DI graph.
-
-Three concrete failure modes are observed (see §2 for evidence).
-
-## 2. Evidence — failing tests and root causes
-
-### 2.1 Inventory at commit `b6175c8` (2026-07-27)
+### Baseline (verified by architect, 2026-07-31, commit `e6ef250`)
 
 ```
 $ npx vitest run
  Test Files  4 failed | 12 passed (16)
       Tests  15 failed | 91 passed (106)
+     Errors  1 error        # unhandled NG0201 DIAGNOSTICS_QUEUE_PORT
+
+$ npx ng test --watch=false
+Application bundle generation failed.   # 8 TS errors in 5 spec files (§3.4)
 ```
 
-### 2.2 Failure group A — `auth-context.service.spec.ts` (7 fails)
+## 2. Verified root causes (corrects the draft)
 
-All 7 tests fail with the same error:
+The draft attributed all 15 failures to "esbuild does not emit decorator
+metadata + missing zone.js". Architect verification found **five distinct
+root causes**, two of which the draft misdiagnosed:
 
-```
-NG0202: This constructor is not compatible with Angular Dependency Injection
-because its dependency at index 0 of the parameter list is invalid.
-This can happen if the dependency type is a primitive like a string or if
-an ancestor of this class is missing an Angular decorator.
-```
+### RC1 — constructor DI metadata missing (group A, 7 fails) — TRANSFORMER
 
-The service is the textbook Angular DI pattern:
+`auth-context.service.spec.ts`: `NG0202` at
+`TestBed.inject(AuthContextService)`. esbuild does not emit
+`__metadata("design:paramtypes", [BffApiService])`, and there is no ngtsc
+pass to generate an explicit `ɵfac`. Constructor-injected services cannot
+be built. **Fixed only by real Angular compilation.**
+
+### RC2 — signal `input()` invisible to JIT (group C, 2 fails) — TRANSFORMER
+
+`nomenclature-page.spec.ts`: the vitest log shows **dozens of
+`NG0303: Can't bind to 'canWrite' since it isn't a known property of
+'app-page-header'`** (and `app-action-buttons`, `app-catalog-tree`,
+`app-right-panel`, `app-search-input`). Signal inputs have no decorators;
+without the Angular compiler transform the JIT component definition does
+not register them, so every `[input]` binding is **silently dropped** and
+children render with defaults (title stays `Номенклатура`, `+ Категория`
+stays visible).
+
+> Draft correction: this is **not** "zoneless CD not picking up signal
+> changes" (draft §2.4). The DOM assertions fail because child inputs never
+> arrive. SWC with `emitDecoratorMetadata` (draft Approach A) **cannot**
+> fix this — there are no decorators to emit metadata for.
+
+The same RC2 explains why the temp-items specs needed the
+`Object.defineProperty` workaround: `componentRef.setInput()` targets
+inputs the runtime does not know.
+
+### RC3 — external `templateUrl` not resolvable (group D, 2 fails) — TRANSFORMER
+
+`app.spec.ts`: `Error: Component 'App' is not resolved`. `app.ts` is the
+**only** component in the codebase using `templateUrl`/`styleUrl` (all
+other 48 components use inline `template:` — verified by grep). Under
+JIT/esbuild there is no resource loader to fetch `./app.html`.
+
+> Draft correction: not a "DI metadata cascade" (draft §2.5).
+
+### RC4 — spec-local DI setup bugs (group B, 4 fails) — RUNNER-INDEPENDENT
+
+`logging.spec.ts` fails under **any** runner, including the official one:
+
+- `GlobalErrorHandler` tests call `new GlobalErrorHandler()`, but the class
+  uses `inject(DiagnosticsService)` / `inject(Router)` in field
+  initializers → `NG0203` (no injection context). No transformer fixes a
+  manual `new`.
+- `HttpErrorInterceptor` tests never provide `DiagnosticsService`; the
+  interceptor's `inject(DiagnosticsService)` pulls the real service, whose
+  own `inject(DIAGNOSTICS_QUEUE_PORT)` fails → `NG0201` (observed as the
+  unhandled error in the vitest run) → the request aborts before reaching
+  the testing backend → `expectOne(...)` finds none.
+
+> Draft correction: not "DI metadata missing means the spec cannot
+> discover what the service needs" (draft §2.3). The services here use
+> `inject()`; the spec simply lacks providers.
+
+### RC5 — spec type drift (blocks the official builder entirely) — NEW FINDING
+
+`npx ng test --watch=false` fails the `angular-compiler` plugin type-check
+before running any test. Complete inventory (TypeScript reports all
+errors; this list is exhaustive as of `e6ef250`):
+
+| # | File:line | Error | Drift |
+|---|---|---|---|
+| 1 | `src/app/core/diagnostics/diagnostics-queue.service.spec.ts:145` | TS2353 | `details: { x: huge }` — `x` not in `DiagnosticEventDetails` |
+| 2 | `src/app/core/guards/unsaved-draft.guard.spec.ts:16` | TS2554 | guard called with 1 arg; `CanDeactivateFn` type requires 4 |
+| 3 | `src/app/core/guards/unsaved-draft.guard.spec.ts:21` | TS2554 | same |
+| 4 | `src/app/core/guards/unsaved-draft.guard.spec.ts:27` | TS2554 | same |
+| 5 | `src/app/core/guards/unsaved-draft.guard.spec.ts:35` | TS2554 | same |
+| 6 | `src/app/core/services/draft-storage.service.spec.ts:14` | TS2739 | mock line missing `itemName`, `unitName`, `isTemporary`, `fromBalances` (`OperationLineDraftVm`) |
+| 7 | `src/app/core/services/operations.service.spec.ts:554` | TS18048 | `draft.displayNumber` possibly `undefined` |
+| 8 | `src/app/features/temporary-items/components/temp-item-detail-modal.spec.ts:21` | TS2741 | mock missing `operationsCount` (`TemporaryItemVm`) |
+
+esbuild never type-checks, so this drift is invisible to standalone
+vitest. It is real drift between specs and production models and must be
+repaired regardless of runner choice.
+
+## 3. Decision (architect)
+
+**Adopt the official `@angular/build:unit-test` (`ng test`) as the single
+unit-test runner; delete the standalone vitest configuration; fix RC4 and
+RC5 spec bugs; revert the two workaround patterns once the gate is green.**
+
+This is a refinement of the draft's Approach C. It is the only option that
+addresses RC1 + RC2 + RC3 with supported tooling, and it converts RC5 from
+invisible drift into a permanent compile-time gate.
+
+### Why the other approaches are rejected
+
+- **Approach A (SWC + `emitDecoratorMetadata`)** — fixes only RC1
+  (7 of 15 fails). Cannot fix RC2 (no decorators on signal inputs) or RC3
+  (no resource inlining). Would still leave 8 fails and both workarounds
+  in place. Rejected as insufficient.
+- **Approach B (`@analogjs/vitest-angular`)** — would address RC1–RC3 but
+  duplicates what `@angular/build` already provides out of the box, adds a
+  new dev-dependency whose Angular 21 / vitest 4 compatibility is
+  unverified, and keeps a second community toolchain to track. Rejected as
+  unnecessary risk for zero capability gain.
+- **Approach D (accept zoneless, rework specs)** — zoneless is already the
+  project's reality (no `zone.js` dependency at all). It addresses none of
+  RC1/RC2/RC3. Rejected as a primary approach; its discipline (explicit
+  `await fixture.whenStable()` around async flows) is absorbed into the
+  prescribed spec fixes.
+
+### Consequences (record for ADR-0024)
+
+- `vitest` remains the execution engine — via the Angular builder. CI and
+  developer muscle memory ("vitest runs the unit tests") are preserved.
+- The builder type-checks specs on every run: spec/model drift like RC5
+  becomes a build error instead of silent decay.
+- Watch-mode iteration is `npm test` (builder watch); single-run is
+  `npx ng test --watch=false` / `npm run test:unit`.
+- Two-runner divergence is eliminated by deleting `vitest.config.ts` and
+  `src/test-setup.ts` (the builder auto-initializes the TestBed — this is
+  stated in `test-setup.ts`'s own header comment).
+
+## 4. Scope
+
+### In scope (files the executor may modify)
+
+| File | Levels | Change |
+|---|---|---|
+| `src/app/core/diagnostics/diagnostics-queue.service.spec.ts` | L1 | RC5 fix #1 |
+| `src/app/core/guards/unsaved-draft.guard.spec.ts` | L1 | RC5 fixes #2–5 |
+| `src/app/core/services/draft-storage.service.spec.ts` | L1 | RC5 fix #6 |
+| `src/app/core/services/operations.service.spec.ts` | L1, L4 | RC5 fix #7; revert `useFactory` |
+| `src/app/features/temporary-items/components/temp-item-detail-modal.spec.ts` | L1, L5 | RC5 fix #8; revert `overrideInputs` |
+| `src/app/core/logging/logging.spec.ts` | L3 | RC4 rewrite (prescribed below) |
+| `src/app/app.spec.ts` | L2 (conditional) | only if R1 fires: add `provideRouter([])` |
+| `src/app/features/temporary-items/components/temp-items-table.spec.ts` | L5 | revert `overrideInputs` |
+| `src/app/features/temporary-items/components/temp-items-filters.spec.ts` | L5 | revert `overrideInputs` |
+| `src/app/features/temporary-items/components/temp-items-info-card.spec.ts` | L5 | revert `overrideInputs` |
+| `vitest.config.ts` | L6 | **delete** |
+| `src/test-setup.ts` | L6 | **delete** |
+| `package.json` | L6 | add `test:unit` script only |
+| `Warehouse_frontend/AGENTS.md` | L7 | verification section |
+| root `AGENTS.md` | L7 | verification matrix line |
+| `docs/adr/0024-frontend-unit-test-runner.md` (root repo) | L7 | new ADR (content prescribed) |
+| `.github/workflows/frontend-unit-tests.yml` (root repo) | L8 | new CI workflow (content prescribed) |
+
+### Out of scope
+
+- **All production source** (`src/app/**/*.ts` except `*.spec.ts`,
+  `src/app/**/*.html/scss`). No production change is believed necessary.
+  If the executor concludes one is required: STOP and escalate — that
+  invalidates an assumption of this TZ.
+- `e2e/**` and Playwright configuration (separate runner, untouched).
+- `Warehouse_web/**`, `SyncServer/**`.
+- New test cases (this TZ repairs existing tests only).
+- Production refactors (e.g., mass constructor-injection → `inject()`
+  migration) — explicitly NOT how RC1 is solved here.
+- Renaming or moving files.
+- Evaluating SWC / analogjs (rejected above; do not re-litigate without a
+  new ADR).
+
+## 5. Constraints and non-negotiables
+
+- Do not revert or weaken commits `8de71e4`, `b6175c8`, `00c4187`,
+  `0acb51c`. Note: `8de71e4` contains BOTH production fixes (keep) and the
+  two spec workarounds (reverted by L4/L5 — revert the workaround
+  *patterns* inside the spec files, not the commit).
+- No new dependencies are expected. `vitest` and `jsdom` stay in
+  `devDependencies` (the builder consumes them). If the executor finds a
+  dep genuinely missing, it goes to `devDependencies` only, with a note.
+- Do not introduce `zone.js` anywhere (tests included). The project is
+  zoneless by direction.
+- `package.json` scripts: add `test:unit`; do not rename or remove
+  existing scripts. CI (`e2e-tests.yml`) must keep passing unmodified.
+- `npm run build` must stay green at every level.
+- Keep specs type-clean: no `// @ts-ignore`, no blanket `as any` to dodge
+  RC5 fixes. Targeted casts (e.g., `undefined as never` for unused guard
+  params) are acceptable.
+- Commits: `dev` branch only, explicit pathspecs, only files owned by the
+  level being committed. No push (user pushes).
+
+## 6. Implementation levels
+
+### L0 — Context verification
+
+1. Read this TZ fully. Re-read `Warehouse_frontend/AGENTS.md` and the root
+   `AGENTS.md` Git Rules.
+2. Reproduce the baseline and paste numbers into the report:
+   - `npx vitest run` → expect 4 failed files / 15 failed tests (106 total).
+   - `npx ng test --watch=false` → expect build failure with the 8 errors
+     of §RC5.
+3. Confirm `git branch --show-current` = `dev` and `git status` shows no
+   unexpected edits in `src/`.
+
+Acceptance: baseline numbers match §1 (or differences are explained by
+intervening commits, which the executor must list).
+
+### L1 — Fix spec type drift (RC5)
+
+Apply these exact repairs (all spec-local):
+
+1. `diagnostics-queue.service.spec.ts:145` — replace
+   `details: { x: huge }` with `details: { error_message: huge }`
+   (preserves the >60 KB payload intent with a valid
+   `DiagnosticEventDetails` key).
+2. `unsaved-draft.guard.spec.ts` — at all 4 call sites, call the guard
+   with the full `CanDeactivateFn` arity. The guard body uses only
+   `component`; pass `undefined as never` for `currentRoute`,
+   `currentState`, `nextState`, e.g.
+   `unsavedDraftGuard(component, undefined as never, undefined as never, undefined as never)`.
+   Equivalent typed stubs are acceptable.
+3. `draft-storage.service.spec.ts` (`makeDraft`) — extend the line object:
+   add `itemName: 'Item 1'`, `unitName: 'шт'`, `isTemporary: false`,
+   `fromBalances: false` (fields per `OperationLineDraftVm`,
+   `operations.models.ts:288`).
+4. `operations.service.spec.ts:554` — change
+   `expect(draft.displayNumber.startsWith('7/')).toBe(true);` to
+   `expect(draft.displayNumber!.startsWith('7/')).toBe(true);`.
+5. `temp-item-detail-modal.spec.ts` (`mockItem`) — add
+   `operationsCount: 2` to the literal.
+
+Verify: `npx ng test --watch=false` now **builds and executes tests**.
+Record the resulting pass/fail counts. Expected: the suite runs; some
+failures may remain (they are the subject of L2–L3).
+
+Acceptance: build phase green; test execution starts; zero TS errors.
+Commit as `test(frontend): repair spec type drift for @angular/build:unit-test`
+with the 5 spec files staged explicitly.
+
+### L2 — Toolchain gate (RC1/RC2/RC3 proof)
+
+Run `npx ng test --watch=false` and classify every remaining failure.
+
+**Expected outcome (architect hypothesis):** the 12 previously-passing
+files stay green; `auth-context.service.spec.ts` (7), `app.spec.ts` (2),
+`nomenclature-page.spec.ts` (2) turn green **without any edits**, because
+the builder supplies decorator metadata, signal-input compilation, and
+template inlining. `logging.spec.ts` (4) stays red until L3.
+
+**Prescribed remedies (apply only if the matching symptom fires):**
+
+- **R1.** `app.spec.ts` fails with `NG0201: No provider found for
+  ActivatedRoute` (RouterOutlet in `app.html` with no router in the test
+  module): add `providers: [provideRouter([])]` to the
+  `TestBed.configureTestingModule` call in `app.spec.ts` (import
+  `provideRouter` from `@angular/router`). This is the ONLY production-
+  adjacent change allowed in this TZ, and it is spec-local.
+- **R2.** `nomenclature-page.spec.ts` still fails on timing (async
+  `initialize()` in `ngOnInit`): ensure the spec keeps the
+  `detectChanges() → await fixture.whenStable() → detectChanges()` rhythm
+  (already present). If it still fails, STOP and report — do not rewrite
+  the component.
+- **R3.** Any previously-green file regresses: STOP and report if more
+  than 2 files regress; otherwise document each and apply only remedies
+  from the R1/R2 classes.
+
+Acceptance (gate): **all** files green except `logging.spec.ts` (4 known
+fails). If the gate cannot be reached with the prescribed remedies, STOP:
+the migration assumption is broken; report evidence and do not proceed to
+L4–L6.
+
+### L3 — Fix `logging.spec.ts` DI setup (RC4)
+
+Rewrite the spec to provide what it consumes. Reference implementation
+(executor may adapt naming, must keep semantics):
 
 ```ts
-// src/app/core/services/auth-context.service.ts
-@Injectable({ providedIn: 'root' })
-export class AuthContextService {
-  constructor(private bff: BffApiService) {}
-  ...
-}
+import { TestBed } from '@angular/core/testing';
+import { HttpClient, provideHttpClient, withInterceptors } from '@angular/common/http';
+import { HttpTestingController, provideHttpClientTesting } from '@angular/common/http/testing';
+import { Router } from '@angular/router';
+import { httpErrorInterceptor } from './http-error.interceptor';
+import { GlobalErrorHandler } from './global-error-handler';
+import { DiagnosticsService } from '../diagnostics/diagnostics.service';
+
+// HttpErrorInterceptor tests: add to providers, alongside
+// provideHttpClient(withInterceptors([httpErrorInterceptor])) and
+// provideHttpClientTesting():
+//   { provide: DiagnosticsService, useValue: { track: vi.fn() } }
+//
+// GlobalErrorHandler tests: STOP using `new GlobalErrorHandler()`.
+// Instead:
+//   TestBed.configureTestingModule({
+//     providers: [
+//       GlobalErrorHandler,
+//       { provide: DiagnosticsService, useValue: { track: vi.fn() } },
+//       { provide: Router, useValue: { url: '/test' } },
+//     ],
+//   });
+//   const handler = TestBed.inject(GlobalErrorHandler);
 ```
 
-The spec uses `TestBed.configureTestingModule({ providers: [...] })`
-analogously to other working specs in the repo. The error fires at
-`TestBed.inject(AuthContextService)`.
+The existing assertions (`[HTTP]` console payload, `[GlobalError]`
+payload, rethrow) stay unchanged.
 
-**Root cause:** vitest's esbuild transformer does not emit the
-`__metadata("design:paramtypes", [BffApiService])` decorator metadata
-that Angular's `ɵfac` factory relies on. Without the metadata, the
-factory sees `Object / undefined` for parameter index 0 and rejects
-injection with NG0202.
+Verify: `npx ng test --watch=false` → **16/16 files, 106/106 tests green**.
 
-This same root cause used to break `operations.service.spec.ts`
-(23 tests) until commit `8de71e4` applied a manual workaround
-(`useFactory: () => new OperationsService(...)`). The architect may
-either (a) keep that workaround and apply it everywhere, or (b) fix the
-transformer and revert the workaround.
+Acceptance: full suite green. Commit as
+`test(frontend): provide DiagnosticsService/Router in logging spec`.
 
-### 2.3 Failure group B — `logging.spec.ts` (4 fails)
+### L4 — Revert `operations.service.spec.ts` `useFactory` workaround
 
-Two sub-groups, two different root causes:
+Replace the workaround provider block:
 
-**B1. `HttpErrorInterceptor` (2 tests)** — `Expected one matching request
-for criteria "Match URL: /bff/api/v1/test", found none.`
-
-`HttpClientTestingController.expectOne('/bff/api/v1/test')` does not
-match the request even though the interceptor and the `HttpClient.get(...)`
-call are exercised. Likely cause: the test provides a real `HttpClient`
-built from `provideHttpClient(...)`, but the testing controller only
-intercepts requests on a specific backend instance — and in the absence
-of a real `HttpBackend` from `provideHttpClientTesting()`, the
-interceptor chain may not be wired in the way `HttpClientTestingController`
-expects. This is a test-setup issue specific to the logging test
-harness, but it also fails to load the underlying provider chain
-because of the same NG0203 issue (see B2).
-
-**B2. `GlobalErrorHandler` (2 tests)** — `NG0203: The DiagnosticsService
-token injection failed. inject() function must be called from an
-injection context such as a constructor, a factory function, a field
-initializer, or a function used with runInInjectionContext.`
-
-Plus a follow-up chain:
-```
-No provider found for `InjectionToken DIAGNOSTICS_QUEUE_PORT`.
+```ts
+{
+  provide: OperationsService,
+  useFactory: () => new OperationsService(
+    bffMock as unknown as BffApiService, /* ...4 more casts... */
+  ),
+},
 ```
 
-The `GlobalErrorHandler` service uses `inject(DiagnosticsService)` (or
-similar) and depends on a token (`DIAGNOSTICS_QUEUE_PORT`) that is
-provided in the production bootstrap but **not** in the spec. Same
-class of issue as group A — DI metadata missing means the spec cannot
-discover what the service needs.
+with plain DI (constructor order per `operations.service.ts:67`):
 
-### 2.4 Failure group C — `nomenclature-page.spec.ts` (2 fails)
-
-```
-AssertionError: expected 'НоменклатураКатегории, ТМЦ, SKU, един…' to contain 'Каталог'
-AssertionError: expected 'НоменклатураКатегории, ТМЦ, SKU, един…' not to contain '+ Категория'
+```ts
+OperationsService,
+{ provide: BffApiService, useValue: bffMock },
+{ provide: AuthContextService, useValue: authMock },
+{ provide: CatalogSearchService, useValue: searchMock },
+{ provide: DiagnosticsSessionService, useValue: diagnosticsSessionMock },
+{ provide: DiagnosticsService, useValue: diagnosticsMock },
 ```
 
-The spec sets `authState.set({ userId: 'root-user', role: 'root', ... })`
-and then calls `fixture.detectChanges()`. It expects the rendered DOM to
-reflect the readonly/editable mode. It does not — the rendered DOM is
-stuck in the initial (pre-`set`) state.
+Verify: the file's 23 tests pass through the **real Angular DI graph**.
+Acceptance: `grep -n "useFactory" src/app/core/services/operations.service.spec.ts`
+returns nothing; suite green. Commit as
+`test(frontend): revert OperationsService useFactory workaround`.
 
-**Root cause:** without zone.js, Angular signal changes are not
-propagated to the DOM unless `detectChanges()` is called explicitly
-**after** the signal write. The spec does call `detectChanges()` after
-`authState.set(...)`, but the call may run before the signal
-notification has flushed through the change-detection scheduler. This
-is the same class of issue as the temp-items spec NG0950 problem we
-worked around with `Object.defineProperty` in commits `8de71e4` — but
-in those temp-items cases the workaround works because we are forcing
-the **value**, not relying on signal change propagation.
+### L5 — Revert temp-items `overrideInputs` workaround (4 files)
 
-### 2.5 Failure group D — `app.spec.ts` (2 fails)
+In `temp-items-table.spec.ts`, `temp-items-filters.spec.ts`,
+`temp-items-info-card.spec.ts`, `temp-item-detail-modal.spec.ts`:
 
+1. Delete the `overrideInputs(...)` helper and its doc comment.
+2. Replace each call with `fixture.componentRef.setInput('<name>', value)`
+   **before** the first `fixture.detectChanges()` (the detail-modal `item`
+   input is `input.required(...)` — setInput must precede CD).
+3. Keep existing async flush patterns (`await Promise.resolve()` chains or
+   migrate them to `await fixture.whenStable()` — either is acceptable if
+   green).
+
+Verify: `grep -rn "overrideInputs\|Object.defineProperty" src/app/features/temporary-items/`
+returns nothing; suite green.
+
+Acceptance: 4 files reverted, 106/106 green. Commit as
+`test(frontend): revert temp-items input overrides to componentRef.setInput`.
+
+### L6 — Remove the standalone vitest path
+
+1. Delete `vitest.config.ts` and `src/test-setup.ts`.
+2. `package.json` scripts: add `"test:unit": "ng test --watch=false"`.
+   Do not touch other scripts.
+3. `grep -rn "test-setup\|vitest.config" src/ angular.json tsconfig*.json package.json`
+   → no remaining references.
+4. `npm run build` green; `npx ng test --watch=false` green.
+
+Acceptance: single runner remains; no dangling references. Commit as
+`chore(frontend): drop standalone vitest config; canonical runner is ng test`.
+
+### L7 — Documentation
+
+1. `Warehouse_frontend/AGENTS.md` — Verification section: replace
+   "Add frontend tests once Angular test tooling is initialized." with:
+   "Run `npm run test:unit` (alias: `npx ng test --watch=false`,
+   `@angular/build:unit-test` + vitest) for unit tests. Standalone
+   `npx vitest` is removed; do not reintroduce `vitest.config.ts`."
+2. Root `AGENTS.md` — Verification matrix, `Warehouse_frontend/` row:
+   extend to "run `npm run build` and `npm run test:unit` after frontend
+   changes...". **Root repo file** — `Warehouse_frontend/` and the
+   workspace root are separate Git repositories (both on `dev`); L7/L8
+   produce two commit sets, one per repo, each with explicit pathspecs
+   per the respective Git Rules.
+3. Create `docs/adr/0024-frontend-unit-test-runner.md` (root repo) with:
+   - Context: esbuild-based standalone vitest cannot compile Angular
+     (NG0202/NG0303/unresolved templates; 15 red tests; invisible type
+     drift).
+   - Decision: `@angular/build:unit-test` is the single unit-test runner;
+     standalone `vitest.config.ts`/`test-setup.ts` deleted; zoneless kept;
+     no zone.js.
+   - Consequences: spec type drift now fails the build; watch via
+     `npm test`; single-run via `npm run test:unit`; rejected SWC
+     (insufficient) and analogjs (redundant dependency).
+4. `Warehouse_frontend/README.md` — add a one-line "Tests" note pointing
+   to `npm run test:unit` (currently absent).
+
+Acceptance: docs describe the new canonical command; ADR committed.
+
+### L8 — CI unit-test workflow
+
+Create `.github/workflows/frontend-unit-tests.yml` (root repo):
+
+```yaml
+name: Frontend Unit Tests
+on:
+  push:
+    branches: [dev, main]
+    paths: ['Warehouse_frontend/**']
+  pull_request:
+    branches: [dev, main]
+    paths: ['Warehouse_frontend/**']
+  workflow_dispatch:
+
+jobs:
+  unit:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    defaults:
+      run:
+        working-directory: Warehouse_frontend
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          # Matches local dev Node (v20.x as of 2026-07). Bump deliberately
+          # if the team upgrades the local toolchain.
+          node-version: 20
+          cache: npm
+          cache-dependency-path: Warehouse_frontend/package-lock.json
+      - run: npm ci
+      - run: npx ng test --watch=false
 ```
-Component 'App' is not resolved:
-```
 
-The root `App` component fails to instantiate. Most likely cause is the
-same DI metadata issue cascading into the root component's
-`provideRouter` / `provideHttpClient` chain. Likely resolves
-automatically once the underlying transformer / setup is fixed.
+Do not modify `e2e-tests.yml`. YAML validity is verified by the next CI
+run after the user pushes; if the executor has `actionlint` available,
+run it locally.
 
-## 3. Workarounds already in place (revertable)
+Acceptance: workflow file committed; `npm ci` compatibility confirmed
+locally (`package-lock.json` present).
 
-### 3.1 `operations.service.spec.ts` (commit `8de71e4`)
+### L9 — Final acceptance
 
-Replaced direct `providers: [OperationsService]` with
-`useFactory: () => new OperationsService(bffMock, authMock, searchMock,
-diagSessionMock, diagnosticsMock)`. This bypasses DI metadata by
-constructing the service with explicit arguments. Result: 22/23 pass,
-1 residual fix in commit `b6175c8` (`computeClientDisplayNumber`).
+| # | Criterion | Command / check |
+|---|---|---|
+| 1 | Suite green | `npx ng test --watch=false` → 16/16 files, 106/106 tests |
+| 2 | Single runner | `vitest.config.ts`, `src/test-setup.ts` absent; `npm run test:unit` works |
+| 3 | Workarounds gone | greps of L4/L5 return nothing |
+| 4 | Build green | `npm run build` |
+| 5 | No production diff | `git diff e6ef250..HEAD --stat -- src/app` lists only `*.spec.ts` (+ conditional `app.spec.ts`) |
+| 6 | E2E regression | `make test-e2e` from workspace root (stand protocol: probe health first; if stand unavailable, leave unchecked with blocker note) |
+| 7 | Docs | `Warehouse_frontend/AGENTS.md`, root `AGENTS.md`, ADR-0024 committed |
+| 8 | CI | workflow file present on `dev` |
+| 9 | Evidence | table below filled |
 
-**Drawback:** tests no longer exercise the real Angular DI graph for
-this service. A bug in `@Injectable({ providedIn: 'root' })` wiring
-would not be caught.
+## 7. Execution strategy
 
-### 3.2 `temp-items/components/*.spec.ts` (commit `8de71e4`)
+**Sequential by default.** The scope is small, several levels share files
+(`operations.service.spec.ts` in L1+L4, `temp-item-detail-modal.spec.ts`
+in L1+L5, `package.json`/docs in L6/L7), and L2 is a hard decision gate
+that must complete before any workaround revert.
 
-Replaced `fixture.componentRef.setInput(...)` with
-`Object.defineProperty(instance, 'rows', { get: () => () => mockItems,
-configurable: true })` in 4 spec files via an `overrideInputs(...)`
-helper. This bypasses the zoneless `setInput` issue by directly
-overriding the input getter on the component instance. Result: 7/7
-pass.
+**Staged-parallel option (max 2 threads), only after L2 passes:**
 
-**Drawback:** tests no longer exercise the real `input()` signal API
-for these components. A regression in the `@Input` / `input()` contract
-would not be caught.
+- Shard A: L3 (`logging.spec.ts`).
+- Shard B: L4 + L5 (service/temp-items specs).
+- Join: L6–L8 single-threaded (shared config/docs/CI files).
 
-## 4. Constraints and non-negotiables
+Ownership boundaries: spec files only per shard; `package.json`,
+`angular.json`, docs, workflows belong to the join phase. Integration
+point: after the join, one full-suite run + evidence table.
 
-- The TZ must **not** require a change to production code beyond what is
-  strictly required by the fix.
-- The TZ must **not** touch Playwright e2e specs (`Warehouse_frontend/e2e/**`).
-- The TZ must **not** change the public `package.json` test scripts
-  (e.g. `npm run test:unit`, `npm run build`) in a way that breaks CI.
-- Any new dev-dependency must be added to `devDependencies` only
-  (per `AGENTS.md` production-packaging rule).
-- The TZ must preserve the convention that `@playwright/test` is the
-  e2e runner and vitest is the unit-test runner. (Splitting the
-  universe is OK; collapsing the two is not in scope here.)
+Two repositories are touched: `Warehouse_frontend/` (specs, config, its
+`AGENTS.md`) and the workspace root (root `AGENTS.md`, `docs/adr/0024-*`,
+`.github/workflows/frontend-unit-tests.yml`). Commits are made per repo,
+on `dev`, with explicit pathspecs; never mixed.
 
-## 5. Implementation approaches (architect to choose one)
+## 8. Test ladder mapping
 
-### Approach A — Switch vitest transformer to SWC with emitDecoratorMetadata
+| Level | Applies | Where |
+|---|---|---|
+| 1 Static (type-check) | ✅ | every `npx ng test --watch=false` run (builder gate) |
+| 2 Unit | ✅ | the 106-test suite |
+| 3 Component (TestBed) | ✅ | app/nomenclature/temp-items specs |
+| 4 Integration (real DI) | ✅ | restored by L4/L5 reverts |
+| 5 Stand smoke | ✅ | `npm run build` + `make test-e2e` regression (L9 #6) |
+| 6 UI automation | ✅ (regression only) | Playwright via `make test-e2e` — no spec changes |
+| 7 User scenarios | ➖ N/A | no functional change |
+| 8 Regression pack | ✅ | L9 criteria 4–6 |
+| 9 Acceptance review | ✅ | L9 with evidence table |
 
-- Add `@swc/core` and `unplugin-swc` (or equivalent) as dev-deps.
-- Configure `vitest.config.ts` to use SWC for `.ts` files with
-  `emitDecoratorMetadata: true` and `experimentalDecorators: true`.
-- Update `tsconfig.spec.json` to set
-  `"emitDecoratorMetadata": true` and `"experimentalDecorators": true`.
-- Possibly add a small `vitest-swc-transform.ts` shim if plugin
-  ergonomics are poor.
-- Pros: minimal spec changes; reverts all existing workarounds cleanly.
-- Cons: SWC + Angular DI metadata is well-trodden but not zero-risk;
-  need to verify zone.js status (probably still need
-  `provideZoneChangeDetection` or `provideExperimentalZonelessChangeDetection`).
+## 9. Risks
 
-### Approach B — Use `@analogjs/vitest-angular`
+| Risk | Likelihood | Mitigation |
+|---|---|---|
+| Builder green-chain not pre-validated end-to-end (architect could not execute the fix chain without touching sources) | Medium | L1/L2 form an explicit gate: cheapest work first, STOP conditions prescribed, no reverts before the gate |
+| Latent runtime failures beyond R1–R3 under the builder | Low–Med | R3 stop-rule (>2 regressions → halt and report) |
+| Watch-mode slower than raw vitest | Low | Accepted; recorded in ADR-0024; single-run CI unaffected |
+| `make test-e2e` stand unavailable at L9 | — | Stand protocol: probe health, `make up` if down; else leave #6 unchecked with blocker note |
+| Reverts (L4/L5) uncover real DI/input bugs previously masked | Low | That is the intended effect; if found, executor reports and the fix becomes a follow-up TZ (production code is out of scope here) |
 
-- Add `@analogjs/vitest-angular` (or the official `@angular/build:unit-test`
-  builder if architect prefers ng test).
-- Replace `vitest.config.ts` content with the analog plugin config.
-- Pros: community-maintained, designed for exactly this use case,
-  handles `emitDecoratorMetadata` and zone bootstrapping.
-- Cons: another dependency to track; potentially heavy version bumps
-  aligned to Angular major versions; may not work for every Angular 21
-  feature.
+## 10. Evidence table (executor fills at L9)
 
-### Approach C — Migrate unit tests to `ng test`
-
-- Remove `vitest.config.ts` (or keep as legacy).
-- Update `package.json` `test:unit` script to `ng test --watch=false`.
-- Add `@angular/build:unit-test` builder config if not present.
-- Pros: official Angular test stack, fully supported, handles all
-  decorators / DI / zone issues out of the box.
-- Cons: potentially slower than vitest; rewrites or removes
-  `vitest.config.ts`; may require re-tooling CI scripts.
-
-### Approach D — Accept zoneless, rework specs
-
-- Add `provideExperimentalZonelessChangeDetection()` to test setup.
-- Update every affected spec to call `fixture.detectChanges()` after
-  every signal write / `setInput` call. Add `await fixture.whenStable()`
-  where needed.
-- Pros: aligns with Angular's stated direction (zoneless is the
-  future). Removes need for `Object.defineProperty` workarounds.
-- Cons: large refactor; may still hit NG0202 (DI metadata) unless
-  combined with Approach A or B.
-
-### Recommendation (informational, not binding)
-
-The architect is most likely to converge on **Approach A** (SWC with
-`emitDecoratorMetadata`) because it is the smallest delta, fully reverts
-the existing workarounds, and does not change the test runner
-(preserves CI investment in vitest).
-
-If the architect chooses A and discovers a residual zone issue
-(specs still don't see signal updates), layering **Approach D** on top
-is the expected next step.
-
-## 6. Acceptance criteria (architect to refine)
-
-The TZ is complete when:
-
-1. `npx vitest run` reports `Test Files  16 passed (16)` and
-   `Tests  106 passed (106)` (or higher, if new tests are added).
-2. The 4 file groups currently failing (app, logging, auth-context,
-   nomenclature-page) all pass.
-3. The two existing workarounds (operations.service.spec.ts useFactory,
-   temp-items/components/*.spec.ts Object.defineProperty) are reverted
-   in favor of the systematic fix — **or** explicitly kept with a
-   doc-comment explaining why they must remain.
-4. `npm run build` still passes.
-5. The chosen approach is documented in `src/test-setup.ts` and
-   `vitest.config.ts` with comments explaining the choice and the
-   trade-offs accepted.
-6. `AGENTS.md` verification matrix is updated if the canonical unit
-   test command changes (it should not change in Approach A; will
-   change in Approach C).
-7. CI passes (verify by running the same commands locally that CI
-   would run).
-
-## 7. Out of scope (re-stated)
-
-- Functional fixes to `AuthContextService`, `LoggingService`,
-  `NomenclaturePageComponent`, or any other production source file
-  beyond what the test setup change strictly requires.
-- Adding new test cases.
-- Refactoring the production code style (e.g. moving all constructor
-  injection to `inject()` field initializers, which would not in itself
-  fix the metadata issue but would make it less likely to recur).
-- Updating Playwright e2e specs.
-- Renaming files, moving directories.
-
-## 8. Open questions for the architect
-
-1. Do we keep vitest as the unit-test runner, or migrate to
-   `ng test`? (Drives the choice between Approach A/B and Approach C.)
-2. Is there a budget for adding a new dev-dependency
-   (`@swc/core`/`@analogjs/vitest-angular`)? Roughly +5–25 MB of
-   `node_modules` for SWC; +1–3 MB for analogjs.
-3. Is the project willing to commit to zoneless change detection as
-   the long-term direction, or do we want to keep zone.js available
-   for the unit tests even if production moves to zoneless later?
-4. Should the two existing workarounds (operations.service.spec.ts
-   useFactory, temp-items Object.defineProperty) be **reverted as part
-   of this TZ**, or left in place with a comment? (Architectural call —
-   reverting is more thorough but may uncover additional latent bugs
-   in DI / signal plumbing.)
-5. Does the chosen approach need to play nicely with the
-   `make test-e2e` Docker Playwright setup, or only with the local
-   `npm run test:unit` invocation? (Should not, but worth confirming.)
-
-## 9. Suggested evidence table for the final TZ
-
-When the architect converts this draft into a TZ, the final report
-should include an evidence table similar to:
-
-| Check | Command | Result | Evidence |
+| Check | Command / Tool | Result | Evidence |
 |---|---|---|---|
-| All vitest groups pass | `npx vitest run` | pass | 16/16 files, 106/106 tests |
-| Workaround reverted (ops) | `grep "useFactory" operations.service.spec.ts` | absent | (file path) |
-| Workaround reverted (temp-items) | `grep "Object.defineProperty" temp-items*.spec.ts` | absent | (file paths) |
-| Build still passes | `npm run build` | pass | log path |
-| tsconfig change documented | `tsconfig.spec.json` | pass | diff |
-| vitest config change documented | `vitest.config.ts` | pass | diff |
+| Baseline reproduced | `npx vitest run`; `npx ng test --watch=false` | pass/fail | numbers vs §1 |
+| Type drift fixed | `npx ng test --watch=false` (build phase) | pass | log |
+| Gate: groups A/C/D green | `npx ng test --watch=false` | pass | counts per file |
+| Group B fixed | `npx ng test --watch=false` | pass | log |
+| Workaround revert (ops) | `grep "useFactory" src/app/core/services/operations.service.spec.ts` | absent | output |
+| Workaround revert (temp-items) | `grep -rn "overrideInputs\|Object.defineProperty" src/app/features/temporary-items/` | absent | output |
+| Full suite | `npx ng test --watch=false` | pass | 16/16, 106/106 |
+| Build | `npm run build` | pass | log path |
+| E2E regression | `make test-e2e` | pass/skipped | report path or blocker |
+| Docs/ADR/CI | file presence + diff | pass | commit list |
 
-## 10. Reference commits (do not revert)
+## 11. Reference commits (do not revert)
 
-- `8de71e4` — temp-items page-size + first pass at vitest workarounds
-- `b6175c8` — operations.service `displayNumber` production fix +
-  `OperationDraftVm.displayNumber` type addition
+- `8de71e4` — temp-items page-size + first-pass spec workarounds (L4/L5
+  revert only the workaround patterns inside spec files)
+- `b6175c8` — `mapDtoToDraftVm` displayNumber fix
 - `00c4187` — Playwright TZ and Style System TZ closures
 - `0acb51c` — `TZ_TEMPORARY_ITEMS_ANGULAR` archival
-
-These are the most recent commits to `Warehouse_frontend` and represent
-the current state this TZ should be applied on top of.
+- `e6ef250` — investigator draft of this TZ (baseline for diffs)
