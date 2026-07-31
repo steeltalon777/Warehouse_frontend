@@ -69,4 +69,4 @@ Permanent standard:
 
 - Run `npm run build` after frontend changes once Angular scripts exist.
 - Use `make test-e2e` when the task touches Playwright coverage, browser flows, or CI parity.
-- Add frontend tests once Angular test tooling is initialized.
+- Run `npm run test:unit` (alias: `npx ng test --watch=false`, runs `@angular/build:unit-test` on top of vitest) for unit tests. The standalone `npx vitest` runner is removed — do not reintroduce `vitest.config.ts` or `src/test-setup.ts`. Watch-mode iteration is `npm test`; single-run is `npm run test:unit`. CI gating is `frontend-unit-tests.yml`.
