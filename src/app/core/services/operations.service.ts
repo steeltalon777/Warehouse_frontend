@@ -370,7 +370,21 @@ export class OperationsService {
       throw new Error('Не удалось сохранить операцию перед подтверждением');
     }
 
-    await this.submitOperation(operation.id, draft);
+    try {
+      await this.submitOperation(operation.id, draft);
+    } catch (err: any) {
+      // Enrich the rejected submit error with the freshly-saved server line
+      // ids so the UI can map the envelope `operation_line_ids` back to local
+      // rows for inline highlighting (TZ-FRONTEND §6). Server lines are
+      // ordered by line_number, which matches the submitted draft line order.
+      throw {
+        ...(err ?? {}),
+        operationId: operation.id,
+        serverLineIds: (operation.lines ?? []).map(line =>
+          line.id != null ? Number(line.id) : null,
+        ),
+      };
+    }
 
     return {
       operationId: operation.id,
@@ -570,6 +584,7 @@ export class OperationsService {
         isTemporary: l.is_temporary ?? false,
         fromBalances: false,
         inlineItem,
+        serverLineId: l.id != null ? Number(l.id) : null,
       };
     });
 

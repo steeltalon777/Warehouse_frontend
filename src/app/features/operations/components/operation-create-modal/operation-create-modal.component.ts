@@ -17,12 +17,14 @@ import { DiagnosticsService } from '../../../../core/diagnostics/diagnostics.ser
 import { DraftStorageService } from '../../../../core/services/draft-storage.service';
 import { BffApiService } from '../../../../core/api/bff-api.service';
 import { ItemCacheSearchComponent } from '../item-cache-search/item-cache-search.component';
-import { OperationLinesTableComponent } from './operation-lines-table.component';
+import { OperationLinesTableComponent, LineSubmitErrorState } from './operation-lines-table.component';
 import { InlineItemCreateModalComponent } from '../inline-item-create-modal/inline-item-create-modal.component';
 import { ErrorAlertComponent } from '../../../../shared/components/error-alert/error-alert.component';
 import { Item } from '../../../../core/models/nomenclature.models';
 import { IssueObject, IssueObjectType, ISSUE_OBJECT_TYPE_LABELS } from '../../../../core/models/issue-objects.models';
 import { snapshotDraft, isDraftClean } from './operation-draft-mappers';
+import { SubmitErrorService } from '../../submit-error/submit-error.service';
+import { buildSubmitToasts, collectUnknownSubmitErrors, formatSubmitStockHint } from './submit-error-toasts';
 
 let LOCAL_ID_COUNTER = 0;
 function nextLocalId(): string {
@@ -43,6 +45,7 @@ function currentDateTimeLocal(): string {
   selector: 'app-operation-create-modal',
   standalone: true,
   imports: [CommonModule, FormsModule, ItemCacheSearchComponent, OperationLinesTableComponent, InlineItemCreateModalComponent, ErrorAlertComponent],
+  providers: [SubmitErrorService],
   template: `
     <div class="wh-modal-overlay modal-overlay" [class.modal-overlay--pair]="isInlineModalOpen()">
       <div class="wh-modal modal-container">
@@ -56,7 +59,7 @@ function currentDateTimeLocal(): string {
               </div>
             }
           </div>
-          <button class="wh-btn-icon btn-close" aria-label="Закрыть" (click)="onCancelClick()">×</button>
+          <button class="wh-btn-icon btn-close" aria-label="Закрыть" data-submit-close-btn (click)="onCancelClick()">×</button>
         </div>
 
         <div class="wh-modal__body modal-body">
@@ -268,6 +271,7 @@ function currentDateTimeLocal(): string {
                 [isBalanceRefreshing]="isBalanceRefreshing()"
                 [operationType]="localDraft().type"
                 [isObjectSourceFlow]="isObjectSourceFlow()"
+                [submitErrorLines]="lineSubmitErrors()"
                 (quantityChange)="onQuantityChange($event.localId, $event.quantity)"
                 (removeLine)="removeLine($event)"
               />
@@ -316,6 +320,9 @@ function currentDateTimeLocal(): string {
               }
               <button class="wh-btn wh-btn--secondary btn btn-secondary" (click)="onCancelClick()">Отмена</button>
               <button class="wh-btn wh-btn--primary btn btn-primary" [disabled]="isSaving() || !!saveDisabledReason()" (click)="onSave()">Сохранить черновик</button>
+              @if (hasStaleVersion()) {
+                <button class="wh-btn wh-btn--secondary btn btn-secondary" data-testid="operation-submit-refresh" data-submit-refresh-btn (click)="onRefreshClick()">Обновить</button>
+              }
               <button class="wh-btn wh-btn--success btn btn-submit" [disabled]="!canSubmitComputed() || isSubmitting()" [title]="submitDisabledReason()" (click)="onSubmit()">Подтвердить</button>
             }
           </div>
@@ -327,6 +334,13 @@ function currentDateTimeLocal(): string {
             (create)="onInlineItemCreated($event)"
             (cancel)="closeInlineModal()"
           />
+        </div>
+      }
+      @if (toasts().length > 0) {
+        <div class="submit-toasts" data-testid="operation-submit-toast" role="alert" aria-live="assertive">
+          @for (toast of toasts(); track toast) {
+            <div class="submit-toast">{{ toast }}</div>
+          }
         </div>
       }
     </div>
@@ -521,6 +535,27 @@ function currentDateTimeLocal(): string {
       color: #92400E;
     }
 
+    .submit-toasts {
+      position: fixed;
+      top: 20px;
+      left: 50%;
+      transform: translateX(-50%);
+      z-index: 1100;
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+      width: min(560px, calc(100vw - 32px));
+    }
+    .submit-toast {
+      background: #7F1D1D;
+      color: #FFFFFF;
+      padding: 12px 16px;
+      border-radius: 8px;
+      box-shadow: 0 8px 24px rgba(0, 0, 0, 0.25);
+      font-size: 14px;
+      line-height: 1.4;
+    }
+
     .btn {
       display: inline-flex; align-items: center; justify-content: center;
       gap: 6px; height: 36px; padding: 0 14px;
@@ -638,6 +673,11 @@ export class OperationCreateModalComponent implements OnInit, OnDestroy {
   submitError = input<string>('');
   submitState = input<string>('editing');
   submitMessage = input<string>('');
+  /**
+   * Raw HTTP error body of a rejected submit (the problem envelope from
+   * TZ-FRONTEND §3). Nullable: when null the submit-error surface is reset.
+   */
+  submitErrorPayload = input<unknown>(null);
   save = output<OperationDraftVm>();
   submit = output<OperationDraftVm>();
   retrySubmit = output<OperationDraftVm>();
@@ -647,6 +687,8 @@ export class OperationCreateModalComponent implements OnInit, OnDestroy {
   delete = output<OperationDraftVm>();
   cancelOperation = output<OperationDraftVm>();
   acceptOperation = output<OperationDraftVm>();
+  /** Re-read the operation after a stale_version submit error (§8.2). */
+  refresh = output<void>();
 
   @ViewChild('itemSearch') private itemSearch?: ItemCacheSearchComponent;
 
@@ -657,6 +699,10 @@ export class OperationCreateModalComponent implements OnInit, OnDestroy {
   private readonly diag = inject(DiagnosticsService);
   private readonly draftStorage = inject(DraftStorageService);
   private readonly bff = inject(BffApiService);
+  private readonly submitErrorService = inject(SubmitErrorService);
+
+  /** Submit-error toasts shown after a rejected submit (§8). */
+  readonly toasts = signal<string[]>([]);
 
   readonly localDraft = signal<OperationDraftVm>({
     type: 'MOVE',
@@ -686,6 +732,40 @@ export class OperationCreateModalComponent implements OnInit, OnDestroy {
 
   readonly totalQuantity = computed(() => {
     return this.localDraft().lines.reduce((sum, l) => sum + (l.quantity ?? 0), 0);
+  });
+
+  /**
+   * Maps local rows to their submit-error display state via the server line id
+   * (TZ-FRONTEND §6). Malformed/unknown groups are excluded by the service's
+   * `linesByGroup`/`groups` (they are never stored with safe line ids).
+   */
+  readonly lineSubmitErrors = computed<Record<string, LineSubmitErrorState>>(() => {
+    const result: Record<string, LineSubmitErrorState> = {};
+    const linesByGroup = this.submitErrorService.linesByGroup();
+    const groups = this.submitErrorService.groups();
+    for (const line of this.lines()) {
+      if (line.serverLineId == null) continue;
+      const groupId = linesByGroup.get(line.serverLineId);
+      if (!groupId) continue;
+      const group = groups[groupId];
+      if (!group || group.error.kind !== 'known_line_group') continue;
+      result[line.localId] = {
+        groupId,
+        stale: group.stale,
+        text: formatSubmitStockHint(group.error),
+      };
+    }
+    return result;
+  });
+
+  /** True when the envelope carries a `stale_version` operation error (§8.2). */
+  readonly hasStaleVersion = computed(() => {
+    const envelope = this.submitErrorService.envelope();
+    return (
+      envelope?.errors.some(
+        error => error.kind === 'known_operation' && error.code === 'stale_version',
+      ) ?? false
+    );
   });
 
   readonly savedOperationId = signal<string | null>(null);
@@ -996,6 +1076,21 @@ export class OperationCreateModalComponent implements OnInit, OnDestroy {
       this.submitErrorLocal.set(this.submitError());
     });
 
+    // Submit-error surface: when a rejected-submit payload arrives, parse it
+    // into the service and render toasts + inline highlight + scroll/focus
+    // (§5.5, §8, §9). When it is cleared (new submit / open / success) reset
+    // the whole surface so nothing leaks into the next attempt.
+    effect(() => {
+      const raw = this.submitErrorPayload();
+      if (raw === null || raw === undefined) {
+        this.submitErrorService.clearAll();
+        this.clearToasts();
+        return;
+      }
+      this.submitErrorService.setFromHttpError(raw);
+      this.showSubmitErrorSurface();
+    });
+
     // TZ Stage 4 WP-1: debounced autosave (2s of inactivity)
     let autosaveTimer: ReturnType<typeof setTimeout> | null = null;
     effect(() => {
@@ -1086,6 +1181,10 @@ export class OperationCreateModalComponent implements OnInit, OnDestroy {
   }
 
   ngOnInit(): void {
+    // Lifecycle: never carry submit errors from a previous mount (§5.5). The
+    // component-level provider gives a fresh instance per mount anyway; this
+    // is belt-and-suspenders for component reuse.
+    this.submitErrorService.clearAll();
     this.attemptRestore();
   }
 
@@ -1296,6 +1395,7 @@ export class OperationCreateModalComponent implements OnInit, OnDestroy {
         .filter(l => l.localId !== localId)
         .map((l, idx) => ({ ...l, lineNumber: idx + 1 })),
     }));
+    this.invalidateLineErrors(localId);
   }
 
   onItemSelected(localId: string, item: Item): void {
@@ -1315,6 +1415,7 @@ export class OperationCreateModalComponent implements OnInit, OnDestroy {
           : l
       ),
     }));
+    this.invalidateLineErrors(localId);
     const line = this.lines().find(l => l.localId === localId);
     if (line) {
       this.updateLineStockHint(line);
@@ -1359,6 +1460,7 @@ export class OperationCreateModalComponent implements OnInit, OnDestroy {
           : l
       ),
     }));
+    this.invalidateLineErrors(localId);
   }
 
   onQuantityChange(localId: string, value: number | null): void {
@@ -1368,6 +1470,75 @@ export class OperationCreateModalComponent implements OnInit, OnDestroy {
         l.localId === localId ? { ...l, quantity: value } : l
       ),
     }));
+    // §10: editing a significant field invalidates the line's whole error group.
+    this.invalidateLineErrors(localId);
+  }
+
+  /**
+   * Submit-error surface after a rejected submit (§8-§9): toasts, unknown-code
+   * logging, scroll/focus to the first errored line.
+   */
+  private showSubmitErrorSurface(): void {
+    const envelope = this.submitErrorService.envelope();
+    this.setToasts(buildSubmitToasts(envelope));
+    for (const error of collectUnknownSubmitErrors(envelope)) {
+      console.error('[submit-error] unknown code', { code: error.code, error });
+    }
+    this.scrollFocusFirstErroredLine();
+  }
+
+  private setToasts(toasts: string[]): void {
+    this.toasts.set(toasts);
+  }
+
+  private clearToasts(): void {
+    this.toasts.set([]);
+  }
+
+  /** §9: scroll to and focus the first errored row's qty field, or a fallback button. */
+  private scrollFocusFirstErroredLine(): void {
+    setTimeout(() => {
+      const firstId = this.submitErrorService.firstErroredLineId();
+      if (firstId == null) {
+        this.focusFallbackButton();
+        return;
+      }
+      const localLine = this.lines().find(l => l.serverLineId === firstId);
+      if (!localLine) return;
+      const qtyInput = document.querySelector<HTMLElement>(
+        `[data-qty-for="${localLine.localId}"]`,
+      );
+      if (!qtyInput) return;
+      qtyInput.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      qtyInput.focus({ preventScroll: true });
+    });
+  }
+
+  private focusFallbackButton(): void {
+    let button: HTMLElement | null = null;
+    if (this.hasStaleVersion()) {
+      button = document.querySelector<HTMLElement>('[data-submit-refresh-btn]');
+    }
+    button ??= document.querySelector<HTMLElement>('[data-submit-close-btn]');
+    button?.focus();
+  }
+
+  /**
+   * §10: mark every error group that contains `localId`'s server line as stale,
+   * so the whole group's rows switch to the dashed outline.
+   */
+  private invalidateLineErrors(localId: string): void {
+    const line = this.lines().find(l => l.localId === localId);
+    if (!line || line.serverLineId == null) return;
+    const groupId = this.submitErrorService.linesByGroup().get(line.serverLineId);
+    if (!groupId) return;
+    const group = this.submitErrorService.groups()[groupId];
+    if (!group || group.error.kind !== 'known_line_group') return;
+    this.submitErrorService.invalidateByLineIds(group.error.operation_line_ids);
+  }
+
+  onRefreshClick(): void {
+    this.refresh.emit();
   }
 
   async onSave(): Promise<void> {
@@ -1411,6 +1582,10 @@ export class OperationCreateModalComponent implements OnInit, OnDestroy {
       });
       return;
     }
+    // Reset the previous submit-error surface before a new attempt (§5.5,
+    // §10.3): errors are cleared so the new submit starts clean.
+    this.submitErrorService.clearAll();
+    this.clearToasts();
     // Diagnostics: submit_clicked
     this.diag.track('submit_clicked', {
       draft: this.localDraft(),
@@ -1431,6 +1606,8 @@ export class OperationCreateModalComponent implements OnInit, OnDestroy {
       draft: this.localDraft(),
       hasUnsavedChanges: this.hasUnsavedChangesForDiagnostics(),
     });
+    this.submitErrorService.clearAll();
+    this.clearToasts();
   }
 
   private hasUnsavedChangesForDiagnostics(): boolean {

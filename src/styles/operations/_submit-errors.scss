@@ -1,0 +1,18 @@
+/* Submit-error inline highlighting (TZ-FRONTEND_OPERATION_SUBMIT_ERROR_SURFACE §6.3).
+ *
+ * Applied to the operation-lines-table rows that carry a line-group submit error.
+ * Color + outline (not color alone) is an a11y requirement; the stale variant
+ * uses a dashed outline so the visual difference does not depend on color.
+ */
+
+:root {
+  --color-error: var(--wh-color-danger, #c00);
+}
+
+.row--has-error {
+  outline: 2px solid var(--color-error, #c00);
+}
+
+.row--has-error--stale {
+  outline-style: dashed;
+}

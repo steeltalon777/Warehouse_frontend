@@ -136,6 +136,7 @@ type OperationSubmitState =
            [isSaving]="service.isSaving()"
            [isSubmitting]="service.isSubmitting() || submitState() === 'submitting' || submitState() === 'resolving'"
            [submitError]="createModalSubmitError()"
+           [submitErrorPayload]="createModalSubmitErrorPayload()"
            [submitState]="submitState()"
            [submitMessage]="submitMessage()"
            (save)="onDraftSave($event)"
@@ -143,6 +144,7 @@ type OperationSubmitState =
            (retrySubmit)="onDraftSubmit($event)"
            (resolveSubmit)="onResolveDraftSubmit($event)"
            (retryRefresh)="onRetryListRefresh()"
+           (refresh)="onDraftRefresh()"
           (cancel)="onDraftCancel()"
           (delete)="onDraftDelete($event)"
           (cancelOperation)="onDraftOperationCancel($event)"
@@ -371,6 +373,8 @@ export class OperationsPageComponent implements OnInit, OnDestroy {
   readonly confirmingOperation = signal<OperationListRowVm | null>(null);
   readonly invoiceLoadingOperationId = signal<string | null>(null);
   readonly createModalSubmitError = signal<string>('');
+  /** Raw rejected-submit payload (problem envelope) forwarded to the modal. */
+  readonly createModalSubmitErrorPayload = signal<unknown>(null);
   readonly submitState = signal<OperationSubmitState>('editing');
   readonly lastSubmitResult = signal<OperationSubmitResult | null>(null);
   readonly submitMessage = signal<string>('');
@@ -483,6 +487,7 @@ export class OperationsPageComponent implements OnInit, OnDestroy {
       lines: [],
     });
     this.createModalSubmitError.set('');
+    this.createModalSubmitErrorPayload.set(null);
     this.resetSubmitUx();
     this.showCreateModal.set(true);
   }
@@ -561,6 +566,7 @@ export class OperationsPageComponent implements OnInit, OnDestroy {
       draft.lastSavedSnapshot = snapshotDraft(draft);
       this.editingDraft.set(draft);
       this.createModalSubmitError.set('');
+      this.createModalSubmitErrorPayload.set(null);
       this.showCreateModal.set(true);
     } catch {
       // error already in service.error
@@ -751,6 +757,7 @@ export class OperationsPageComponent implements OnInit, OnDestroy {
         savedDraft.lastSavedSnapshot = snapshotDraft(savedDraft);
         this.editingDraft.set(savedDraft);
         this.createModalSubmitError.set('');
+        this.createModalSubmitErrorPayload.set(null);
       }
       void this.loadList();
     } catch (err: any) {
@@ -767,6 +774,7 @@ export class OperationsPageComponent implements OnInit, OnDestroy {
     this.lastSubmittedDraft = draft;
     this.submitState.set('submitting');
     this.createModalSubmitError.set('');
+    this.createModalSubmitErrorPayload.set(null);
     this.submitMessage.set('');
 
     try {
@@ -806,7 +814,43 @@ export class OperationsPageComponent implements OnInit, OnDestroy {
     }
 
     this.submitState.set('submit_failed');
-    this.createModalSubmitError.set(this.submitErrorMessage(code, err));
+
+    const rawPayload = this.extractSubmitErrorPayload(err);
+    if (rawPayload !== undefined) {
+      // Domain problem envelope: the modal renders the whole error surface
+      // (toasts, inline highlight, scroll/focus). Suppress the legacy banner
+      // so the user is not shown the same failure twice.
+      this.createModalSubmitErrorPayload.set(rawPayload);
+      this.createModalSubmitError.set('');
+    } else {
+      this.createModalSubmitErrorPayload.set(null);
+      this.createModalSubmitError.set(this.submitErrorMessage(code, err));
+    }
+
+    // Re-bind the draft so the modal re-reads it with the server line ids that
+    // were assigned during the save step of submit. Without them the envelope's
+    // `operation_line_ids` cannot be mapped back to local rows for inline
+    // highlighting (TZ-FRONTEND §6).
+    if (draft && Array.isArray(err?.serverLineIds)) {
+      const serverLineIds = err.serverLineIds as (number | null)[];
+      this.editingDraft.set({
+        ...draft,
+        id: draft.id ?? err?.operationId,
+        lines: draft.lines.map((line, index) => ({
+          ...line,
+          serverLineId: serverLineIds[index] ?? line.serverLineId ?? null,
+        })),
+      });
+    }
+  }
+
+  /** Raw body of an HTTP error that looks like a problem envelope / legacy detail. */
+  private extractSubmitErrorPayload(err: any): unknown {
+    const raw = err?.raw;
+    if (raw == null || typeof raw !== 'object' || Array.isArray(raw)) return undefined;
+    const record = raw as Record<string, unknown>;
+    if (Array.isArray(record['errors']) || typeof record['detail'] === 'string') return raw;
+    return undefined;
   }
 
   private async resolveUnknownOutcome(idempotencyKey?: string, draft?: OperationDraftVm): Promise<void> {
@@ -852,6 +896,7 @@ export class OperationsPageComponent implements OnInit, OnDestroy {
     this.submitState.set('submitted');
     this.submitMessage.set(`Операция №${result.displayNumber} проведена`);
     this.createModalSubmitError.set('');
+    this.createModalSubmitErrorPayload.set(null);
     this.editingDraft.update(current => current ? { ...current, id: result.operationId, status: result.status } : current);
   }
 
@@ -933,6 +978,7 @@ export class OperationsPageComponent implements OnInit, OnDestroy {
           isTemporary: line.isTemporary || serverLine.isTemporary,
           fromBalances: line.fromBalances || serverLine.fromBalances,
           inlineItem: line.inlineItem ?? serverLine.inlineItem ?? null,
+          serverLineId: serverLine.serverLineId ?? line.serverLineId ?? null,
           lineNumber: serverLine.lineNumber ?? line.lineNumber ?? index + 1,
         };
       }),
@@ -942,6 +988,30 @@ export class OperationsPageComponent implements OnInit, OnDestroy {
   onDraftCancel(): void {
     this.showCreateModal.set(false);
     this.editingDraft.set(null);
+    this.createModalSubmitErrorPayload.set(null);
+  }
+
+  /**
+   * stale_version submit error: re-read the operation so the user sees the
+   * current server state (TZ-FRONTEND §8.2). Errors are reset; the modal stays
+   * open with a fresh draft.
+   */
+  async onDraftRefresh(): Promise<void> {
+    const draft = this.editingDraft();
+    if (!draft?.id) return;
+    try {
+      const dto = await this.service.getOperation(draft.id);
+      if (!dto) return;
+      const freshDraft = this.service.mapDtoToDraftVm(dto);
+      freshDraft.lastSavedSnapshot = snapshotDraft(freshDraft);
+      this.editingDraft.set(freshDraft);
+      this.createModalSubmitError.set('');
+      this.createModalSubmitErrorPayload.set(null);
+      this.resetSubmitUx();
+      void this.loadList();
+    } catch {
+      // error already in service.error
+    }
   }
 
   async onDraftDelete(draft: OperationDraftVm): Promise<void> {
@@ -985,6 +1055,7 @@ export class OperationsPageComponent implements OnInit, OnDestroy {
         restoredDraft.lastSavedSnapshot = snapshotDraft(restoredDraft);
         this.editingDraft.set(restoredDraft);
         this.createModalSubmitError.set('');
+        this.createModalSubmitErrorPayload.set(null);
       }
       void this.loadList();
     } catch {

@@ -188,6 +188,11 @@ export class BffApiService {
     let status: string | undefined;
     let retrySafe: boolean | undefined;
 
+    // Preserve the raw HTTP error body so submit-error surfaces can parse the
+    // problem envelope (TZ-FRONTEND_OPERATION_SUBMIT_ERROR_SURFACE §4). Only
+    // attach it when a body is present; network/timeout errors have none.
+    const rawBody = error?.error;
+
     if (error.name === 'TimeoutError') {
       // Mutation-specific timeout → distinct operation_outcome_unknown
       return throwError(() => ({
@@ -225,6 +230,7 @@ export class BffApiService {
       request_id: requestId,
       status,
       retry_safe: retrySafe,
+      raw: rawBody,
     }));
   }
 }

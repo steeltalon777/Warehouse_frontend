@@ -315,6 +315,14 @@ export interface OperationLineDraftVm {
   /** Preserved line number from backend for stable ordering */
   lineNumber?: number;
   inlineItem?: OperationInlineItemDraftVm | null;
+  /**
+   * Server-side operation_line.id (stable integer after the operation was
+   * saved/submitted). Used by the submit-error surface to map envelope
+   * `operation_line_ids` back to local rows for inline highlighting
+   * (TZ-FRONTEND_OPERATION_SUBMIT_ERROR_SURFACE §1.3, §6). Null until the
+   * line has been persisted.
+   */
+  serverLineId?: number | null;
 }
 
 export interface TemporaryItemDraftVm {

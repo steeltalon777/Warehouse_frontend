@@ -1,6 +1,6 @@
 import { NgZone } from '@angular/core';
 import { TestBed } from '@angular/core/testing';
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { DiagnosticsSessionService } from '../services/diagnostics-session.service';
 import { DiagnosticEventVm, DiagnosticSeverity } from './diagnostics.models';
@@ -38,6 +38,12 @@ describe('DiagnosticsQueueService', () => {
     // Stop the interval timer to avoid leakage between tests
     service.resetForTests();
     fetchMock.mockClear();
+  });
+
+  afterEach(() => {
+    // Restore any global stubs (fetch, navigator) so they don't leak into
+    // other spec files — e.g. DefaultValueAccessor reads navigator.userAgent.
+    vi.unstubAllGlobals();
   });
 
   it('enqueue adds event to the queue', () => {

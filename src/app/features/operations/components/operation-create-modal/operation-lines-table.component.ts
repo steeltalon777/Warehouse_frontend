@@ -11,6 +11,13 @@ export interface LineQuantityChange {
   quantity: number | null;
 }
 
+/** Per-row submit-error display state (TZ-FRONTEND §6). */
+export interface LineSubmitErrorState {
+  groupId: string;
+  stale: boolean;
+  text: string;
+}
+
 @Component({
   selector: 'app-operation-lines-table',
   standalone: true,
@@ -65,7 +72,11 @@ export interface LineQuantityChange {
           </thead>
           <tbody>
             @for (line of filteredSortedLines(); track line.localId) {
-              <tr>
+              <tr
+                [class.row--has-error]="!!submitErrorState(line.localId)"
+                [class.row--has-error--stale]="!!submitErrorState(line.localId)?.stale"
+                [attr.data-testid]="submitErrorState(line.localId) ? 'operation-line-row--error' : null"
+              >
                 <td class="col-num">{{ line.lineNumber ?? '—' }}</td>
                 <td class="col-name">
                   <div class="item-info">
@@ -83,9 +94,12 @@ export interface LineQuantityChange {
                   <input
                     type="number"
                     class="wh-form-input qty-input"
-                    [class.qty-input--invalid]="!!line.error"
+                    [class.qty-input--invalid]="!!line.error || !!submitErrorState(line.localId)"
                     [ngModel]="line.quantity"
                     (ngModelChange)="onQtyChange(line.localId, $event)"
+                    [attr.aria-invalid]="line.error || submitErrorState(line.localId) ? 'true' : null"
+                    [attr.aria-describedby]="submitErrorState(line.localId) ? submitErrorHintId(line.localId) : null"
+                    [attr.data-qty-for]="line.localId"
                     min="0"
                     step="0.001"
                   />
@@ -117,6 +131,16 @@ export interface LineQuantityChange {
                   >×</button>
                 </td>
               </tr>
+              @if (submitErrorState(line.localId)) {
+                <tr class="submit-error-detail-row">
+                  <td colspan="5">
+                    <div class="submit-error-hint" [id]="submitErrorHintId(line.localId)" role="alert">
+                      <span class="submit-error-hint-icon" aria-hidden="true">!</span>
+                      <span data-testid="operation-line-submit-hint">{{ submitErrorState(line.localId)?.text }}</span>
+                    </div>
+                  </td>
+                </tr>
+              }
             } @empty {
               <tr>
                 <td colspan="5" class="empty-state">
@@ -281,6 +305,36 @@ export interface LineQuantityChange {
       color: #94A3B8;
       font-size: 13px;
     }
+
+    /* Submit-error inline highlighting (TZ-FRONTEND). */
+    .row--has-error > td {
+      background-color: #FEF2F2;
+    }
+    .row--has-error > td:first-child {
+      border-left: 3px solid var(--color-error, #c00);
+    }
+    .row--has-error--stale > td:first-child {
+      border-left-style: dashed;
+    }
+    .submit-error-detail-row > td {
+      background-color: #FEF2F2;
+      border-bottom: 1px solid #FECACA;
+      padding-top: 4px;
+      padding-bottom: 4px;
+    }
+    .submit-error-hint {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      font-size: 12px;
+      color: #991B1B;
+      line-height: 1.4;
+    }
+    .submit-error-hint-icon {
+      flex-shrink: 0;
+      font-size: 13px;
+      line-height: 1;
+    }
   `]
 })
 export class OperationLinesTableComponent {
@@ -289,6 +343,8 @@ export class OperationLinesTableComponent {
   isBalanceRefreshing = input<boolean>(false);
   operationType = input<OperationType | null>(null);
   isObjectSourceFlow = input<boolean>(false);
+  /** localId → submit-error display state (from the modal's SubmitErrorService). */
+  submitErrorLines = input<Record<string, LineSubmitErrorState>>({});
 
   quantityChange = output<LineQuantityChange>();
   removeLine = output<string>();
@@ -353,5 +409,13 @@ export class OperationLinesTableComponent {
 
   availableQuantity(line: OperationLineDraftVm): number {
     return line.availableQuantity ?? 0;
+  }
+
+  submitErrorHintId(localId: string): string {
+    return `submit-error-hint-${localId}`;
+  }
+
+  submitErrorState(localId: string): LineSubmitErrorState | undefined {
+    return this.submitErrorLines()[localId];
   }
 }
