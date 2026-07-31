@@ -103,7 +103,11 @@ async function getBalances(page: Page, siteId: string | number): Promise<Balance
   return body?.data?.items ?? (Array.isArray(body?.data) ? body.data : []);
 }
 
-/** First item with positive balance at a site + a second, different site. */
+/**
+ * First item with balance ≥ 3 at a site + a second, different site. We
+ * require at least 3 units so the success-after-fix scenario can demonstrate
+ * a safe fix (two lines each > 0 must sum to < balance).
+ */
 async function findMoveFixture(page: Page): Promise<{
   source: SiteRef;
   dest: SiteRef;
@@ -114,7 +118,7 @@ async function findMoveFixture(page: Page): Promise<{
   const sites = await getSites(page);
   for (const source of sites) {
     const rows = await getBalances(page, source.site_id);
-    const row = rows.find(r => parseFloat(r.qty) > 0);
+    const row = rows.find(r => parseFloat(r.qty) >= 3);
     const dest = sites.find(s => s.site_id !== source.site_id);
     if (row && dest) {
       return {

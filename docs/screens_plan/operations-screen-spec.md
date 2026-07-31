@@ -658,6 +658,8 @@ SKU: BOSCH-GBH-226
 Ошибка: Недостаточно
 ```
 
+Серверная ошибка приходит в problem envelope (`urn:warehouse:problem:operation-submit-rejected`); см. `docs/TZ-FRONTEND_OPERATION_SUBMIT_ERROR_SURFACE.md` §3, §6-§9 (inline-подсветка, toast, scroll/focus, stale-очистка, a11y) и ADR-0025.
+
 Example temporary item line:
 
 ```text
