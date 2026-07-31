@@ -551,7 +551,7 @@ describe('OperationsService', () => {
     // Format: `${site_id}/${hh}${mm}/${dd}${MM}${yy}` → "7/0942/150726"
     expect(draft.displayNumber).toMatch(/^7\/\d{4}\/\d{6}$/);
     // Belt-and-braces: verify the exact parts are in the right order.
-    expect(draft.displayNumber.startsWith('7/')).toBe(true);
+    expect(draft.displayNumber!.startsWith('7/')).toBe(true);
     // The date part must come last (ddMMYY), not before the time.
     expect(draft.displayNumber).toBe('7/0942/150726');
   });

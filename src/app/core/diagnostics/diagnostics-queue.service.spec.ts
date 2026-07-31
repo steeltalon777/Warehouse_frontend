@@ -142,7 +142,7 @@ describe('DiagnosticsQueueService', () => {
     vi.stubGlobal('navigator', { sendBeacon });
     // Add a critical event with a giant details blob
     const huge = 'x'.repeat(100_000);
-    service.enqueue(makeEvent({ severity: 'critical', details: { x: huge } }));
+    service.enqueue(makeEvent({ severity: 'critical', details: { error_message: huge } }));
     service['flushOnUnload']();
     expect(sendBeacon).not.toHaveBeenCalled();
   });

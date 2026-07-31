@@ -22,7 +22,7 @@ describe('TempItemDetailModalComponent', () => {
     id: 'ti-1', name: 'Test', createdAt: '19.05.2026 10:00', totalBalance: 10, unitSymbol: 'шт',
     uiStatus: 'needs_review' as const, uiStatusLabel: 'Требует разбора', createdByUserId: 'u-1',
     status: 'active' as const, canConvert: true, canMergeToPermanent: true, canMergeToTemp: true,
-    canDelete: false, hasPendingAcceptance: false,
+    canDelete: false, hasPendingAcceptance: false, operationsCount: 2,
   };
 
   beforeEach(async () => {

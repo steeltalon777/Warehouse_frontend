@@ -14,6 +14,10 @@ function makeDraft(overrides: Partial<OperationDraftVm> = {}): OperationDraftVm 
       {
         localId: 'L1',
         itemId: 'item-1',
+        itemName: 'Item 1',
+        unitName: 'шт',
+        isTemporary: false,
+        fromBalances: false,
         quantity: 5,
         inlineItem: null,
       },
