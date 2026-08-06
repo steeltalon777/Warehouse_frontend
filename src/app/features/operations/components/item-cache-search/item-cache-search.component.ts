@@ -30,17 +30,26 @@ function toItem(searchItem: CatalogSearchItem): Item {
   imports: [CommonModule, FormsModule],
   template: `
     <div class="item-search-wrapper" #wrapper>
-      <input
-        #inputEl
-        type="text"
-        class="wh-form-input input item-input"
-        [placeholder]="placeholder()"
-        [ngModel]="searchText()"
-        (ngModelChange)="onSearchChange($event)"
-        (focus)="onFocus()"
-        (keydown)="onKeydown($event)"
-        autocomplete="off"
-      />
+      <div class="item-search-row">
+        <input
+          #inputEl
+          type="text"
+          class="wh-form-input input item-input"
+          [placeholder]="placeholder()"
+          [ngModel]="searchText()"
+          (ngModelChange)="onSearchChange($event)"
+          (focus)="onFocus()"
+          (keydown)="onKeydown($event)"
+          autocomplete="off"
+        />
+        <button
+          type="button"
+          class="wh-btn btn-refresh-check"
+          data-testid="btn-refresh-check-items"
+          [disabled]="isSearching()"
+          (click)="onRefreshCheck()"
+        >Обновить и проверить</button>
+      </div>
       @if (searchText() && !selectedItem()) {
         <div class="search-dropdown">
           @if (isLoading() || isSearching()) {
@@ -81,6 +90,35 @@ function toItem(searchItem: CatalogSearchItem): Item {
   styles: [`
     .item-search-wrapper {
       position: relative;
+    }
+    .item-search-row {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+    }
+    .item-search-row .item-input {
+      flex: 1 1 auto;
+      min-width: 0;
+    }
+    .btn-refresh-check {
+      padding: 6px 10px;
+      border: 1px solid #D1D5DB;
+      border-radius: 8px;
+      background: #FFFFFF;
+      color: #1F2937;
+      font-size: 13px;
+      font-family: inherit;
+      white-space: nowrap;
+      flex-shrink: 0;
+      cursor: pointer;
+    }
+    .btn-refresh-check:hover:not(:disabled) {
+      border-color: #3B82F6;
+      color: #3B82F6;
+    }
+    .btn-refresh-check:disabled {
+      opacity: 0.55;
+      cursor: not-allowed;
     }
     .item-input {
       width: 100%;
@@ -163,6 +201,7 @@ export class ItemCacheSearchComponent implements OnDestroy {
 
   itemSelected = output<Item>();
   cleared = output<void>();
+  readonly refreshRequested = output<void>();
 
   private readonly catalogSearch = inject(CatalogSearchService);
   private readonly searchQuery$ = new Subject<string>();
@@ -287,5 +326,10 @@ export class ItemCacheSearchComponent implements OnDestroy {
     this.searchText.set('');
     this.localResults.set([]);
     this.highlightedIndex.set(-1);
+  }
+
+  onRefreshCheck(): void {
+    this.refreshRequested.emit();
+    this.catalogSearch.refreshItemsAuthoritative();
   }
 }
