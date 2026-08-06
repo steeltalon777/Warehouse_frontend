@@ -6,10 +6,11 @@ import { CatalogSearchService } from './catalog-search.service';
 import { DiagnosticsSessionService } from './diagnostics-session.service';
 import { DiagnosticsService } from '../diagnostics/diagnostics.service';
 import { of, throwError } from 'rxjs';
-import { OperationDto, OperationStatus, OperationType } from '../models/operations.models';
+import { OperationDto, OperationStatus, OperationType, OperationDraftVm, OperationLineDraftVm, ResolvedItemDto } from '../models/operations.models';
 
 describe('OperationsService', () => {
   let service: OperationsService;
+  let searchMock: { resolveItems: ReturnType<typeof vi.fn> };
   let bffMock: {
     getList: ReturnType<typeof vi.fn>;
     getData: ReturnType<typeof vi.fn>;
@@ -33,7 +34,7 @@ describe('OperationsService', () => {
       load: vi.fn(),
     };
 
-    const searchMock = { resolveItems: vi.fn() };
+    searchMock = { resolveItems: vi.fn() };
     const diagnosticsSessionMock = {
       lastServerRequestId: null,
       newIdempotencyKey: vi.fn(() => 'idem-fallback-uuid'),
@@ -558,7 +559,170 @@ describe('OperationsService', () => {
     // The date part must come last (ddMMYY), not before the time.
     expect(draft.displayNumber).toBe('7/0942/150726');
   });
+
+  // ─── Batch resolver / immutable status annotation (TZ-V3.2 W1.1) ─────
+
+  it('validateLinesBeforePersist resolves persisted item ids and keys by line localId', async () => {
+    searchMock.resolveItems.mockReturnValue(of([
+      { requested_id: 5, status: 'merged', canonical_item_id: 99, reason: 'merge_cycle', item: { name: 'Кабель силовой' } },
+      { requested_id: 6, status: 'active', item: { name: 'Разъём' } },
+    ]));
+
+    const draft: OperationDraftVm = {
+      type: 'RECEIVE',
+      status: 'draft',
+      lines: [
+        makeDraftLine('line-a', '5'),
+        makeDraftLine('line-b', '6'),
+        makeDraftLine('line-c', '5'), // duplicate item id → must still resolve
+        makeDraftLine('line-d', null), // no itemId → never sent to resolver
+      ],
+    };
+
+    const map = await service.validateLinesBeforePersist(draft);
+
+    // Duplicate item ids are deduplicated in the resolver request.
+    expect(searchMock.resolveItems).toHaveBeenCalledWith(['5', '6']);
+    // Results are keyed by the draft line's stable localId, not the item id.
+    expect(map.get('line-a')?.status).toBe('merged');
+    expect(map.get('line-a')?.canonical_item_id).toBe(99);
+    expect(map.get('line-b')?.status).toBe('active');
+    expect(map.get('line-c')?.status).toBe('merged');
+    expect(map.has('line-d')).toBe(false);
+  });
+
+  it('validateLinesBeforePersist rethrows structured resolver errors', async () => {
+    searchMock.resolveItems.mockReturnValue(throwError(() => ({ code: 'resolver_unavailable', message: 'Ресолвер недоступен' })));
+
+    const draft: OperationDraftVm = {
+      type: 'RECEIVE',
+      status: 'draft',
+      lines: [makeDraftLine('line-a', '5')],
+    };
+
+    await expect(service.validateLinesBeforePersist(draft)).rejects.toMatchObject({
+      code: 'resolver_unavailable',
+    });
+    expect(service.persistStatus()).toBe('rejected');
+    expect(service.persistError()?.code).toBe('resolver_unavailable');
+  });
+
+  describe('applyResolvedStatuses', () => {
+    it('returns new draft snapshot (does not mutate input)', () => {
+      const draft: OperationDraftVm = {
+        type: 'RECEIVE',
+        status: 'draft',
+        lines: [makeDraftLine('l1', '5')],
+      };
+      const resolved = new Map<string, ResolvedItemDto>([
+        ['l1', { requested_id: 5, status: 'merged', canonical_item_id: 99, item: { name: 'Кабель' } }],
+      ]);
+
+      const result = service.applyResolvedStatuses(draft, resolved);
+
+      expect(result).not.toBe(draft);
+      expect(result.lines).not.toBe(draft.lines);
+      expect(result.lines[0]).not.toBe(draft.lines[0]);
+      expect(draft.lines[0].resolvedStatus).toBeUndefined();
+      expect(draft.lines[0].canonicalItemId).toBeUndefined();
+      expect(result.lines[0].resolvedStatus).toBe('merged');
+    });
+
+    it('provisions resolvedStatus, canonicalItemId, canonicalItemName for each line', () => {
+      const draft: OperationDraftVm = {
+        type: 'RECEIVE',
+        status: 'draft',
+        lines: [makeDraftLine('l1', '5'), makeDraftLine('l2', '6')],
+      };
+      const resolved = new Map<string, ResolvedItemDto>([
+        ['l1', { requested_id: 5, status: 'merged', canonical_item_id: 99, reason: 'merge_cycle', item: { name: 'Кабель силовой' } }],
+        ['l2', { requested_id: 6, status: 'active', item: { name: 'Разъём' } }],
+      ]);
+
+      const result = service.applyResolvedStatuses(draft, resolved);
+
+      expect(result.lines[0].resolvedStatus).toBe('merged');
+      expect(result.lines[0].canonicalItemId).toBe(99);
+      expect(result.lines[0].canonicalItemName).toBe('Кабель силовой');
+      expect(result.lines[0].blockReason).toBe('merge_cycle');
+      expect(result.lines[1].resolvedStatus).toBe('active');
+      expect(result.lines[1].canonicalItemId).toBeNull();
+      expect(result.lines[1].blockReason).toBeUndefined();
+    });
+
+    it('leaves resolvedStatus undefined for lines not in resolved map', () => {
+      const draft: OperationDraftVm = {
+        type: 'RECEIVE',
+        status: 'draft',
+        lines: [makeDraftLine('l1', '5'), makeDraftLine('l2', '6')],
+      };
+      const resolved = new Map<string, ResolvedItemDto>([
+        ['l1', { requested_id: 5, status: 'active', item: null }],
+      ]);
+
+      const result = service.applyResolvedStatuses(draft, resolved);
+
+      expect(result.lines[1].resolvedStatus).toBeUndefined();
+      expect(result.lines[1].canonicalItemId).toBeUndefined();
+      expect(result.lines[1].canonicalItemName).toBeUndefined();
+      expect(result.lines[1].blockReason).toBeUndefined();
+    });
+
+    it('handles all five statuses (active, merged, inactive, deleted, missing)', () => {
+      const statuses = ['active', 'merged', 'inactive', 'deleted', 'missing'] as const;
+      const draft: OperationDraftVm = {
+        type: 'RECEIVE',
+        status: 'draft',
+        lines: statuses.map((_, i) => makeDraftLine(`l${i}`, String(i + 1))),
+      };
+      const resolved = new Map<string, ResolvedItemDto>(
+        statuses.map((s, i) => [`l${i}`, { requested_id: i + 1, status: s, item: null }])
+      );
+
+      const result = service.applyResolvedStatuses(draft, resolved);
+
+      statuses.forEach((s, i) => {
+        expect(result.lines[i].resolvedStatus).toBe(s);
+      });
+    });
+  });
+
+  describe('hasUnusableLines', () => {
+    it('is false for null draft and for active-only lines', () => {
+      expect(service.hasUnusableLines(null)).toBe(false);
+      const draft: OperationDraftVm = {
+        type: 'RECEIVE',
+        status: 'draft',
+        lines: [{ ...makeDraftLine('l1', '5'), resolvedStatus: 'active' }],
+      };
+      expect(service.hasUnusableLines(draft)).toBe(false);
+    });
+
+    it('is true when any line carries a non-active resolvedStatus', () => {
+      const draft: OperationDraftVm = {
+        type: 'RECEIVE',
+        status: 'draft',
+        lines: [
+          { ...makeDraftLine('l1', '5'), resolvedStatus: 'active' },
+          { ...makeDraftLine('l2', '6'), resolvedStatus: 'merged' },
+        ],
+      };
+      expect(service.hasUnusableLines(draft)).toBe(true);
+    });
+  });
 });
+
+function makeDraftLine(localId: string, itemId: string | null): OperationLineDraftVm {
+  return {
+    localId,
+    itemId,
+    itemName: 'Товар',
+    unitName: 'шт',
+    quantity: 1,
+    isTemporary: false,
+    fromBalances: false,
+  };
+}
 
 function makeOperation(status: OperationStatus, overrides: Partial<OperationDto> = {}): OperationDto {
   return {

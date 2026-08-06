@@ -798,6 +798,19 @@ export class ObjectPanelComponent implements OnInit, OnDestroy {
     }
   }
 
+  // TODO(W2.1 tests): unit tests for onModalSubmit modal-open semantics are
+  // deferred — no object-panel.component.spec.ts exists in the repo yet and
+  // creating one is out of scope for this shard. Cover when the spec file is
+  // introduced: closes on submitted outcome; stays open on business reject,
+  // version conflict, and outcome_unknown.
+  /**
+   * TZ V3.2 Stage D extension §7.4 #16: close the modal ONLY on a fully
+   * successful submit. On any failure — business reject, version conflict,
+   * unknown outcome, network error — the modal STAYS OPEN so the user can
+   * correct the draft and retry. `OperationsService.persistState` already
+   * carries the outcome (rejected / conflict / outcome_unknown) and the
+   * error surface is rendered by the modal's own persist status display.
+   */
   async onModalSubmit(draft: OperationDraftVm): Promise<void> {
     try {
       const result = draft.id
@@ -805,15 +818,20 @@ export class ObjectPanelComponent implements OnInit, OnDestroy {
         : await this.operationsService.createOperation(draft);
       if (!result) return;
       await this.operationsService.submitOperation(result.id);
-    } catch {
-      // error is already exposed via operationsService.error
+      // Success path only — close the modal and drop the draft.
+      this.showCreateModal.set(false);
+      this.modalDraft.set(null);
+    } catch (err) {
+      // Submit/save failed — modal STAYS OPEN. persistState is already
+      // updated by OperationsService; the user sees the error via the
+      // modal's persist status display and can retry or cancel.
+      console.warn('operation submit failed, modal stays open:', err);
     } finally {
+      // Refresh assigned assets regardless of outcome (same as before).
       const id = this.object()?.id;
       if (id) {
         await this.service.loadObjectAssets(id);
       }
-      this.showCreateModal.set(false);
-      this.modalDraft.set(null);
     }
   }
 

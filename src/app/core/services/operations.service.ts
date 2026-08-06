@@ -151,13 +151,17 @@ export class OperationsService {
   }
 
   /**
-   * TZ D3: batch-resolve persisted (non-temporary) item IDs in the draft.
-   * Returns per-line resolve statuses. Blocks Save/Submit for unusable items.
+   * TZ D3 / TZ-V3.2 §4.2: batch-resolve persisted (non-temporary) item IDs
+   * in the draft. Returns per-line resolve statuses keyed by the draft line's
+   * stable localId (W1.1: keyed by line localId, not item id, so duplicate
+   * item rows resolve independently). Blocks Save/Submit for unusable items.
+   * Resolver failures set persistState to 'rejected' and rethrow the
+   * structured error from the BFF layer (code/message).
    */
   async validateLinesBeforePersist(draft: OperationDraftVm): Promise<Map<string, ResolvedItemDto>> {
-    const persistedIds: string[] = draft.lines
-      .filter(l => l.itemId && !l.isTemporary && !l.inlineItem)
-      .map(l => String(l.itemId));
+    const persistedLines = draft.lines
+      .filter(l => l.itemId && !l.isTemporary && !l.inlineItem);
+    const persistedIds = Array.from(new Set(persistedLines.map(l => String(l.itemId))));
 
     if (!persistedIds.length) return new Map();
 
@@ -167,9 +171,16 @@ export class OperationsService {
       const results = await firstValueFrom(
         this.catalogSearch.resolveItems(persistedIds)
       );
-      const map = new Map<string, ResolvedItemDto>();
+      const byItemId = new Map<string, ResolvedItemDto>();
       for (const r of results) {
-        map.set(String(r.requested_id), r);
+        byItemId.set(String(r.requested_id), r);
+      }
+      // Key the result by the draft line's stable localId so callers can
+      // look up per-line statuses (see applyResolvedStatuses).
+      const map = new Map<string, ResolvedItemDto>();
+      for (const line of persistedLines) {
+        const resolved = byItemId.get(String(line.itemId));
+        if (resolved) map.set(line.localId, resolved);
       }
       return map;
     } catch (err: any) {
@@ -185,6 +196,49 @@ export class OperationsService {
   isItemUnusable(status: ItemResolveStatus | undefined): boolean {
     if (!status) return false;
     return status === 'merged' || status === 'inactive' || status === 'deleted' || status === 'missing';
+  }
+
+  /**
+   * TZ-V3.2 §4.2 / Stage D W1.1: immutably annotate draft lines with their
+   * per-line resolver statuses. Returns a NEW OperationDraftVm snapshot —
+   * the input draft (and its lines) is never mutated.
+   *
+   * For every line the corresponding resolved entry (keyed by the line's
+   * stable localId) supplies: resolvedStatus, canonicalItemId, canonicalItemName
+   * and blockReason. Lines missing from the map keep `resolvedStatus`
+   * undefined ("not checked"). canonicalItemId is null for unusable targets.
+   */
+  applyResolvedStatuses(
+    draft: OperationDraftVm,
+    resolved: Map<string, ResolvedItemDto>
+  ): OperationDraftVm {
+    const lines: OperationLineDraftVm[] = (draft.lines ?? []).map(line => {
+      const entry = resolved.get(line.localId);
+      if (!entry) {
+        return { ...line, resolvedStatus: undefined };
+      }
+      return {
+        ...line,
+        resolvedStatus: entry.status,
+        canonicalItemId: entry.canonical_item_id ?? null,
+        canonicalItemName: entry.item?.name,
+        blockReason: entry.reason ?? undefined,
+      };
+    });
+    return { ...draft, lines };
+  }
+
+  /**
+   * TZ-V3.2 §4.2 / W1.2: true when any draft line carries a non-active
+   * resolvedStatus (merged/inactive/deleted/missing) — the modal uses this to
+   * block Save/Submit. The service holds no currentDraft signal (the modal
+   * owns the draft via its localDraft signal), so this is a pure helper:
+   * W1.2 wraps it as `computed(() => operationsService.hasUnusableLines(localDraft()))`.
+   */
+  hasUnusableLines(draft: OperationDraftVm | null): boolean {
+    return draft?.lines?.some(l =>
+      l.resolvedStatus !== undefined && l.resolvedStatus !== 'active'
+    ) ?? false;
   }
 
   // ─── Persist state machine transitions ───────────────────────

@@ -323,6 +323,17 @@ export interface OperationLineDraftVm {
    * line has been persisted.
    */
   serverLineId?: number | null;
+  /**
+   * Per-line resolver status (TZ-V3.2 §4.2). Set by validateLinesBeforePersist /
+   * applyResolvedStatuses. Undefined = line not yet checked.
+   */
+  resolvedStatus?: 'active' | 'merged' | 'inactive' | 'deleted' | 'missing';
+  /** Canonical target item id when resolvedStatus === 'merged', null for unusable. */
+  canonicalItemId?: string | number | null;
+  /** Canonical target item name (для UI: «Удалена», «Объединена → <name>»). */
+  canonicalItemName?: string;
+  /** Machine-readable reason code (merge_cycle, target_deleted, target_inactive, target_missing). */
+  blockReason?: string;
 }
 
 export interface TemporaryItemDraftVm {

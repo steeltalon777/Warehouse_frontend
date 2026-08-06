@@ -75,7 +75,9 @@ export interface LineSubmitErrorState {
               <tr
                 [class.row--has-error]="!!submitErrorState(line.localId)"
                 [class.row--has-error--stale]="!!submitErrorState(line.localId)?.stale"
-                [attr.data-testid]="submitErrorState(line.localId) ? 'operation-line-row--error' : null"
+                [class.unusable]="line.resolvedStatus && line.resolvedStatus !== 'active'"
+                [attr.data-testid]="submitErrorState(line.localId) ? 'operation-line-row--error' : 'line-' + line.localId"
+                [attr.data-line-status]="line.resolvedStatus ?? null"
               >
                 <td class="col-num">{{ line.lineNumber ?? '—' }}</td>
                 <td class="col-name">
@@ -88,6 +90,22 @@ export interface LineSubmitErrorState {
                       <span class="item-cat">{{ line.categoryName }}</span>
                     }
                     <span class="item-unit">{{ line.unitName }}</span>
+                    @if (line.resolvedStatus && line.resolvedStatus !== 'active') {
+                      <span
+                        class="line-status"
+                        [class.line-status--merged]="line.resolvedStatus === 'merged'"
+                        [class.line-status--deleted]="line.resolvedStatus === 'deleted'"
+                        [class.line-status--inactive]="line.resolvedStatus === 'inactive'"
+                        [class.line-status--missing]="line.resolvedStatus === 'missing'"
+                        [attr.data-testid]="'line-blocked'"
+                        [attr.data-status]="line.resolvedStatus"
+                        [title]="line.blockReason ?? null">
+                        {{ statusLabel(line.resolvedStatus) }}
+                        @if (line.resolvedStatus === 'merged' && line.canonicalItemName) {
+                          → {{ line.canonicalItemName }}@if (line.canonicalItemId) { ({{ line.canonicalItemId }})}
+                        }
+                      </span>
+                    }
                   </div>
                 </td>
                 <td class="col-qty">
@@ -335,6 +353,27 @@ export interface LineSubmitErrorState {
       font-size: 13px;
       line-height: 1;
     }
+
+    /* Blocked-line markers (TZ-V3.2 §5.2 W1.3). */
+    .unusable {
+      background: #FEF2F2 !important;
+    }
+    .unusable td {
+      color: #6B7280;
+    }
+    .line-status {
+      display: inline-block;
+      margin-left: 8px;
+      padding: 2px 8px;
+      border-radius: 4px;
+      font-size: 11px;
+      font-weight: 500;
+      vertical-align: middle;
+    }
+    .line-status--merged { background: #FFFBEB; color: #D97706; }
+    .line-status--deleted { background: #FEF2F2; color: #DC2626; }
+    .line-status--inactive { background: #F3F4F6; color: #6B7280; }
+    .line-status--missing { background: #FEF2F2; color: #DC2626; }
   `]
 })
 export class OperationLinesTableComponent {
@@ -417,5 +456,15 @@ export class OperationLinesTableComponent {
 
   submitErrorState(localId: string): LineSubmitErrorState | undefined {
     return this.submitErrorLines()[localId];
+  }
+
+  statusLabel(status: 'active' | 'merged' | 'inactive' | 'deleted' | 'missing'): string {
+    switch (status) {
+      case 'merged': return 'Объединена';
+      case 'deleted': return 'Удалена';
+      case 'inactive': return 'Неактивна';
+      case 'missing': return 'Отсутствует';
+      case 'active': return 'Активна';
+    }
   }
 }

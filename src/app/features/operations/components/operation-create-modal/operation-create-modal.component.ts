@@ -1,4 +1,4 @@
-import { Component, input, output, signal, computed, effect, inject, OnInit, OnDestroy, ViewChild } from '@angular/core';
+import { Component, input, output, signal, computed, effect, inject, ChangeDetectorRef, OnInit, OnDestroy, ViewChild } from '@angular/core';
 import { AuthContextService } from '../../../../core/services/auth-context.service';
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
@@ -75,6 +75,14 @@ function currentDateTimeLocal(): string {
               data-testid="operation-submit-result"
             >
               {{ submitMessage() }}
+            </div>
+          }
+          @if (refreshError(); as err) {
+            <div
+              class="refresh-error-banner"
+              data-testid="refresh-check-error"
+              role="alert">
+              <strong>Не удалось проверить ТМЦ:</strong> {{ err.message }}
             </div>
           }
           <div class="modal-content-shell">
@@ -234,6 +242,7 @@ function currentDateTimeLocal(): string {
                       [placeholder]="'Поиск ТМЦ для добавления: название, SKU или хештег...'"
                       [sourceSiteId]="relevantSiteId()"
                       (itemSelected)="onNewItemSelected($event)"
+                      (refreshRequested)="onRefreshCheckItems()"
                     />
                     @if (inlineItemsForSearch().length > 0) {
                       <div class="inline-search-hint">
@@ -319,11 +328,11 @@ function currentDateTimeLocal(): string {
                 }
               }
               <button class="wh-btn wh-btn--secondary btn btn-secondary" (click)="onCancelClick()">Отмена</button>
-              <button class="wh-btn wh-btn--primary btn btn-primary" [disabled]="isSaving() || !!saveDisabledReason()" (click)="onSave()">Сохранить черновик</button>
+              <button class="wh-btn wh-btn--primary btn btn-primary" [disabled]="isSaving() || !!saveDisabledReason() || isRefreshing() || hasUnusableLines()" (click)="onSave()">Сохранить черновик</button>
               @if (hasStaleVersion()) {
                 <button class="wh-btn wh-btn--secondary btn btn-secondary" data-testid="operation-submit-refresh" data-submit-refresh-btn (click)="onRefreshClick()">Обновить</button>
               }
-              <button class="wh-btn wh-btn--success btn btn-submit" [disabled]="!canSubmitComputed() || isSubmitting()" [title]="submitDisabledReason()" (click)="onSubmit()">Подтвердить</button>
+              <button class="wh-btn wh-btn--success btn btn-submit" [disabled]="!canSubmitComputed() || isSubmitting() || isRefreshing() || hasUnusableLines()" [title]="submitDisabledReason()" (click)="onSubmit()">Подтвердить</button>
             }
           </div>
         </div>
@@ -534,6 +543,15 @@ function currentDateTimeLocal(): string {
       border-color: #FDE68A;
       color: #92400E;
     }
+    .refresh-error-banner {
+      padding: 8px 12px;
+      background: #FEF2F2;
+      color: #DC2626;
+      border: 1px solid #FCA5A5;
+      border-radius: 6px;
+      font-size: 13px;
+      margin: 8px 0;
+    }
 
     .submit-toasts {
       position: fixed;
@@ -700,6 +718,7 @@ export class OperationCreateModalComponent implements OnInit, OnDestroy {
   private readonly draftStorage = inject(DraftStorageService);
   private readonly bff = inject(BffApiService);
   private readonly submitErrorService = inject(SubmitErrorService);
+  private readonly cdr = inject(ChangeDetectorRef);
 
   /** Submit-error toasts shown after a rejected submit (§8). */
   readonly toasts = signal<string[]>([]);
@@ -779,6 +798,21 @@ export class OperationCreateModalComponent implements OnInit, OnDestroy {
 
   readonly isBalanceRefreshing = signal<boolean>(false);
   private balanceRefreshSeq = 0;
+
+  /** True while draft lines are being re-validated against the catalog (TZ-V3.2 W1.2). */
+  readonly isRefreshing = signal(false);
+  /** Structured resolver error from a failed check (502/503/unavailable). */
+  readonly refreshError = signal<{ code: string; message: string } | null>(null);
+
+  /**
+   * TZ-V3.2 §4.2 / W1.2: true when any line carries a non-active
+   * resolvedStatus (merged/inactive/deleted/missing) — blocks Save/Submit
+   * until the affected rows are fixed. Delegates to the service helper which
+   * owns the status semantics (W1.1 contract).
+   */
+  readonly hasUnusableLines = computed<boolean>(() =>
+    this.service.hasUnusableLines(this.localDraft()),
+  );
 
   readonly typeOptions = (Object.entries(OPERATION_TYPE_LABELS) as [OperationType, string][])
     .map(([key, label]) => ({ key, label }));
@@ -1539,6 +1573,37 @@ export class OperationCreateModalComponent implements OnInit, OnDestroy {
 
   onRefreshClick(): void {
     this.refresh.emit();
+  }
+
+  /**
+   * TZ-V3.2 §5.2 (W1.2): re-validate persisted draft lines against the
+   * catalog after a cache refresh. The item-cache-search emits
+   * `refreshRequested` when the user clicks «Обновить и проверить»
+   * (btn-refresh-check-items); this handler batch-resolves the draft's
+   * persisted item IDs and annotates each line with its resolver status via
+   * the service. Unusable lines (merged/inactive/deleted/missing) then block
+   * Save/Submit through `hasUnusableLines()`.
+   */
+  async onRefreshCheckItems(): Promise<void> {
+    const draft = this.localDraft();
+    if (!draft) return;
+
+    this.isRefreshing.set(true);
+    this.refreshError.set(null);
+
+    try {
+      const resolved = await this.service.validateLinesBeforePersist(draft);
+      const updated = this.service.applyResolvedStatuses(draft, resolved);
+      this.localDraft.set(updated);
+      this.cdr.markForCheck();
+    } catch (err: any) {
+      // Structured error from the resolver (502/503/unavailable).
+      const code = err?.error?.code ?? err?.code ?? 'resolver_unavailable';
+      const message = err?.error?.message ?? err?.message ?? 'Не удалось проверить ТМЦ';
+      this.refreshError.set({ code, message });
+    } finally {
+      this.isRefreshing.set(false);
+    }
   }
 
   async onSave(): Promise<void> {
