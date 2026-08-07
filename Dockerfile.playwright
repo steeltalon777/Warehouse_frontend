@@ -1,0 +1,18 @@
+# Playwright E2E runner with extra OS dependencies.
+#
+# Base: microsoft official Playwright image (Node + Chromium + browsers).
+# Adds:
+#   - poppler-utils → `pdftotext` для waybill-pagination E2E (TZ V3.1I I7).
+#   - curl          → health probe в healthcheck/runs.
+#
+# Используется docker-compose service `playwright` (см. docker-compose.yml).
+FROM mcr.microsoft.com/playwright:v1.60.0-jammy
+
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends \
+        poppler-utils \
+        curl \
+    && rm -rf /var/lib/apt/lists/*
+
+# Smoke-проверка, что pdftotext доступен после сборки; падает сборка, если нет.
+RUN which pdftotext && pdftotext -v 2>&1 | head -n1 || (echo "pdftotext missing" && exit 1)

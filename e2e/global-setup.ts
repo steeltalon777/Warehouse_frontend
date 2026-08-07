@@ -21,6 +21,15 @@ async function globalSetup(config: FullConfig) {
 
   const syncHealthUrl = process.env.E2E_SYNC_HEALTH_URL || 'http://localhost:8000/api/v1/health';
   await probe(syncHealthUrl, 'SyncServer');
+
+  // Smoke: warn if pdftotext (waybill-pagination E2E dep) is missing.
+  // Not a hard gate — only waybill spec needs it and skips gracefully.
+  try {
+    const { execSync } = await import('node:child_process');
+    execSync('pdftotext -v', { stdio: 'ignore' });
+  } catch {
+    console.warn('⚠ pdftotext not found in E2E image — waybill-pagination.spec.ts will skip pdftotext step.');
+  }
 }
 
 export default globalSetup;
