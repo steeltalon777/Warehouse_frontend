@@ -27,6 +27,8 @@ import { DiagnosticsSessionService } from './diagnostics-session.service';
 import { DiagnosticsService } from '../diagnostics/diagnostics.service';
 import { firstValueFrom } from 'rxjs';
 import { AuthContextService } from './auth-context.service';
+import { SubmitErrorService } from '../../features/operations/submit-error/submit-error.service';
+import { parseSubmitErrorResponse } from '../../features/operations/submit-error/parser';
 
 export interface OperationsListResult {
   rows: OperationListRowVm[];
@@ -70,6 +72,7 @@ export class OperationsService {
     private catalogSearch: CatalogSearchService,
     private diagnostics: DiagnosticsSessionService,
     private diag: DiagnosticsService,
+    private submitErrorService: SubmitErrorService,
   ) {
     // No fire-and-forget auth pre-load: loadList() awaits authContextService
     // before mapping permission flags (canEdit/canSubmit) so rows never fall
@@ -540,8 +543,10 @@ export class OperationsService {
       await firstValueFrom(
         this.bff.postData<unknown>(`/operations/${id}/cancel`, { cancel: true })
       );
+      this.submitErrorService.clearCancel();
     } catch (err: any) {
       this.normalizeError(err);
+      this.applyCancelEnvelope(err);
       throw err;
     } finally {
       this.isSubmitting.set(false);
@@ -556,12 +561,34 @@ export class OperationsService {
       const result = await firstValueFrom(
         this.bff.postData<OperationDto>(`/operations/${id}/restore`, { restore: true })
       );
+      this.submitErrorService.clearCancel();
       return result;
     } catch (err: any) {
       this.normalizeError(err);
+      this.applyCancelEnvelope(err);
       throw err;
     } finally {
       this.isSubmitting.set(false);
+    }
+  }
+
+  /**
+   * Cancel/restore error surface (TZ-OPERATION_CANCEL_DOMAIN_ERRORS §8.1):
+   * when the HTTP error body is a problem envelope, surface the server's
+   * Russian `detail` in the page banner and store the envelope in
+   * `SubmitErrorService.cancelErrorPayload`. Otherwise (string-detail 403,
+   * network errors) keep the `normalizeError` message (e.g. «Доступ
+   * запрещён.») and clear the cancel payload.
+   */
+  private applyCancelEnvelope(err: any): void {
+    const result = parseSubmitErrorResponse(err?.raw ?? err);
+    if (!result.unknown && result.envelope) {
+      if (result.envelope.detail) {
+        this.error.set(result.envelope.detail);
+      }
+      this.submitErrorService.setCancelFromHttpError(err?.raw ?? err);
+    } else {
+      this.submitErrorService.clearCancel();
     }
   }
 

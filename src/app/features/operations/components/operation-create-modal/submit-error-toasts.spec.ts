@@ -16,6 +16,7 @@ import {
   formatSubmitStockHint,
   GENERIC_SUBMIT_ERROR_TOAST,
   lineGroupToast,
+  OPERATION_LEVEL_TOAST_MESSAGES,
 } from './submit-error-toasts';
 
 function parseFixture(fixture: unknown) {
@@ -83,6 +84,12 @@ describe('submit-error-toasts', () => {
   it('operation_not_found produces its fixed toast', () => {
     const envelope = parseFixture(FIXTURE_OPERATION_NOT_FOUND);
     expect(buildSubmitToasts(envelope)).toEqual(['Операция не найдена.']);
+  });
+
+  it('OPERATION_LEVEL_TOAST_MESSAGES covers the cancel-flow operation-level code', () => {
+    expect(OPERATION_LEVEL_TOAST_MESSAGES['operation_cancel_rejected']).toBe(
+      'Не удалось отменить операцию.',
+    );
   });
 
   it('mixture of line-group and operation errors yields one toast per kind', () => {

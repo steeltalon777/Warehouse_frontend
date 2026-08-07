@@ -21,6 +21,16 @@ export class SubmitErrorService {
   readonly groups = this.groupsState.asReadonly();
   readonly envelope = this.envelopeState.asReadonly();
 
+  /**
+   * Latest recognized problem envelope for the operation cancel/restore flow
+   * (TZ-OPERATION_CANCEL_DOMAIN_ERRORS §8.2). Set via
+   * `setCancelFromHttpError` when the HTTP error body is a problem envelope;
+   * cleared by `clearCancel` on success or when the payload is unrecognized.
+   * The operations page renders `cancelErrorPayload()?.detail` in its banner.
+   */
+  private readonly cancelErrorPayloadState = signal<SubmitErrorEnvelope | null>(null);
+  readonly cancelErrorPayload = this.cancelErrorPayloadState.asReadonly();
+
   /** Unique `operation_line_id` → group id, for inline highlighting. */
   readonly linesByGroup = computed<ReadonlyMap<number, string>>(() => {
     const map = new Map<number, string>();
@@ -71,6 +81,26 @@ export class SubmitErrorService {
   clearAll(): void {
     this.envelopeState.set(null);
     this.groupsState.set({});
+  }
+
+  /**
+   * Parses an HTTP error payload from the cancel/restore flow and stores the
+   * recognized envelope in `cancelErrorPayload`. Unparseable payloads (legacy
+   * string-detail errors, network failures) reset the signal to `null` — the
+   * page then falls back to `OperationsService.error`.
+   */
+  setCancelFromHttpError(raw: unknown): void {
+    const result = parseSubmitErrorResponse(raw);
+    if (!result.unknown && result.envelope) {
+      this.cancelErrorPayloadState.set(result.envelope);
+    } else {
+      this.cancelErrorPayloadState.set(null);
+    }
+  }
+
+  /** Clears the cancel/restore error payload (success path). */
+  clearCancel(): void {
+    this.cancelErrorPayloadState.set(null);
   }
 
   /**

@@ -133,7 +133,75 @@ describe('SubmitErrorService', () => {
     expect(svc2.groups()).toEqual({});
     expect(svc2.firstErroredLineId()).toBeNull();
   });
+
+  // ─── cancel/restore surface (TZ-OPERATION_CANCEL_DOMAIN_ERRORS §8.2) ────
+
+  it('setCancelFromHttpError stores a recognized cancel envelope', () => {
+    const envelope = makeCancelRejectedEnvelope();
+
+    service.setCancelFromHttpError(envelope);
+
+    expect(service.cancelErrorPayload()).not.toBeNull();
+    expect(service.cancelErrorPayload()!.code).toBe('operation_cancel_rejected');
+    expect(service.cancelErrorPayload()!.detail).toBe(envelope.detail);
+    // The submit state is untouched by the cancel surface.
+    expect(service.envelope()).toBeNull();
+    expect(service.groups()).toEqual({});
+  });
+
+  it.each([null, 'some string payload', { ok: false }, 42, ['not', 'an', 'object']])(
+    'setCancelFromHttpError resets cancelErrorPayload for unrecognized payload %s',
+    (raw) => {
+      service.setCancelFromHttpError(makeCancelRejectedEnvelope());
+      expect(service.cancelErrorPayload()).not.toBeNull();
+
+      service.setCancelFromHttpError(raw);
+
+      expect(service.cancelErrorPayload()).toBeNull();
+    },
+  );
+
+  it('setCancelFromHttpError accepts a legacy {detail: string} payload as a fallback envelope', () => {
+    service.setCancelFromHttpError({ detail: 'sync_error: сервер вернул ошибку в старом формате' });
+
+    expect(service.cancelErrorPayload()).not.toBeNull();
+    expect(service.cancelErrorPayload()!.code).toBe('unknown');
+    expect(service.cancelErrorPayload()!.detail).toBe(
+      'sync_error: сервер вернул ошибку в старом формате',
+    );
+  });
+
+  it('clearCancel resets cancelErrorPayload', () => {
+    service.setCancelFromHttpError(makeCancelRejectedEnvelope());
+    expect(service.cancelErrorPayload()).not.toBeNull();
+
+    service.clearCancel();
+
+    expect(service.cancelErrorPayload()).toBeNull();
+  });
 });
+
+function makeCancelRejectedEnvelope(): RawSubmitErrorEnvelope {
+  return {
+    type: 'urn:warehouse:problem:operation-cancel-rejected',
+    title: 'Операция не может быть отменена',
+    status: 409,
+    code: 'operation_cancel_rejected',
+    detail:
+      'Недостаточно товара: Кабель ВВГ — запрошено 2, на складе 0. Всего проблемных групп: 1.',
+    errors: [
+      {
+        code: 'insufficient_stock',
+        scope: 'line_group',
+        operation_line_ids: [1],
+        item: { id: 100, name: 'Кабель ВВГ' },
+        stock_site: { id: 1, name: 'Склад' },
+        required_qty: '2',
+        available_qty: '0',
+      },
+    ],
+  };
+}
 
 function makeTwoGroupRawEnvelope(): RawSubmitErrorEnvelope {
   return {

@@ -27,6 +27,7 @@ import { OperationsStatusTabsComponent } from '../../components/operations-statu
 import { OperationsTableComponent } from '../../components/operations-table/operations-table.component';
 import { OperationCreateModalComponent } from '../../components/operation-create-modal/operation-create-modal.component';
 import { OperationConfirmModalComponent } from '../../components/operation-confirm-modal/operation-confirm-modal.component';
+import { SubmitErrorService } from '../../submit-error/submit-error.service';
 import { firstValueFrom } from 'rxjs';
 
 function currentDateTimeLocal(): string {
@@ -101,9 +102,12 @@ type OperationSubmitState =
             <div class="spinner"></div>
             <span>Загрузка операций...</span>
           </div>
-        } @else if (error()) {
+        } @else if (error() && !cancelErrorText()) {
           <div class="wh-state wh-state--error error-banner" data-testid="operations-error-message">{{ error() }}</div>
         } @else {
+          @if (cancelErrorText()) {
+            <div class="wh-state wh-state--error error-banner" data-testid="operations-cancel-error-message">{{ cancelErrorText() }}</div>
+          }
           <app-operations-table
             [rows]="sortedRows()"
             [sortColumn]="sortColumn()"
@@ -326,6 +330,7 @@ export class OperationsPageComponent implements OnInit, OnDestroy {
   readonly service = inject(OperationsService);
   private readonly diag = inject(DiagnosticsService);
   private readonly draftStorage = inject(DraftStorageService);
+  private readonly submitErrorService = inject(SubmitErrorService);
   private authContextService = inject(AuthContextService);
   private catalogSearchService = inject(CatalogSearchService);
   private documentsService = inject(DocumentsService);
@@ -388,6 +393,15 @@ export class OperationsPageComponent implements OnInit, OnDestroy {
   readonly page = this.service.page;
   readonly pageSize = this.service.pageSize;
   readonly sites = this.service.sites;
+
+  /**
+   * Russian `detail` of the latest cancel/restore problem envelope
+   * (TZ-OPERATION_CANCEL_DOMAIN_ERRORS §8.3). Rendered in a banner above the
+   * table — the table stays visible after a failed cancel.
+   */
+  readonly cancelErrorText = computed(
+    () => this.submitErrorService.cancelErrorPayload()?.detail || null,
+  );
 
   readonly sortedRows = computed(() => {
     const col = this.sortColumn();
@@ -474,6 +488,8 @@ export class OperationsPageComponent implements OnInit, OnDestroy {
       itemIds,
       page: f.page,
     };
+    // A fresh list render must not keep a stale cancel-error banner.
+    this.submitErrorService.clearCancel();
     await this.service.loadList(filtersWithStatus);
   }
 

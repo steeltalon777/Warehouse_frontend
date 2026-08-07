@@ -187,6 +187,46 @@ describe('parseSubmitErrorResponse', () => {
     consoleSpy.mockRestore();
   });
 
+  it('parses a cancel-flow envelope (operation_cancel_rejected) with a line-group deficit', () => {
+    const result = parseSubmitErrorResponse({
+      type: 'urn:warehouse:problem:operation-cancel-rejected',
+      title: 'Операция не может быть отменена',
+      status: 409,
+      code: 'operation_cancel_rejected',
+      detail:
+        'Недостаточно товара: Кабель ВВГ — запрошено 2, на складе 0. Всего проблемных групп: 1.',
+      errors: [
+        {
+          code: 'insufficient_stock',
+          scope: 'line_group',
+          operation_line_ids: [1],
+          item: { id: 100, name: 'Кабель ВВГ' },
+          stock_site: { id: 1, name: 'Склад' },
+          required_qty: '2',
+          available_qty: '0',
+        },
+      ],
+    });
+
+    expect(result.ok).toBe(true);
+    expect(result.unknown).toBe(false);
+    const envelope = result.envelope as SubmitErrorEnvelope;
+    expect(envelope.type).toBe('urn:warehouse:problem:operation-cancel-rejected');
+    expect(envelope.code).toBe('operation_cancel_rejected');
+    expect(envelope.status).toBe(409);
+    expect(envelope.detail).toContain('Недостаточно товара: Кабель ВВГ');
+
+    const [error] = envelope.errors;
+    expect(error.kind).toBe('known_line_group');
+    if (error.kind === 'known_line_group') {
+      expect(error.code).toBe('insufficient_stock');
+      expect(error.operation_line_ids).toEqual([1]);
+      expect(error.item).toEqual({ id: 100, name: 'Кабель ВВГ' });
+      expect(error.required_qty).toBe('2');
+      expect(error.available_qty).toBe('0');
+    }
+  });
+
   it('falls back to a legacy envelope for a bare {detail: string} payload', () => {
     const result = parseSubmitErrorResponse(FIXTURE_LEGACY_DETAIL_ONLY);
 

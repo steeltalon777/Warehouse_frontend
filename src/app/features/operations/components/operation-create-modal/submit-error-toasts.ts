@@ -12,6 +12,7 @@ export const OPERATION_LEVEL_TOAST_MESSAGES: Record<string, string> = {
   operation_in_wrong_state: 'Операцию нельзя провести в текущем состоянии.',
   role_not_permitted: 'Недостаточно прав для проведения операции.',
   operation_not_found: 'Операция не найдена.',
+  operation_cancel_rejected: 'Не удалось отменить операцию.',
 };
 
 export const GENERIC_SUBMIT_ERROR_TOAST =

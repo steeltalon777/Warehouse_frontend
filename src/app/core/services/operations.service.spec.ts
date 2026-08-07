@@ -5,6 +5,7 @@ import { AuthContextService } from './auth-context.service';
 import { CatalogSearchService } from './catalog-search.service';
 import { DiagnosticsSessionService } from './diagnostics-session.service';
 import { DiagnosticsService } from '../diagnostics/diagnostics.service';
+import { SubmitErrorService } from '../../features/operations/submit-error/submit-error.service';
 import { of, throwError } from 'rxjs';
 import { OperationDto, OperationStatus, OperationType, OperationDraftVm, OperationLineDraftVm, ResolvedItemDto } from '../models/operations.models';
 
@@ -19,6 +20,10 @@ describe('OperationsService', () => {
     deleteData: ReturnType<typeof vi.fn>;
   };
   let authMock: { authContext: ReturnType<typeof vi.fn>; load: ReturnType<typeof vi.fn> };
+  let submitErrorMock: {
+    setCancelFromHttpError: ReturnType<typeof vi.fn>;
+    clearCancel: ReturnType<typeof vi.fn>;
+  };
 
   beforeEach(() => {
     bffMock = {
@@ -40,14 +45,18 @@ describe('OperationsService', () => {
       newIdempotencyKey: vi.fn(() => 'idem-fallback-uuid'),
     };
     const diagnosticsMock = { track: vi.fn() };
+    submitErrorMock = {
+      setCancelFromHttpError: vi.fn(),
+      clearCancel: vi.fn(),
+    };
 
     TestBed.configureTestingModule({
       providers: [
         // Plain DI: let Angular's real injector construct OperationsService
-        // via its 5-arg constructor (see operations.service.ts:67). Under
+        // via its 6-arg constructor (see operations.service.ts:68). Under
         // @angular/build:unit-test, ngtsc emits constructor metadata, so
         // the dependencies are resolved reflectively; a manual factory +
-        // five 'as unknown as' casts is no longer needed. Running through
+        // six 'as unknown as' casts is no longer needed. Running through
         // the real DI graph also catches a larger class of regressions
         // (e.g. accidental DI changes) than a manual instantiation.
         OperationsService,
@@ -56,6 +65,7 @@ describe('OperationsService', () => {
         { provide: CatalogSearchService, useValue: searchMock },
         { provide: DiagnosticsSessionService, useValue: diagnosticsSessionMock },
         { provide: DiagnosticsService, useValue: diagnosticsMock },
+        { provide: SubmitErrorService, useValue: submitErrorMock },
       ],
     });
 
@@ -315,6 +325,91 @@ describe('OperationsService', () => {
     expect(service.isSubmitting()).toBe(true);
 
     await promise;
+    expect(service.isSubmitting()).toBe(false);
+  });
+
+  // ─── cancelOperation / restoreOperation envelope surface (TZ §8.1, §13.3) ─
+
+  const CANCEL_REJECTED_ENVELOPE = {
+    type: 'urn:warehouse:problem:operation-cancel-rejected',
+    title: 'Операция не может быть отменена',
+    status: 409,
+    code: 'operation_cancel_rejected',
+    detail:
+      'Недостаточно товара: Кабель ВВГ — запрошено 2, на складе 0. Всего проблемных групп: 1.',
+    errors: [
+      {
+        code: 'insufficient_stock',
+        scope: 'line_group',
+        operation_line_ids: [1],
+        item: { id: 100, name: 'Кабель ВВГ' },
+        stock_site: { id: 1, name: 'Склад' },
+        required_qty: '2',
+        available_qty: '0',
+      },
+    ],
+  };
+
+  it('cancelOperation happy path clears error, fieldErrors and the cancel payload', async () => {
+    bffMock.postData.mockReturnValue(of({ ok: true }));
+
+    await service.cancelOperation('op-1');
+
+    expect(bffMock.postData).toHaveBeenCalledWith('/operations/op-1/cancel', { cancel: true });
+    expect(service.error()).toBeNull();
+    expect(service.fieldErrors()).toBeNull();
+    expect(submitErrorMock.clearCancel).toHaveBeenCalled();
+    expect(submitErrorMock.setCancelFromHttpError).not.toHaveBeenCalled();
+  });
+
+  it('cancelOperation with a 409 envelope stores the envelope and shows the Russian detail', async () => {
+    bffMock.postData.mockReturnValue(
+      throwError(() => ({ code: 'conflict', message: 'conflict', raw: CANCEL_REJECTED_ENVELOPE })),
+    );
+
+    await expect(service.cancelOperation('op-1')).rejects.toBeDefined();
+
+    expect(service.error()).toBe(CANCEL_REJECTED_ENVELOPE.detail);
+    expect(submitErrorMock.setCancelFromHttpError).toHaveBeenCalledWith(CANCEL_REJECTED_ENVELOPE);
+    expect(submitErrorMock.clearCancel).not.toHaveBeenCalled();
+  });
+
+  it('cancelOperation with a 403 string-detail keeps «Доступ запрещён.» and clears the cancel payload', async () => {
+    bffMock.postData.mockReturnValue(
+      throwError(() => ({
+        code: 'forbidden',
+        message: 'Доступ запрещён.',
+        raw: { ok: false, error: { code: 'forbidden', message: 'Access denied' } },
+      })),
+    );
+
+    await expect(service.cancelOperation('op-1')).rejects.toBeDefined();
+
+    expect(service.error()).toBe('Доступ запрещён.');
+    expect(submitErrorMock.clearCancel).toHaveBeenCalled();
+  });
+
+  it('restoreOperation happy path returns the DTO and clears the cancel payload', async () => {
+    const dto = makeOperation('draft');
+    bffMock.postData.mockReturnValue(of(dto));
+
+    const result = await service.restoreOperation('op-1');
+
+    expect(bffMock.postData).toHaveBeenCalledWith('/operations/op-1/restore', { restore: true });
+    expect(result).toBe(dto);
+    expect(service.error()).toBeNull();
+    expect(submitErrorMock.clearCancel).toHaveBeenCalled();
+  });
+
+  it('restoreOperation with a 409 envelope shows the Russian detail and stores the envelope', async () => {
+    bffMock.postData.mockReturnValue(
+      throwError(() => ({ code: 'conflict', message: 'conflict', raw: CANCEL_REJECTED_ENVELOPE })),
+    );
+
+    await expect(service.restoreOperation('op-1')).rejects.toBeDefined();
+
+    expect(service.error()).toBe(CANCEL_REJECTED_ENVELOPE.detail);
+    expect(submitErrorMock.setCancelFromHttpError).toHaveBeenCalledWith(CANCEL_REJECTED_ENVELOPE);
     expect(service.isSubmitting()).toBe(false);
   });
 
