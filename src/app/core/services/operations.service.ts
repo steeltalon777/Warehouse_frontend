@@ -71,7 +71,9 @@ export class OperationsService {
     private diagnostics: DiagnosticsSessionService,
     private diag: DiagnosticsService,
   ) {
-    this.authContextService.load();
+    // No fire-and-forget auth pre-load: loadList() awaits authContextService
+    // before mapping permission flags (canEdit/canSubmit) so rows never fall
+    // into the 'observer' fallback when /auth/me lands after /operations.
   }
 
   // ─── List ────────────────────────────────────────────────────
@@ -82,6 +84,11 @@ export class OperationsService {
     this.fieldErrors.set(null);
 
     try {
+      // Guarantee the auth context is populated before we read role/userId
+      // for permission mapping. load() is idempotent: concurrent or repeated
+      // callers share the same in-flight promise without duplicate /auth/me.
+      await this.authContextService.load();
+
       const params: Record<string, string | number | boolean> = {
         page: filters.page,
         page_size: filters.pageSize,

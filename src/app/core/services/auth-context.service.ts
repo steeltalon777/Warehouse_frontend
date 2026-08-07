@@ -80,6 +80,12 @@ export class AuthContextService {
 
   constructor(private bff: BffApiService) {}
 
+  /**
+   * Idempotent loader: concurrent callers share the same in-flight promise.
+   * On success the promise resolves and the next call returns immediately
+   * without another /auth/me round-trip (context is already populated).
+   * On failure the promise is cleared so a later call can retry.
+   */
   async load(): Promise<void> {
     if (this.loadPromise) {
       return this.loadPromise;
@@ -105,14 +111,18 @@ export class AuthContextService {
           canManageCatalog: explicitCatalogPermission ?? undefined,
         });
       } catch {
+        // Clear the in-flight marker so a later caller can retry /auth/me.
+        this.loadPromise = null;
         this.authContext.set(null);
       }
     })();
 
-    try {
-      await this.loadPromise;
-    } finally {
-      this.loadPromise = null;
-    }
+    return this.loadPromise;
+  }
+
+  /** For tests: reset the singleton state between cases. */
+  resetForTesting(): void {
+    this.loadPromise = null;
+    this.authContext.set(null);
   }
 }

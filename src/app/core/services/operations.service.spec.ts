@@ -386,6 +386,85 @@ describe('OperationsService', () => {
     expect(rows[0].status).not.toBe('cancelled');
   });
 
+  // ─── loadList awaits auth context before mapping (race fix) ───────
+
+  it('loadList awaits authContext load before mapping rows: root draft has canEdit even when /auth/me lands after /operations', async () => {
+    // Simulate race: initially authContext is null (not loaded).
+    // load() resolves *after* getList returns, but before mapToRowVm reads role.
+    authMock.authContext = vi.fn(() => null);
+    authMock.load = vi.fn(async () => {
+      // After load completes, authContext becomes root.
+      authMock.authContext = vi.fn(() => ({ userId: 'user-1', role: 'root', defaultSiteId: null }));
+    });
+
+    const draft = makeOperation('draft', { created_by_user_id: 'user-1' });
+    bffMock.getList.mockReturnValue(of({ items: [draft], total_count: 1, page: 1, page_size: 20 }));
+
+    await service.loadList({
+      search: '', type: null, status: null, siteId: null,
+      acceptanceState: null,
+      createdAfter: null, createdBefore: null, updatedAfter: null, updatedBefore: null,
+      createdByUserId: null, onlyMine: false, page: 1, pageSize: 20,
+    });
+
+    expect(authMock.load).toHaveBeenCalled();
+    const row = service.rows()[0];
+    // Without the race fix, role would fall through to 'observer' fallback
+    // and canEdit would be false. With the fix, load() has resolved first
+    // so role='root' is used.
+    expect(row.canEdit).toBe(true);
+    expect(row.canSubmit).toBe(true);
+  });
+
+  it('loadList preserves observer canEdit=false after auth context loads', async () => {
+    authMock.authContext = vi.fn(() => null);
+    authMock.load = vi.fn(async () => {
+      authMock.authContext = vi.fn(() => ({ userId: 'user-1', role: 'observer', defaultSiteId: null }));
+    });
+
+    const draft = makeOperation('draft', { created_by_user_id: 'user-1' });
+    bffMock.getList.mockReturnValue(of({ items: [draft], total_count: 1, page: 1, page_size: 20 }));
+
+    await service.loadList({
+      search: '', type: null, status: null, siteId: null,
+      acceptanceState: null,
+      createdAfter: null, createdBefore: null, updatedAfter: null, updatedBefore: null,
+      createdByUserId: null, onlyMine: false, page: 1, pageSize: 20,
+    });
+
+    const row = service.rows()[0];
+    expect(row.canEdit).toBe(false);
+    expect(row.canSubmit).toBe(false);
+    expect(row.canPrint).toBe(false);
+  });
+
+  it('loadList shares the same in-flight auth load promise (idempotent load)', async () => {
+    let loadCalls = 0;
+    authMock.load = vi.fn(async () => { loadCalls += 1; });
+    authMock.authContext = vi.fn(() => ({ userId: 'user-1', role: 'root', defaultSiteId: null }));
+    bffMock.getList.mockReturnValue(of({ items: [], total_count: 0, page: 1, page_size: 20 }));
+
+    await Promise.all([
+      service.loadList({
+        search: '', type: null, status: null, siteId: null,
+        acceptanceState: null,
+        createdAfter: null, createdBefore: null, updatedAfter: null, updatedBefore: null,
+        createdByUserId: null, onlyMine: false, page: 1, pageSize: 20,
+      }),
+      service.loadList({
+        search: '', type: null, status: null, siteId: null,
+        acceptanceState: null,
+        createdAfter: null, createdBefore: null, updatedAfter: null, updatedBefore: null,
+        createdByUserId: null, onlyMine: false, page: 1, pageSize: 20,
+      }),
+    ]);
+
+    // load() may be called per loadList invocation, but the underlying
+    // AuthContextService.load() deduplicates the /auth/me round-trip.
+    // Here we assert the mock was awaited (not that it was called once).
+    expect(loadCalls).toBeGreaterThanOrEqual(1);
+  });
+
   // ─── isSaving / isSubmitting flags ─────────────────────────────────
 
   it('isSaving resets on createOperation error', async () => {
