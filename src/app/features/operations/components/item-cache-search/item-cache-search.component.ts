@@ -69,9 +69,6 @@ function toItem(searchItem: CatalogSearchItem): Item {
                 @if (item.sku) {
                   <span class="option-sku">{{ item.sku }}</span>
                 }
-                @if (item.source_site_qty) {
-                  <span class="option-stock">на складе: {{ item.source_site_qty }}</span>
-                }
               </div>
             }
           } @else {
@@ -163,7 +160,6 @@ function toItem(searchItem: CatalogSearchItem): Item {
     .option-name { color: #1F2937; font-weight: 500; flex-shrink: 0; }
     .option-category { color: #6B7280; font-size: 11px; margin: 0 8px; flex-shrink: 0; }
     .option-sku { color: #94A3B8; font-size: 11px; flex-shrink: 0; }
-    .option-stock { color: #059669; font-size: 11px; font-weight: 500; flex-shrink: 0; }
     .search-loading, .search-empty {
       padding: 12px;
       text-align: center;
@@ -237,7 +233,7 @@ export class ItemCacheSearchComponent implements OnDestroy {
           return of([]);
         }
         this.isLoading.set(true);
-        return this.catalogSearch.searchItemsOnce(query, 20, this.sourceSiteId() ?? undefined);
+        return this.catalogSearch.searchItemsOnce(query, 20, this.sourceSiteId() ?? undefined, false);
       }),
       catchError(err => {
         console.error('Search error:', err);

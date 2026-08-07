@@ -1,3 +1,4 @@
+import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { TestBed } from '@angular/core/testing';
 import { OperationLinesTableComponent } from './operation-lines-table.component';
 import type { OperationLineDraftVm } from '../../../../core/models/operations.models';
@@ -95,5 +96,75 @@ describe('OperationLinesTableComponent', () => {
       (tr: Element) => tr.textContent?.includes('Провод'),
     );
     expect(local2Row?.classList.contains('row--has-error')).toBe(false);
+  });
+});
+
+describe('OperationLinesTableComponent — manual balance refresh button', () => {
+  beforeEach(async () => {
+    await TestBed.configureTestingModule({
+      imports: [OperationLinesTableComponent],
+    }).compileComponents();
+  });
+
+  it('renders the «Обновить всё» button inside th.col-avail', () => {
+    const fixture = TestBed.createComponent(OperationLinesTableComponent);
+    fixture.componentRef.setInput('lines', LINES);
+    fixture.componentRef.setInput('operationType', 'MOVE');
+    fixture.detectChanges();
+
+    const th = fixture.nativeElement.querySelector('th.col-avail');
+    expect(th).toBeTruthy();
+    const button = th.querySelector('[data-testid="operation-lines-refresh-all"]');
+    expect(button).toBeTruthy();
+    expect(button.textContent).toContain('Обновить всё');
+  });
+
+  it('emits refreshAllBalances on click and does NOT toggle sorting', () => {
+    const fixture = TestBed.createComponent(OperationLinesTableComponent);
+    fixture.componentRef.setInput('lines', LINES);
+    fixture.componentRef.setInput('operationType', 'MOVE');
+    fixture.detectChanges();
+
+    const emitSpy = vi.spyOn(fixture.componentInstance.refreshAllBalances, 'emit');
+    expect(fixture.componentInstance.sortColumn()).toBe('lineNumber');
+
+    const button = fixture.nativeElement.querySelector(
+      '[data-testid="operation-lines-refresh-all"]',
+    );
+    button.click();
+    fixture.detectChanges();
+
+    expect(emitSpy).toHaveBeenCalledTimes(1);
+    expect(fixture.componentInstance.sortColumn()).toBe('lineNumber');
+    expect(fixture.componentInstance.sortDirection()).toBe('asc');
+  });
+
+  it('disables the button and shows the spinner when isBalanceRefreshing=true', () => {
+    const fixture = TestBed.createComponent(OperationLinesTableComponent);
+    fixture.componentRef.setInput('lines', LINES);
+    fixture.componentRef.setInput('operationType', 'MOVE');
+    fixture.componentRef.setInput('isBalanceRefreshing', true);
+    fixture.detectChanges();
+
+    const button = fixture.nativeElement.querySelector(
+      '[data-testid="operation-lines-refresh-all"]',
+    );
+    expect(button.disabled).toBe(true);
+    expect(button.querySelector('.avail-refresh-spinner')).toBeTruthy();
+    expect(button.querySelector('.avail-refresh-label').textContent).toBe('Обновить всё');
+  });
+
+  it('enables the button when isBalanceRefreshing=false', () => {
+    const fixture = TestBed.createComponent(OperationLinesTableComponent);
+    fixture.componentRef.setInput('lines', LINES);
+    fixture.componentRef.setInput('operationType', 'MOVE');
+    fixture.componentRef.setInput('isBalanceRefreshing', false);
+    fixture.detectChanges();
+
+    const button = fixture.nativeElement.querySelector(
+      '[data-testid="operation-lines-refresh-all"]',
+    );
+    expect(button.disabled).toBe(false);
+    expect(button.querySelector('.avail-refresh-spinner')).toBeNull();
   });
 });

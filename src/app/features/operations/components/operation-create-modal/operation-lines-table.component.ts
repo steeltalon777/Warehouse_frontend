@@ -66,6 +66,21 @@ export interface LineSubmitErrorState {
                 @if (sortColumn() === 'availableQuantity') {
                   <span class="sort-indicator">{{ sortDirection() === 'asc' ? '▲' : '▼' }}</span>
                 }
+                <button
+                  type="button"
+                  class="avail-refresh-btn"
+                  data-testid="operation-lines-refresh-all"
+                  [disabled]="isBalanceRefreshing()"
+                  (click)="refreshAllBalances.emit(); $event.stopPropagation()"
+                  [title]="isBalanceRefreshing() ? 'Обновление...' : 'Обновить остатки'"
+                >
+                  @if (isBalanceRefreshing()) {
+                    <span class="avail-refresh-spinner" aria-hidden="true"></span>
+                  } @else {
+                    <span aria-hidden="true">⟳</span>
+                  }
+                  <span class="avail-refresh-label">Обновить всё</span>
+                </button>
               </th>
               <th class="col-del"></th>
             </tr>
@@ -308,6 +323,38 @@ export interface LineSubmitErrorState {
     .avail-na { color: #CBD5E1; }
     .avail-inline { font-size: 11px; color: #64748B; font-style: italic; }
 
+    .avail-refresh-btn {
+      display: inline-flex;
+      align-items: center;
+      gap: 4px;
+      margin-left: 8px;
+      padding: 2px 8px;
+      border: 1px solid #D1D5DB;
+      border-radius: 8px;
+      background: #FFFFFF;
+      color: #374151;
+      font-size: 11px;
+      font-family: inherit;
+      cursor: pointer;
+      vertical-align: middle;
+      white-space: nowrap;
+    }
+    .avail-refresh-btn:hover:not(:disabled) { background: #F8FAFC; }
+    .avail-refresh-btn:disabled { opacity: 0.55; cursor: not-allowed; }
+    .avail-refresh-spinner {
+      display: inline-block;
+      width: 10px;
+      height: 10px;
+      border: 2px solid #D1D5DB;
+      border-top-color: #374151;
+      border-radius: 50%;
+      animation: avail-refresh-spin 0.7s linear infinite;
+    }
+    .avail-refresh-label { line-height: 1; }
+    @keyframes avail-refresh-spin {
+      to { transform: rotate(360deg); }
+    }
+
     .remove-btn {
       width: 26px; height: 26px;
       display: inline-flex; align-items: center; justify-content: center;
@@ -388,6 +435,8 @@ export class OperationLinesTableComponent {
   quantityChange = output<LineQuantityChange>();
   removeLine = output<string>();
   sortChange = output<{ column: SortColumn; direction: SortDirection }>();
+  /** «Обновить всё» — ручной рефреш остатков (TZ-OPERATION_MODAL_BALANCES_MANUAL_REFRESH). */
+  refreshAllBalances = output<void>();
 
   readonly sortColumn = signal<SortColumn>('lineNumber');
   readonly sortDirection = signal<SortDirection>('asc');

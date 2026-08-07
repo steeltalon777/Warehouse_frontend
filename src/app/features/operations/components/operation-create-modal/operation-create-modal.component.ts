@@ -283,6 +283,7 @@ function currentDateTimeLocal(): string {
                 [submitErrorLines]="lineSubmitErrors()"
                 (quantityChange)="onQuantityChange($event.localId, $event.quantity)"
                 (removeLine)="removeLine($event)"
+                (refreshAllBalances)="onRefreshAllBalances()"
               />
             </div>
           </div>
@@ -1180,37 +1181,20 @@ export class OperationCreateModalComponent implements OnInit, OnDestroy {
       // availableQuantity is the qty assigned to the issue object, not the
       // warehouse balance. Skip the warehouse balance refresh so prefilled
       // object qty is not overwritten.
-      if (isObjectSourceFlow || hasPrefilledAssetLine) {
-        this.isBalanceRefreshing.set(false);
+      if (isObjectSourceFlow || hasPrefilledAssetLine || !siteId
+          || siteId === 'undefined' || siteId === 'null') {
         return;
       }
-      if (siteId && siteId !== 'undefined' && siteId !== 'null') {
-        const seq = ++this.balanceRefreshSeq;
-        this.isBalanceRefreshing.set(true);
-        this.service.loadBalances(siteId).then(() => {
-          if (seq !== this.balanceRefreshSeq) return;
-          if (this.relevantSiteId() === siteId) {
-            this.refreshSourceQuantities();
-          }
-          this.isBalanceRefreshing.set(false);
-        });
-      } else {
-        // Clear balances when no site selected
-        this.service.balances.set([]);
-        this.isBalanceRefreshing.set(false);
-        const hasNonZeroStockHints = this.localDraft().lines.some(l => (l.availableQuantity ?? 0) !== 0 || (l.sourceSiteQuantity ?? 0) !== 0);
-        if (!hasNonZeroStockHints) {
-          return;
+      // Один запрос без perpetual: balanceRefreshSeq — единственная страховка от race.
+      const seq = ++this.balanceRefreshSeq;
+      this.isBalanceRefreshing.set(true);
+      this.service.loadBalances(siteId).then(() => {
+        if (seq !== this.balanceRefreshSeq) return;
+        if (this.relevantSiteId() === siteId) {
+          this.refreshSourceQuantities();
         }
-        this.localDraft.update(state => ({
-          ...state,
-          lines: state.lines.map(l => ({
-            ...l,
-            availableQuantity: 0,
-            sourceSiteQuantity: 0,
-          })),
-        }));
-      }
+        this.isBalanceRefreshing.set(false);
+      });
     });
   }
 
@@ -1314,18 +1298,25 @@ export class OperationCreateModalComponent implements OnInit, OnDestroy {
     return !this.isObjectSourceFlow() && !this.hasPrefilledAssetLine();
   }
 
-  private async refreshBeforePersist(): Promise<void> {
+  /**
+   * TZ-OPERATION_MODAL_BALANCES_MANUAL_REFRESH §3.3 (вариант A): ручной
+   * рефреш остатков по кнопке «Обновить всё». Один HTTP-запрос обновляет
+   * signal balances, затем client-side проход по строкам. balanceRefreshSeq —
+   * страховка от гонок с фоновым effect на смену склада.
+   */
+  async onRefreshAllBalances(): Promise<void> {
     if (!this.shouldUseWarehouseBalances()) return;
     const siteId = this.relevantSiteId();
     if (!siteId || siteId === 'undefined' || siteId === 'null') return;
     const seq = ++this.balanceRefreshSeq;
     this.isBalanceRefreshing.set(true);
-    await this.service.loadBalances(siteId);
-    if (seq === this.balanceRefreshSeq) {
-      if (this.relevantSiteId() === siteId) {
+    try {
+      await this.service.loadBalances(siteId);
+      if (seq === this.balanceRefreshSeq && this.relevantSiteId() === siteId) {
         this.refreshSourceQuantities();
       }
-      this.isBalanceRefreshing.set(false);
+    } finally {
+      if (seq === this.balanceRefreshSeq) this.isBalanceRefreshing.set(false);
     }
   }
 
@@ -1608,7 +1599,6 @@ export class OperationCreateModalComponent implements OnInit, OnDestroy {
 
   async onSave(): Promise<void> {
     if (this.saveDisabledReason()) return;
-    await this.refreshBeforePersist();
     this.bff.setCurrentDraftId(this.localDraft().draftId ?? null);
     try {
       this.save.emit(this.localDraft());
@@ -1656,7 +1646,6 @@ export class OperationCreateModalComponent implements OnInit, OnDestroy {
       draft: this.localDraft(),
       itemsCount: this.localDraft().lines.length,
     });
-    await this.refreshBeforePersist();
     this.bff.setCurrentDraftId(this.localDraft().draftId ?? null);
     try {
       this.submit.emit(this.localDraft());
