@@ -1194,6 +1194,13 @@ export class OperationCreateModalComponent implements OnInit, OnDestroy {
           this.refreshSourceQuantities();
         }
         this.isBalanceRefreshing.set(false);
+      }).catch(() => {
+        // Не даём effect'у упасть при сетевой ошибке: оставляем isBalanceRefreshing
+        // в исходном состоянии. Сообщение об ошибке доступно через
+        // this.service.balanceLoadError() и показывается в onRefreshAllBalances.
+        if (seq === this.balanceRefreshSeq) {
+          this.isBalanceRefreshing.set(false);
+        }
       });
     });
   }
@@ -1305,19 +1312,37 @@ export class OperationCreateModalComponent implements OnInit, OnDestroy {
    * страховка от гонок с фоновым effect на смену склада.
    */
   async onRefreshAllBalances(): Promise<void> {
-    if (!this.shouldUseWarehouseBalances()) return;
-    const siteId = this.relevantSiteId();
-    if (!siteId || siteId === 'undefined' || siteId === 'null') return;
-    const seq = ++this.balanceRefreshSeq;
-    this.isBalanceRefreshing.set(true);
-    try {
-      await this.service.loadBalances(siteId);
-      if (seq === this.balanceRefreshSeq && this.relevantSiteId() === siteId) {
-        this.refreshSourceQuantities();
+    // B3 step 1: ТМЦ-валидация — суперсет «Обновить и проверить».
+    await this.validateAndApplyLineStatuses();
+
+    // B3 step 2: складской flow — обновить остатки.
+    if (this.shouldUseWarehouseBalances()) {
+      const siteId = this.relevantSiteId();
+      if (siteId && siteId !== 'undefined' && siteId !== 'null') {
+        const seq = ++this.balanceRefreshSeq;
+        this.isBalanceRefreshing.set(true);
+        try {
+          await this.service.loadBalances(siteId);
+          if (seq === this.balanceRefreshSeq) {
+            const err = this.service.balanceLoadError();
+            if (err) {
+              this.setToasts([`Не удалось обновить остатки: ${err}`]);
+            } else if (this.relevantSiteId() === siteId) {
+              this.refreshSourceQuantities();
+            }
+          }
+        } finally {
+          if (seq === this.balanceRefreshSeq) this.isBalanceRefreshing.set(false);
+        }
+      } else {
+        // B3 step 3: склад не выбран.
+        this.setToasts(['Выберите склад, чтобы обновить остатки']);
       }
-    } finally {
-      if (seq === this.balanceRefreshSeq) this.isBalanceRefreshing.set(false);
+      return;
     }
+
+    // B3 step 3: объектный flow.
+    this.setToasts(['Остатки недоступны для объектных операций']);
   }
 
   onTypeModelChange(value: OperationType | null): void {
@@ -1576,6 +1601,17 @@ export class OperationCreateModalComponent implements OnInit, OnDestroy {
    * Save/Submit through `hasUnusableLines()`.
    */
   async onRefreshCheckItems(): Promise<void> {
+    return this.validateAndApplyLineStatuses();
+  }
+
+  /**
+   * B1/B2: core of draft line re-validation. Batch-resolves persisted lines and
+   * annotates each line's resolver status. Never throws — resolver failures
+   * are captured in `refreshError` (setToasts in callers), unusable lines are
+   * surfaced via `hasUnusableLines`. Used by the manual refresh button and by
+   * auto-validation before Save/Submit/RefreshAllBalances.
+   */
+  async validateAndApplyLineStatuses(): Promise<void> {
     const draft = this.localDraft();
     if (!draft) return;
 
@@ -1599,6 +1635,21 @@ export class OperationCreateModalComponent implements OnInit, OnDestroy {
 
   async onSave(): Promise<void> {
     if (this.saveDisabledReason()) return;
+
+    // B2: auto-validate ТМЦ before saving. Blocks if the resolver is
+    // unavailable or the draft carries unusable (deleted/inactive) lines.
+    await this.validateAndApplyLineStatuses();
+    const refreshErr = this.refreshError();
+    if (refreshErr) {
+      this.setToasts([`Не удалось проверить ТМЦ: ${refreshErr.message}`]);
+      return;
+    }
+    if (this.hasUnusableLines()) {
+      const n = this.countUnusableLines();
+      this.setToasts([`Сохранение отменено: ${n} строк содержат удалённые/недоступные ТМЦ`]);
+      return;
+    }
+
     this.bff.setCurrentDraftId(this.localDraft().draftId ?? null);
     try {
       this.save.emit(this.localDraft());
@@ -1641,6 +1692,29 @@ export class OperationCreateModalComponent implements OnInit, OnDestroy {
     // §10.3): errors are cleared so the new submit starts clean.
     this.submitErrorService.clearAll();
     this.clearToasts();
+
+    // B2: auto-validate ТМЦ before submitting. Blocks if the resolver is
+    // unavailable or the draft carries unusable lines.
+    await this.validateAndApplyLineStatuses();
+    const refreshErr = this.refreshError();
+    if (refreshErr) {
+      this.diag.track('validation_failed', {
+        draft: this.localDraft(),
+        reason: refreshErr.message,
+      });
+      this.setToasts([`Не удалось проверить ТМЦ: ${refreshErr.message}`]);
+      return;
+    }
+    if (this.hasUnusableLines()) {
+      const n = this.countUnusableLines();
+      this.diag.track('validation_failed', {
+        draft: this.localDraft(),
+        reason: 'unusable_lines',
+      });
+      this.setToasts([`Сохранение отменено: ${n} строк содержат удалённые/недоступные ТМЦ`]);
+      return;
+    }
+
     // Diagnostics: submit_clicked
     this.diag.track('submit_clicked', {
       draft: this.localDraft(),
@@ -1652,6 +1726,14 @@ export class OperationCreateModalComponent implements OnInit, OnDestroy {
     } finally {
       this.bff.setCurrentDraftId(null);
     }
+  }
+
+  /** B2: count draft lines with an unusable resolvedStatus (non-active/undefined). */
+  private countUnusableLines(): number {
+    const draft = this.localDraft();
+    return draft?.lines?.filter(l =>
+      l.resolvedStatus !== undefined && l.resolvedStatus !== 'active'
+    ).length ?? 0;
   }
 
   ngOnDestroy(): void {

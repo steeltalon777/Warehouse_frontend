@@ -884,6 +884,44 @@ describe('OperationsService', () => {
       expect(service.hasUnusableLines(draft)).toBe(true);
     });
   });
+
+  describe('loadBalances — balanceLoadError (T5)', () => {
+    it('on error sets balanceLoadError and balances=[], does not rethrow', async () => {
+      bffMock.getData.mockReturnValue(throwError(() => new Error('boom')));
+
+      await expect(service.loadBalances('21')).resolves.toBeUndefined();
+
+      expect(service.balances()).toEqual([]);
+      expect(service.balanceLoadError()).toBe('Не удалось загрузить остатки');
+    });
+
+    it('on success resets balanceLoadError to null', async () => {
+      service.balanceLoadError.set('stale');
+      bffMock.getData.mockReturnValue(of([{ item_id: '1', site_id: '21', qty: '5' }]));
+
+      await service.loadBalances('21');
+
+      expect(service.balanceLoadError()).toBeNull();
+      expect(service.balances()).toEqual([{ item_id: '1', site_id: '21', qty: '5' }]);
+    });
+  });
+
+  it('B6: validateLinesBeforePersist with no persisted (only temporary/inline) lines makes no network call and returns empty Map', async () => {
+    const draft: OperationDraftVm = {
+      type: 'RECEIVE',
+      status: 'draft',
+      lines: [
+        { ...makeDraftLine('l-tmp', null), isTemporary: true },
+        { ...makeDraftLine('l-inline', null), inlineItem: { name: 'X', unitId: 'u1', quantity: 1 } as any },
+      ],
+    };
+
+    const map = await service.validateLinesBeforePersist(draft);
+
+    expect(searchMock.resolveItems).not.toHaveBeenCalled();
+    expect(map).toBeInstanceOf(Map);
+    expect(map.size).toBe(0);
+  });
 });
 
 function makeDraftLine(localId: string, itemId: string | null): OperationLineDraftVm {

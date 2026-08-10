@@ -56,6 +56,7 @@ function makeItem(id = '42'): Item {
 interface Mocks {
   serviceMock: {
     balances: WritableSignal<BalanceDto[]>;
+    balanceLoadError: WritableSignal<string | null>;
     loadBalances: ReturnType<typeof vi.fn>;
     getBalanceForItem: ReturnType<typeof vi.fn>;
     hasUnusableLines: ReturnType<typeof vi.fn>;
@@ -75,11 +76,12 @@ function createMocks(): Mocks {
   return {
     serviceMock: {
       balances: signal<BalanceDto[]>([]),
+      balanceLoadError: signal<string | null>(null),
       loadBalances: vi.fn(async () => {}),
       getBalanceForItem: vi.fn(() => 0),
       hasUnusableLines: vi.fn(() => false),
-      validateLinesBeforePersist: vi.fn(),
-      applyResolvedStatuses: vi.fn(),
+      validateLinesBeforePersist: vi.fn(async () => new Map()),
+      applyResolvedStatuses: vi.fn((draft: any) => draft),
     },
     authContextMock: { authContext: signal(null), load: vi.fn(async () => {}) },
     issueObjectsMock: { items: signal([]), loadList: vi.fn(async () => {}) },
@@ -173,11 +175,12 @@ describe('OperationCreateModalComponent — manual balance refresh (TZ §6.1 C1-
     });
     const customServiceMock = {
       balances,
+      balanceLoadError: signal<string | null>(null),
       loadBalances,
       getBalanceForItem,
       hasUnusableLines: vi.fn(() => false),
-      validateLinesBeforePersist: vi.fn(),
-      applyResolvedStatuses: vi.fn(),
+      validateLinesBeforePersist: vi.fn(async () => new Map()),
+      applyResolvedStatuses: vi.fn((draft: any) => draft),
     };
 
     TestBed.configureTestingModule({
@@ -275,5 +278,133 @@ describe('OperationCreateModalComponent — manual balance refresh (TZ §6.1 C1-
 
     expect(mocks.serviceMock.getBalanceForItem).toHaveBeenCalledTimes(1);
     expect(mocks.serviceMock.getBalanceForItem).toHaveBeenCalledWith('42', '21');
+  });
+});
+
+describe('OperationCreateModalComponent — B2/B3/B4 auto-validation and balances (T3-T5)', () => {
+  beforeEach(() => {
+    mocks = createMocks();
+    configureTestBed();
+  });
+
+  it('T3a: onSave with an unusable line does NOT emit and shows a toast', async () => {
+    mocks.serviceMock.hasUnusableLines = vi.fn(() => true);
+    const fixture = TestBed.createComponent(OperationCreateModalComponent);
+    fixture.componentRef.setInput('sites', []);
+    fixture.componentRef.setInput('draft', makeDraft({ lines: [makeLine('local-1', '1')] }));
+    await flush(fixture);
+
+    const saveSpy = vi.spyOn(fixture.componentInstance.save, 'emit');
+    await fixture.componentInstance.onSave();
+
+    expect(saveSpy).not.toHaveBeenCalled();
+    expect(mocks.serviceMock.validateLinesBeforePersist).toHaveBeenCalledTimes(1);
+    expect(fixture.componentInstance.toasts().join()).toContain('Сохранение отменено');
+  });
+
+  it('T3b: onSave with a clean line emits exactly once', async () => {
+    const fixture = TestBed.createComponent(OperationCreateModalComponent);
+    fixture.componentRef.setInput('sites', []);
+    fixture.componentRef.setInput('draft', makeDraft({ lines: [makeLine('local-1', '1')] }));
+    await flush(fixture);
+
+    const saveSpy = vi.spyOn(fixture.componentInstance.save, 'emit');
+    await fixture.componentInstance.onSave();
+
+    expect(saveSpy).toHaveBeenCalledTimes(1);
+    expect(fixture.componentInstance.toasts()).toEqual([]);
+  });
+
+  it('T3c: onSave blocked with toast when the resolver is unavailable (refreshError set)', async () => {
+    mocks.serviceMock.validateLinesBeforePersist = vi.fn(async () => {
+      throw { code: 'resolver_unavailable', message: 'резолвер недоступен' };
+    });
+    const fixture = TestBed.createComponent(OperationCreateModalComponent);
+    fixture.componentRef.setInput('sites', []);
+    fixture.componentRef.setInput('draft', makeDraft({ lines: [makeLine('local-1', '1')] }));
+    await flush(fixture);
+
+    const saveSpy = vi.spyOn(fixture.componentInstance.save, 'emit');
+    await fixture.componentInstance.onSave();
+
+    expect(saveSpy).not.toHaveBeenCalled();
+    expect(fixture.componentInstance.refreshError()).toEqual({
+      code: 'resolver_unavailable',
+      message: 'резолвер недоступен',
+    });
+    expect(fixture.componentInstance.toasts().join()).toContain('Не удалось проверить ТМЦ');
+    expect(fixture.componentInstance.toasts().join()).toContain('резолвер недоступен');
+  });
+
+  it('T3d: onSubmit with an unusable line does NOT emit, tracks validation_failed, shows toast', async () => {
+    mocks.serviceMock.hasUnusableLines = vi.fn(() => true);
+    const fixture = TestBed.createComponent(OperationCreateModalComponent);
+    fixture.componentRef.setInput('sites', []);
+    fixture.componentRef.setInput('draft', makeDraft({ lines: [makeLine('local-1', '1')] }));
+    await flush(fixture);
+
+    const submitSpy = vi.spyOn(fixture.componentInstance.submit, 'emit');
+    await fixture.componentInstance.onSubmit();
+
+    expect(submitSpy).not.toHaveBeenCalled();
+    expect(mocks.diagMock.track).toHaveBeenCalledWith(
+      'validation_failed',
+      expect.objectContaining({ reason: 'unusable_lines' }),
+    );
+    expect(fixture.componentInstance.toasts().join()).toContain('Сохранение отменено');
+  });
+
+  it('T4a: onRefreshAllBalances on object flow validates items and does NOT loadBalances', async () => {
+    const fixture = TestBed.createComponent(OperationCreateModalComponent);
+    fixture.componentRef.setInput('sites', []);
+    fixture.componentRef.setInput('draft', makeDraft({
+      type: 'ISSUE_RETURN',
+      sourceSiteId: '9',
+      issueObjectId: 'obj1',
+      lines: [makeLine('local-1', '1')],
+    }));
+    await flush(fixture);
+
+    const callsBefore = mocks.serviceMock.loadBalances.mock.calls.length;
+    await fixture.componentInstance.onRefreshAllBalances();
+
+    expect(mocks.serviceMock.validateLinesBeforePersist).toHaveBeenCalledTimes(1);
+    expect(mocks.serviceMock.loadBalances.mock.calls.length).toBe(callsBefore);
+    expect(fixture.componentInstance.toasts().join()).toContain('Остатки недоступны для объектных операций');
+  });
+
+  it('T4b: onRefreshAllBalances without site validates items and shows info toast', async () => {
+    const fixture = TestBed.createComponent(OperationCreateModalComponent);
+    fixture.componentRef.setInput('sites', []);
+    fixture.componentRef.setInput('draft', makeDraft({
+      destinationSiteId: null,
+      lines: [makeLine('local-1', '1')],
+    }));
+    await flush(fixture);
+
+    const callsBefore = mocks.serviceMock.loadBalances.mock.calls.length;
+    await fixture.componentInstance.onRefreshAllBalances();
+
+    expect(mocks.serviceMock.validateLinesBeforePersist).toHaveBeenCalledTimes(1);
+    expect(mocks.serviceMock.loadBalances.mock.calls.length).toBe(callsBefore);
+    expect(fixture.componentInstance.toasts().join()).toContain('Выберите склад, чтобы обновить остатки');
+  });
+
+  it('T5: loadBalances error sets balanceLoadError, balances [], toast on manual refresh', async () => {
+    mocks.serviceMock.loadBalances = vi.fn(async () => {
+      mocks.serviceMock.balances.set([]);
+      mocks.serviceMock.balanceLoadError.set('Не удалось загрузить остатки');
+    });
+    const fixture = TestBed.createComponent(OperationCreateModalComponent);
+    fixture.componentRef.setInput('sites', []);
+    fixture.componentRef.setInput('draft', makeDraft({ lines: [makeLine('local-1', '1')] }));
+    await flush(fixture);
+
+    await fixture.componentInstance.onRefreshAllBalances();
+
+    expect(mocks.serviceMock.loadBalances).toHaveBeenCalledWith('21');
+    expect(mocks.serviceMock.balanceLoadError()).toBe('Не удалось загрузить остатки');
+    expect(mocks.serviceMock.balances()).toEqual([]);
+    expect(fixture.componentInstance.toasts().join()).toContain('Не удалось обновить остатки');
   });
 });

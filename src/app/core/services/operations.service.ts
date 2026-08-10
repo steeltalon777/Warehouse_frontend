@@ -49,6 +49,7 @@ export class OperationsService {
   readonly listResult = signal<OperationsListResult | null>(null);
   readonly sites = signal<SiteDto[]>([]);
   readonly balances = signal<BalanceDto[]>([]);
+  readonly balanceLoadError = signal<string | null>(null);
 
   readonly rows = computed(() => this.listResult()?.rows ?? []);
   readonly totalCount = computed(() => this.listResult()?.totalCount ?? 0);
@@ -728,6 +729,7 @@ export class OperationsService {
 
   async loadBalances(siteId?: string): Promise<void> {
     try {
+      this.balanceLoadError.set(null);
       const params: Record<string, string> = {};
       if (siteId) params['site_id'] = siteId;
       const result = await firstValueFrom(
@@ -737,6 +739,7 @@ export class OperationsService {
       this.balances.set(rows);
     } catch {
       this.balances.set([]);
+      this.balanceLoadError.set('Не удалось загрузить остатки');
     }
   }
 
