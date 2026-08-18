@@ -83,7 +83,7 @@ describe('ItemCacheSearchComponent', () => {
     await waitForDebounce();
 
     expect(searchItemsOnce).toHaveBeenCalledTimes(1);
-    expect(searchItemsOnce).toHaveBeenCalledWith('кабель', 20, 'site-1', false);
+    expect(searchItemsOnce).toHaveBeenCalledWith('кабель', 20, 'site-1', false, undefined);
   });
 
   it('keeps source_site_qty in the data payload while the UI ignores it', async () => {

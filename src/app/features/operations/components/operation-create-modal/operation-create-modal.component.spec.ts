@@ -69,7 +69,7 @@ interface Mocks {
   diagMock: { track: ReturnType<typeof vi.fn> };
   draftStorageMock: { load: ReturnType<typeof vi.fn>; save: ReturnType<typeof vi.fn>; clear: ReturnType<typeof vi.fn> };
   bffMock: { setCurrentDraftId: ReturnType<typeof vi.fn> };
-  catalogSearchMock: { isSearchingItems: ReturnType<typeof vi.fn>; searchItemsOnce: ReturnType<typeof vi.fn>; refreshItemsAuthoritative: ReturnType<typeof vi.fn> };
+  catalogSearchMock: { isSearchingItems: ReturnType<typeof vi.fn>; searchItemsOnce: ReturnType<typeof vi.fn>; refreshItemsAuthoritative: ReturnType<typeof vi.fn>; resolveItems: ReturnType<typeof vi.fn> };
 }
 
 function createMocks(): Mocks {
@@ -97,6 +97,7 @@ function createMocks(): Mocks {
       isSearchingItems: vi.fn(() => false),
       searchItemsOnce: vi.fn(() => of([])),
       refreshItemsAuthoritative: vi.fn(),
+      resolveItems: vi.fn(() => of([])),
     },
   };
 }
@@ -257,12 +258,19 @@ describe('OperationCreateModalComponent — manual balance refresh (TZ §6.1 C1-
   });
 
   it('C6: onNewItemSelected → getBalanceForItem called exactly once with (itemId, siteId)', async () => {
+    mocks.catalogSearchMock.resolveItems = vi.fn(() => of([{
+      requested_id: '42',
+      status: 'active',
+      canonical_item_id: '42',
+      item: { id: '42', name: 'X', sku: 'S42', unit_id: 'u1', unit_symbol: 'шт', category_id: null, category_name: null, is_active: true },
+    }]));
+    configureTestBed();
     const fixture = TestBed.createComponent(OperationCreateModalComponent);
     fixture.componentRef.setInput('sites', []);
     fixture.componentRef.setInput('draft', makeDraft());
     await flush(fixture);
 
-    fixture.componentInstance.onNewItemSelected(makeItem('42'));
+    await fixture.componentInstance.onNewItemSelected(makeItem('42'));
 
     expect(mocks.serviceMock.getBalanceForItem).toHaveBeenCalledTimes(1);
     expect(mocks.serviceMock.getBalanceForItem).toHaveBeenCalledWith('42', '21');

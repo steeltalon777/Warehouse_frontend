@@ -777,11 +777,31 @@ export class OperationsPageComponent implements OnInit, OnDestroy {
       }
       void this.loadList();
     } catch (err: any) {
-      const message = this.service.error()
-        || err?.message
-        || err?.error?.message
-        || 'Не удалось сохранить черновик';
-      this.createModalSubmitError.set(message);
+      // Handle structured operation_lines_invalid errors
+      const raw = err?.raw;
+      if (raw?.code === 'operation_lines_invalid' && Array.isArray(raw.lines)) {
+        const lineErrors = raw.lines as Array<{ line_number: number; item_id?: number; reason: string; first_line_number?: number }>;
+        const summary = lineErrors.map(le => {
+          const reasonMap: Record<string, string> = {
+            'item_not_found': 'ТМЦ не найдена',
+            'deleted': 'ТМЦ удалена',
+            'inactive': 'ТМЦ деактивирована',
+            'duplicate_item': `дубликат (строка ${le.first_line_number})`,
+            'unit_unusable': 'ед. изм. недоступна',
+            'category_unusable': 'категория недоступна',
+          };
+          return `Строка ${le.line_number}: ${reasonMap[le.reason] || le.reason}`;
+        }).join('; ');
+        this.createModalSubmitError.set(`Ошибки в строках: ${summary}`);
+        // Store structured errors for line-level highlighting
+        this.createModalSubmitErrorPayload.set(raw);
+      } else {
+        const message = this.service.error()
+          || err?.message
+          || err?.error?.message
+          || 'Не удалось сохранить черновик';
+        this.createModalSubmitError.set(message);
+      }
     }
   }
 

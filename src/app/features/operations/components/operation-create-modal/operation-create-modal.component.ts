@@ -25,6 +25,7 @@ import { IssueObject, IssueObjectType, ISSUE_OBJECT_TYPE_LABELS } from '../../..
 import { snapshotDraft, isDraftClean } from './operation-draft-mappers';
 import { SubmitErrorService } from '../../submit-error/submit-error.service';
 import { buildSubmitToasts, collectUnknownSubmitErrors, formatSubmitStockHint } from './submit-error-toasts';
+import { CatalogSearchService } from '../../../../core/services/catalog-search.service';
 
 let LOCAL_ID_COUNTER = 0;
 function nextLocalId(): string {
@@ -241,6 +242,7 @@ function currentDateTimeLocal(): string {
                       #itemSearch
                       [placeholder]="'Поиск ТМЦ для добавления: название, SKU или хештег...'"
                       [sourceSiteId]="relevantSiteId()"
+                      [consistency]="'authoritative'"
                       (itemSelected)="onNewItemSelected($event)"
                       (refreshRequested)="onRefreshCheckItems()"
                     />
@@ -719,6 +721,7 @@ export class OperationCreateModalComponent implements OnInit, OnDestroy {
   private readonly draftStorage = inject(DraftStorageService);
   private readonly bff = inject(BffApiService);
   private readonly submitErrorService = inject(SubmitErrorService);
+  private readonly catalogSearch = inject(CatalogSearchService);
   private readonly cdr = inject(ChangeDetectorRef);
 
   /** Submit-error toasts shown after a rejected submit (§8). */
@@ -1472,33 +1475,98 @@ export class OperationCreateModalComponent implements OnInit, OnDestroy {
     }
   }
 
-  onNewItemSelected(item: Item): void {
+  async onNewItemSelected(item: Item): Promise<void> {
+    // Selection-time resolve gate: resolve before appending
+    const resolved = await this.resolveItemBeforeAppend(item.id);
+    if (!resolved) return; // blocked by resolve error or duplicate
+
+    const canonicalId = resolved.canonical_item_id || item.id;
+    const canonicalName = resolved.item?.name || item.name;
+    const canonicalSku = resolved.item?.sku || item.sku;
+    const canonicalUnitId = resolved.item?.unit_id || item.unit_id;
+    const canonicalUnitSymbol = resolved.item?.unit_symbol || item.unit_symbol;
+    const canonicalCategoryId = resolved.item?.category_id || item.category_id;
+    const canonicalCategoryName = resolved.item?.category_name || item.category_name;
+
+    // Duplicate guard: check if canonical ID already exists in lines
+    const existingLine = this.localDraft().lines.find(l => String(l.itemId) === String(canonicalId));
+    if (existingLine) {
+      this.duplicateItemBlocked(existingLine, canonicalName);
+      return;
+    }
+
     const isObjectFlow = this.isObjectSourceFlow() || this.localDraft().prefilledAssetLine === true;
     const availableQuantity = isObjectFlow
       ? null
-      : this.service.getBalanceForItem(item.id, this.relevantSiteId() || undefined);
+      : this.service.getBalanceForItem(canonicalId, this.relevantSiteId() || undefined);
     this.localDraft.update(d => ({
       ...d,
       lines: [
         ...d.lines,
         {
           localId: nextLocalId(),
-          itemId: item.id,
-          itemName: item.name,
-          categoryName: item.category_name ?? undefined,
-          sku: item.sku,
-          unitId: item.unit_id,
-          unitName: item.unit_symbol,
+          itemId: canonicalId,
+          itemName: canonicalName,
+          categoryName: canonicalCategoryName ?? undefined,
+          sku: canonicalSku,
+          unitId: canonicalUnitId,
+          unitName: canonicalUnitSymbol,
           quantity: null,
           availableQuantity,
           sourceSiteQuantity: availableQuantity,
           isTemporary: false,
           fromBalances: false,
           lineNumber: d.lines.length + 1,
+          resolvedStatus: resolved.status as any,
+          canonicalItemId: resolved.canonical_item_id,
         },
       ],
     }));
     this.itemSearch?.reset();
+  }
+
+  private async resolveItemBeforeAppend(itemId: string): Promise<{ canonical_item_id: string | null; status: string; item: any } | null> {
+    try {
+      const results = await this.catalogSearch.resolveItems([itemId]).toPromise();
+      if (!results || results.length === 0) {
+        this.showResolveError('ТМЦ не найдена в каталоге');
+        return null;
+      }
+      const resolved = results[0];
+      if (resolved.status === 'deleted') {
+        this.showResolveError('ТМЦ удалена из каталога');
+        return null;
+      }
+      if (resolved.status === 'inactive') {
+        this.showResolveError('ТМЦ деактивирована');
+        return null;
+      }
+      if (resolved.status === 'missing') {
+        this.showResolveError('ТМЦ не найдена в каталоге');
+        return null;
+      }
+      if (resolved.status === 'merged' && !resolved.canonical_item_id) {
+        this.showResolveError('ТМЦ объединена, но целевой элемент недоступен');
+        return null;
+      }
+      return resolved as any;
+    } catch (err: any) {
+      console.error('Item resolve error:', err);
+      this.showResolveError('Не удалось проверить ТМЦ. Попробуйте ещё раз.');
+      return null;
+    }
+  }
+
+  private showResolveError(message: string): void {
+    this.submitErrorLocal.set(message);
+    this.cdr.detectChanges();
+  }
+
+  private duplicateItemBlocked(existingLine: OperationLineDraftVm, itemName: string): void {
+    const lineNum = existingLine.lineNumber || this.localDraft().lines.indexOf(existingLine) + 1;
+    this.submitErrorLocal.set(`ТМЦ «${itemName}» уже добавлена в строке ${lineNum}`);
+    this.toasts.set([`ТМЦ «${itemName}» уже добавлена в строке ${lineNum}`]);
+    this.cdr.detectChanges();
   }
 
   editItemLine(localId: string): void {

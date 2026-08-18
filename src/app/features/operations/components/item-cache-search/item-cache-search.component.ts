@@ -194,6 +194,7 @@ export class ItemCacheSearchComponent implements OnDestroy {
   placeholder = input<string>('Начните вводить название...');
   itemName = input<string>('');
   sourceSiteId = input<string | null>(null);
+  consistency = input<'fast' | 'authoritative' | undefined>(undefined);
 
   itemSelected = output<Item>();
   cleared = output<void>();
@@ -233,7 +234,7 @@ export class ItemCacheSearchComponent implements OnDestroy {
           return of([]);
         }
         this.isLoading.set(true);
-        return this.catalogSearch.searchItemsOnce(query, 20, this.sourceSiteId() ?? undefined, false);
+        return this.catalogSearch.searchItemsOnce(query, 20, this.sourceSiteId() ?? undefined, false, this.consistency());
       }),
       catchError(err => {
         console.error('Search error:', err);
