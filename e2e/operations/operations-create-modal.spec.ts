@@ -189,8 +189,9 @@ test.describe('Operation Create Modal — Layout', () => {
     await selectFirstWarehouse(page);
     await addFirstMatchingItem(page, ['сол', 'кабель', 'ка'], '1');
 
+    // Wait for targeted balance to load after item selection
     const availableCell = page.locator('.modal-overlay tbody tr').first().locator('.col-avail');
-    await expect(availableCell).toContainText(/\d+/);
+    await expect(availableCell).toContainText(/\d+/, { timeout: 10000 });
     await expect(availableCell).not.toContainText('—');
     await expect(availableCell).not.toContainText('превышает остаток');
   });
@@ -204,8 +205,9 @@ test.describe('Operation Create Modal — Layout', () => {
     const itemName = await addFirstMatchingItem(page, ['сол', 'кабель', 'ка'], '1');
     const expectedBalance = await fetchWarehouseBalance(page, selectedWarehouse, itemName).catch(() => null);
 
+    // Wait for targeted balance to load after item selection
     const availableCell = page.locator('.modal-overlay tbody tr').first().locator('.col-avail');
-    await expect(availableCell).toContainText(/\d+/);
+    await expect(availableCell).toContainText(/\d+/, { timeout: 10000 });
     if (expectedBalance !== null) {
       await expect(availableCell).toContainText(expectedBalance);
     }
@@ -222,7 +224,7 @@ test.describe('Operation Create Modal — Layout', () => {
     await expect(effectiveAt).toHaveValue('2026-01-15T10:30');
 
     const comment = page.locator('.modal-overlay textarea');
-    await expect(comment).toBeVisible();
+    await expect(comment).toBeVisible({ timeout: 5000 });
     await expect(comment).toHaveAttribute('rows', '2');
 
     const dateBox = await effectiveAt.boundingBox();

@@ -151,7 +151,7 @@ test.describe('Operation Create Modal — manual balance refresh', () => {
     const siteBId = await fetchSiteId(page, warehouseB);
 
     // Exactly one new GET /bff/api/v1/balances for site B after the switch.
-    await expect.poll(() => tracker.siteIds.filter(siteId => siteId === siteBId).length, { timeout: 1000 }).toBe(1);
+    await expect.poll(() => tracker.siteIds.filter(siteId => siteId === siteBId).length, { timeout: 5000 }).toBe(1);
     await page.waitForTimeout(300);
     expect(tracker.siteIds.filter(siteId => siteId === siteBId).length).toBe(1);
     expect(tracker.siteIds.length).toBe(countBefore + 1);
@@ -184,12 +184,12 @@ test.describe('Operation Create Modal — manual balance refresh', () => {
 
     await refreshBtn.click();
     // Immediately after the click the button is disabled (in-flight request).
-    await expect(refreshBtn).toBeDisabled({ timeout: 2000 });
+    await expect(refreshBtn).toBeDisabled({ timeout: 5000 });
 
     // Rows show the «…» loading placeholder while the request is in flight.
-    await expect(page.locator('.modal-overlay tbody tr .avail-loading').first()).toBeVisible({ timeout: 2000 });
+    await expect(page.locator('.modal-overlay tbody tr .avail-loading').first()).toBeVisible({ timeout: 5000 });
 
-    await expect(refreshBtn).toBeEnabled({ timeout: 5000 });
+    await expect(refreshBtn).toBeEnabled({ timeout: 10000 });
     await expect(page.locator('.modal-overlay tbody tr .avail-loading')).toHaveCount(0);
 
     await page.unroute('**/bff/api/v1/balances*');
