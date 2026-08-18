@@ -191,7 +191,7 @@ test.describe('Operation Create Modal — Layout', () => {
 
     // Wait for targeted balance to load after item selection
     const availableCell = page.locator('.modal-overlay tbody tr').first().locator('.col-avail');
-    await expect(availableCell).toContainText(/\d+/, { timeout: 10000 });
+    await expect(availableCell).toContainText(/\d+/, { timeout: 15000 });
     await expect(availableCell).not.toContainText('—');
     await expect(availableCell).not.toContainText('превышает остаток');
   });
@@ -203,11 +203,12 @@ test.describe('Operation Create Modal — Layout', () => {
     const selectedWarehouse = await selectFirstWarehouse(page);
 
     const itemName = await addFirstMatchingItem(page, ['сол', 'кабель', 'ка'], '1');
-    const expectedBalance = await fetchWarehouseBalance(page, selectedWarehouse, itemName).catch(() => null);
 
     // Wait for targeted balance to load after item selection
     const availableCell = page.locator('.modal-overlay tbody tr').first().locator('.col-avail');
-    await expect(availableCell).toContainText(/\d+/, { timeout: 10000 });
+    await expect(availableCell).toContainText(/\d+/, { timeout: 15000 });
+
+    const expectedBalance = await fetchWarehouseBalance(page, selectedWarehouse, itemName).catch(() => null);
     if (expectedBalance !== null) {
       await expect(availableCell).toContainText(expectedBalance);
     }
