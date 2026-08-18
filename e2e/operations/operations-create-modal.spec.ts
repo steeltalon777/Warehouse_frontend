@@ -285,7 +285,8 @@ test.describe('Operation Create Modal — Lines Table', () => {
     await expect(table.locator('th').nth(0)).toContainText('№');
     await expect(table.locator('th').nth(1)).toContainText('ТМЦ');
     await expect(table.locator('th').nth(2)).toContainText('Отправляемое количество');
-    await expect(table.locator('th').nth(3)).toContainText('Имеется');
+    await expect(table.locator('th').nth(3)).toContainText('category_id');
+    await expect(table.locator('th').nth(4)).toContainText('Имеется');
   });
 
   test('lines table shows correct columns for RECEIVE (Количество)', async ({ page }) => {
