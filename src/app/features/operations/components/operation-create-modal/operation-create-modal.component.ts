@@ -1560,6 +1560,11 @@ export class OperationCreateModalComponent implements OnInit, OnDestroy {
       ],
     }));
     this.itemSearch?.reset();
+    // Load targeted balance for the newly added item
+    const newLine = this.localDraft().lines.find(l => l.itemId === canonicalId);
+    if (newLine) {
+      this.updateLineStockHint(newLine);
+    }
   }
 
   private async resolveItemBeforeAppend(itemId: string): Promise<{ canonical_item_id: string | null; status: string; item: any } | null> {
