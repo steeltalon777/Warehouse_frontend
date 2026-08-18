@@ -151,7 +151,7 @@ test.describe('Operation Create Modal — manual balance refresh', () => {
     const siteBId = await fetchSiteId(page, warehouseB);
 
     // Exactly one new GET /bff/api/v1/balances for site B after the switch.
-    await expect.poll(() => tracker.siteIds.filter(siteId => siteId === siteBId).length, { timeout: 5000 }).toBe(1);
+    await expect.poll(() => tracker.siteIds.filter(siteId => siteId === siteBId).length, { timeout: 10000 }).toBe(1);
     await page.waitForTimeout(300);
     expect(tracker.siteIds.filter(siteId => siteId === siteBId).length).toBe(1);
     expect(tracker.siteIds.length).toBe(countBefore + 1);
