@@ -135,9 +135,11 @@ test.describe('Operation Create Modal — manual balance refresh', () => {
     const warehouseA = await selectFirstWarehouse(page);
     const itemName = await addFirstMatchingItem(page, ['сол', 'кабель', 'ка'], '1');
 
-    const expectedA = await fetchWarehouseBalance(page, warehouseA, itemName).catch(() => null);
+    // Wait for targeted balance to load after item selection
     const firstRowAvail = page.locator('.modal-overlay tbody tr').first().locator('.col-avail');
-    await expect(firstRowAvail).toContainText(/\d+/);
+    await expect(firstRowAvail).toContainText(/\d+/, { timeout: 10000 });
+
+    const expectedA = await fetchWarehouseBalance(page, warehouseA, itemName).catch(() => null);
     if (expectedA !== null) {
       await expect(firstRowAvail).toContainText(expectedA);
     }
@@ -178,6 +180,9 @@ test.describe('Operation Create Modal — manual balance refresh', () => {
     const usedNames = new Set<string>();
     const itemName1 = await addFirstMatchingItem(page, ['сол', 'кабель', 'ка'], '1', usedNames);
     const itemName2 = await addFirstMatchingItem(page, ['сол', 'кабель', 'ка'], '1', usedNames);
+
+    // Wait for targeted balance to load
+    await expect(page.locator('.modal-overlay tbody tr .col-avail').first()).toContainText(/\d+/, { timeout: 10000 });
 
     const refreshBtn = page.locator('[data-testid="operation-lines-refresh-all"]');
     await expect(refreshBtn).toBeEnabled();
@@ -232,6 +237,9 @@ test.describe('Operation Create Modal — manual balance refresh', () => {
     await page.locator('.modal-overlay select').first().selectOption('RECEIVE');
     await selectFirstWarehouse(page);
     await addFirstMatchingItem(page, ['сол', 'кабель', 'ка'], '1');
+
+    // Wait for targeted balance to load
+    await expect(page.locator('.modal-overlay tbody tr .col-avail').first()).toContainText(/\d+/, { timeout: 10000 });
 
     const tracker = trackBalanceRequests(page);
     const countBefore = tracker.urls.length;
