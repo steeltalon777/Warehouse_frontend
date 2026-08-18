@@ -373,7 +373,7 @@ function currentDateTimeLocal(): string {
       background: #FFFFFF;
       border-radius: 12px;
       width: 100%;
-      max-width: 900px;
+      max-width: min(95vw, 1440px);
       max-height: min(1024px, calc(100vh - 32px));
       display: flex;
       flex-direction: column;
@@ -1325,6 +1325,7 @@ export class OperationCreateModalComponent implements OnInit, OnDestroy {
           ...l,
           itemName: l.itemName || balanceRow?.item_name || '',
           unitName: l.unitName && l.unitName !== 'шт' ? l.unitName : (balanceRow?.unit_symbol || l.unitName),
+          categoryId: balanceRow?.category_id || l.categoryId || null,
           availableQuantity: isNaN(qty) ? 0 : qty,
           sourceSiteQuantity: isNaN(qty) ? 0 : qty,
         };
@@ -1543,6 +1544,7 @@ export class OperationCreateModalComponent implements OnInit, OnDestroy {
           itemId: canonicalId,
           itemName: canonicalName,
           categoryName: canonicalCategoryName ?? undefined,
+          categoryId: canonicalCategoryId ?? null,
           sku: canonicalSku,
           unitId: canonicalUnitId,
           unitName: canonicalUnitSymbol,

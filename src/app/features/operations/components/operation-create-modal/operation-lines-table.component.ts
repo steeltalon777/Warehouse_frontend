@@ -61,6 +61,7 @@ export interface LineSubmitErrorState {
                   <span class="sort-indicator">{{ sortDirection() === 'asc' ? '▲' : '▼' }}</span>
                 }
               </th>
+              <th class="col-cat-id">category_id</th>
               <th class="col-avail" (click)="toggleSort('availableQuantity')">
                 {{ availLabel() }}
                 @if (sortColumn() === 'availableQuantity') {
@@ -141,6 +142,9 @@ export interface LineSubmitErrorState {
                   } @else if (isObjectSourceFlow() && line.availableQuantity != null) {
                     <div class="qty-hint">Имеется на объекте: {{ line.availableQuantity }}</div>
                   }
+                </td>
+                <td class="col-cat-id">
+                  <span class="cat-id-value">{{ line.categoryId ?? '—' }}</span>
                 </td>
                 <td class="col-avail">
                   @if (line.inlineItem) {
@@ -259,8 +263,10 @@ export interface LineSubmitErrorState {
     .lines-data-table tbody tr:hover { background: #FAFAFA; }
 
     .col-num { width: 40px; text-align: center; color: #94A3B8; font-size: 12px; white-space: nowrap; }
-    .col-name { width: 55%; }
-    .col-qty { width: 20%; }
+    .col-name { width: 40%; }
+    .col-qty { width: 15%; }
+    .col-cat-id { width: 10%; text-align: center; color: #6B7280; font-size: 12px; font-family: monospace; }
+    .cat-id-value { font-size: 12px; color: #6B7280; }
     .col-avail { width: 15%; }
     .col-del { width: 5%; text-align: center; }
 

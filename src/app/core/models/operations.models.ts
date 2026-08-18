@@ -290,6 +290,7 @@ export interface OperationLineDraftVm {
   itemId?: string | null;
   itemName: string;
   categoryName?: string;
+  categoryId?: string | null;
   sku?: string | null;
   unitId?: string | null;
   unitName: string;
@@ -355,6 +356,8 @@ export interface BalanceDto {
   qty: string;
   item_name?: string;
   unit_symbol?: string;
+  category_id?: string;
+  category_name?: string;
 }
 
 export const OPERATION_TYPE_LABELS: Record<OperationType, string> = {
