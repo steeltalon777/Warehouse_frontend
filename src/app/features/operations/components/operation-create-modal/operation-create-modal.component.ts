@@ -8,6 +8,7 @@ import {
   OperationLineDraftVm,
   OperationInlineItemDraftVm,
   SiteDto,
+  BalanceDto,
   OPERATION_TYPE_LABELS,
 } from '../../../../core/models/operations.models';
 import { OperationsService } from '../../../../core/services/operations.service';
@@ -1180,27 +1181,28 @@ export class OperationCreateModalComponent implements OnInit, OnDestroy {
       const siteId = this.relevantSiteId();
       const isObjectSourceFlow = this.isObjectSourceFlow();
       const hasPrefilledAssetLine = this.hasPrefilledAssetLine();
-      // For object-source flows (ISSUE_RETURN, WRITE_OFF from object), the
-      // availableQuantity is the qty assigned to the issue object, not the
-      // warehouse balance. Skip the warehouse balance refresh so prefilled
-      // object qty is not overwritten.
       if (isObjectSourceFlow || hasPrefilledAssetLine || !siteId
           || siteId === 'undefined' || siteId === 'null') {
         return;
       }
-      // Один запрос без perpetual: balanceRefreshSeq — единственная страховка от race.
+      // Targeted balance refresh: load only for items in current lines
+      const currentLines = this.localDraft().lines;
+      const itemIds = [...new Set(
+        currentLines
+          .map(l => l.itemId)
+          .filter((id): id is string => !!id)
+      )];
+      if (itemIds.length === 0) return;
+
       const seq = ++this.balanceRefreshSeq;
       this.isBalanceRefreshing.set(true);
-      this.service.loadBalances(siteId).then(() => {
+      this.service.loadBalancesForItems(siteId, itemIds).then((rows) => {
         if (seq !== this.balanceRefreshSeq) return;
         if (this.relevantSiteId() === siteId) {
-          this.refreshSourceQuantities();
+          this.refreshSourceQuantitiesFromRows(rows);
         }
         this.isBalanceRefreshing.set(false);
       }).catch(() => {
-        // Не даём effect'у упасть при сетевой ошибке: оставляем isBalanceRefreshing
-        // в исходном состоянии. Сообщение об ошибке доступно через
-        // this.service.balanceLoadError() и показывается в onRefreshAllBalances.
         if (seq === this.balanceRefreshSeq) {
           this.isBalanceRefreshing.set(false);
         }
@@ -1269,17 +1271,20 @@ export class OperationCreateModalComponent implements OnInit, OnDestroy {
 
   private updateLineStockHint(line: OperationLineDraftVm): void {
     if (!line.itemId) return;
-    // Do not overwrite object-assigned qty with warehouse balance for
-    // object-source flows or prefilled-from-object lines.
     if (this.isObjectSourceFlow() || this.hasPrefilledAssetLine()) return;
-    const siteId = this.relevantSiteId() || undefined;
-    const qty = this.service.getBalanceForItem(line.itemId, siteId);
-    this.localDraft.update(state => ({
-      ...state,
-      lines: state.lines.map(l =>
-        l.localId === line.localId ? { ...l, availableQuantity: qty } : l
-      ),
-    }));
+    const siteId = this.relevantSiteId();
+    if (!siteId) return;
+    // Load balance for this specific item (targeted)
+    this.service.loadBalancesForItems(siteId, [line.itemId]).then(rows => {
+      const row = rows.find(r => String(r.item_id) === String(line.itemId));
+      const qty = row ? parseFloat(row.qty) : 0;
+      this.localDraft.update(state => ({
+        ...state,
+        lines: state.lines.map(l =>
+          l.localId === line.localId ? { ...l, availableQuantity: isNaN(qty) ? 0 : qty } : l
+        ),
+      }));
+    });
   }
 
   private refreshSourceQuantities(): void {
@@ -1304,6 +1309,29 @@ export class OperationCreateModalComponent implements OnInit, OnDestroy {
     }));
   }
 
+  private refreshSourceQuantitiesFromRows(rows: BalanceDto[]): void {
+    if (this.isObjectSourceFlow() || this.hasPrefilledAssetLine()) return;
+    const balanceMap = new Map<string, BalanceDto>();
+    for (const row of rows) {
+      balanceMap.set(String(row.item_id), row);
+    }
+    this.localDraft.update(state => ({
+      ...state,
+      lines: state.lines.map(l => {
+        if (!l.itemId) return l;
+        const balanceRow = balanceMap.get(String(l.itemId));
+        const qty = balanceRow ? parseFloat(balanceRow.qty) : 0;
+        return {
+          ...l,
+          itemName: l.itemName || balanceRow?.item_name || '',
+          unitName: l.unitName && l.unitName !== 'шт' ? l.unitName : (balanceRow?.unit_symbol || l.unitName),
+          availableQuantity: isNaN(qty) ? 0 : qty,
+          sourceSiteQuantity: isNaN(qty) ? 0 : qty,
+        };
+      }),
+    }));
+  }
+
   private shouldUseWarehouseBalances(): boolean {
     return !this.isObjectSourceFlow() && !this.hasPrefilledAssetLine();
   }
@@ -1318,33 +1346,40 @@ export class OperationCreateModalComponent implements OnInit, OnDestroy {
     // B3 step 1: ТМЦ-валидация — суперсет «Обновить и проверить».
     await this.validateAndApplyLineStatuses();
 
-    // B3 step 2: складской flow — обновить остатки.
+    // B3 step 2: складской flow — обновить остатки (targeted by item_ids).
     if (this.shouldUseWarehouseBalances()) {
       const siteId = this.relevantSiteId();
       if (siteId && siteId !== 'undefined' && siteId !== 'null') {
+        const itemIds = [...new Set(
+          this.localDraft().lines
+            .map(l => l.itemId)
+            .filter((id): id is string => !!id)
+        )];
+        if (itemIds.length === 0) {
+          this.setToasts(['Нет ТМЦ для обновления остатков']);
+          return;
+        }
         const seq = ++this.balanceRefreshSeq;
         this.isBalanceRefreshing.set(true);
         try {
-          await this.service.loadBalances(siteId);
+          const rows = await this.service.loadBalancesForItems(siteId, itemIds);
           if (seq === this.balanceRefreshSeq) {
             const err = this.service.balanceLoadError();
             if (err) {
               this.setToasts([`Не удалось обновить остатки: ${err}`]);
             } else if (this.relevantSiteId() === siteId) {
-              this.refreshSourceQuantities();
+              this.refreshSourceQuantitiesFromRows(rows);
             }
           }
         } finally {
           if (seq === this.balanceRefreshSeq) this.isBalanceRefreshing.set(false);
         }
       } else {
-        // B3 step 3: склад не выбран.
         this.setToasts(['Выберите склад, чтобы обновить остатки']);
       }
       return;
     }
 
-    // B3 step 3: объектный flow.
     this.setToasts(['Остатки недоступны для объектных операций']);
   }
 

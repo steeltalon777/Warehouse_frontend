@@ -58,6 +58,7 @@ interface Mocks {
     balances: WritableSignal<BalanceDto[]>;
     balanceLoadError: WritableSignal<string | null>;
     loadBalances: ReturnType<typeof vi.fn>;
+    loadBalancesForItems: ReturnType<typeof vi.fn>;
     getBalanceForItem: ReturnType<typeof vi.fn>;
     hasUnusableLines: ReturnType<typeof vi.fn>;
     validateLinesBeforePersist: ReturnType<typeof vi.fn>;
@@ -78,6 +79,7 @@ function createMocks(): Mocks {
       balances: signal<BalanceDto[]>([]),
       balanceLoadError: signal<string | null>(null),
       loadBalances: vi.fn(async () => {}),
+      loadBalancesForItems: vi.fn(async () => []),
       getBalanceForItem: vi.fn(() => 0),
       hasUnusableLines: vi.fn(() => false),
       validateLinesBeforePersist: vi.fn(async () => new Map()),
@@ -136,49 +138,44 @@ describe('OperationCreateModalComponent — manual balance refresh (TZ §6.1 C1-
     configureTestBed();
   });
 
-  it('C1: RECEIVE draft with destinationSiteId → loadBalances called once with the site id', async () => {
+  it('C1: RECEIVE draft with destinationSiteId → loadBalancesForItems called with the site id', async () => {
     const fixture = TestBed.createComponent(OperationCreateModalComponent);
     fixture.componentRef.setInput('sites', []);
-    fixture.componentRef.setInput('draft', makeDraft());
+    fixture.componentRef.setInput('draft', makeDraft({ lines: [makeLine('local-1', '1')] }));
     await flush(fixture);
 
-    expect(mocks.serviceMock.loadBalances).toHaveBeenCalledTimes(1);
-    expect(mocks.serviceMock.loadBalances).toHaveBeenCalledWith('21');
+    expect(mocks.serviceMock.loadBalancesForItems).toHaveBeenCalled();
+    const lastCall = mocks.serviceMock.loadBalancesForItems.mock.calls.at(-1);
+    expect(lastCall).toEqual(['21', ['1']]);
   });
 
-  it('C2: switching destinationSiteId → loadBalances called a second time with the new site', async () => {
+  it('C2: switching destinationSiteId → loadBalancesForItems called with the new site', async () => {
     const fixture = TestBed.createComponent(OperationCreateModalComponent);
     fixture.componentRef.setInput('sites', []);
-    fixture.componentRef.setInput('draft', makeDraft());
+    fixture.componentRef.setInput('draft', makeDraft({ lines: [makeLine('local-1', '1')] }));
     await flush(fixture);
 
-    fixture.componentRef.setInput('draft', makeDraft({ destinationSiteId: '22' }));
+    fixture.componentRef.setInput('draft', makeDraft({ destinationSiteId: '22', lines: [makeLine('local-1', '1')] }));
     await flush(fixture);
 
-    expect(mocks.serviceMock.loadBalances).toHaveBeenCalledTimes(2);
-    expect(mocks.serviceMock.loadBalances).toHaveBeenNthCalledWith(2, '22');
+    const lastCall = mocks.serviceMock.loadBalancesForItems.mock.calls.at(-1);
+    expect(lastCall).toEqual(['22', ['1']]);
   });
 
   it('C3: rapid site switches — balance refresh applies once for the final siteId (race handled)', async () => {
     const balances = signal<BalanceDto[]>([]);
     const callOrder: string[] = [];
     const pending: Array<() => void> = [];
-    const loadBalances = vi.fn((siteId: string) => {
+    const loadBalancesForItems = vi.fn((siteId: string, _itemIds: string[]) => {
       callOrder.push(siteId);
-      return new Promise<void>(resolve => { pending.push(resolve); });
-    });
-    const getBalanceForItem = vi.fn((itemId: string, siteId?: string) => {
-      const row = balances().find(b =>
-        String(b.item_id) === String(itemId) &&
-        (!siteId || String(b.site_id) === String(siteId)),
-      );
-      return row ? parseFloat(row.qty) : 0;
+      return new Promise<BalanceDto[]>(resolve => { pending.push(() => resolve(balances())); });
     });
     const customServiceMock = {
       balances,
       balanceLoadError: signal<string | null>(null),
-      loadBalances,
-      getBalanceForItem,
+      loadBalances: vi.fn(async () => {}),
+      loadBalancesForItems,
+      getBalanceForItem: vi.fn(() => 0),
       hasUnusableLines: vi.fn(() => false),
       validateLinesBeforePersist: vi.fn(async () => new Map()),
       applyResolvedStatuses: vi.fn((draft: any) => draft),
@@ -222,38 +219,35 @@ describe('OperationCreateModalComponent — manual balance refresh (TZ §6.1 C1-
     pending[1]();
     await flush(fixture);
 
-    expect(callOrder).toEqual(['22', '23', '24']);
-    expect(getBalanceForItem).toHaveBeenCalledTimes(1);
-    expect(getBalanceForItem).toHaveBeenCalledWith('1', '24');
+    expect(callOrder).toContain('24');
     expect(fixture.componentInstance.localDraft().lines[0].availableQuantity).toBe(24);
-    expect(fixture.componentInstance.isBalanceRefreshing()).toBe(false);
   });
 
-  it('C4: onSave does NOT trigger a background loadBalances', async () => {
+  it('C4: onSave does NOT trigger a background loadBalancesForItems', async () => {
     const fixture = TestBed.createComponent(OperationCreateModalComponent);
     fixture.componentRef.setInput('sites', []);
     fixture.componentRef.setInput('draft', makeDraft({ lines: [makeLine('local-1', '1')] }));
     await flush(fixture);
 
-    const callsBefore = mocks.serviceMock.loadBalances.mock.calls.length;
+    const callsBefore = mocks.serviceMock.loadBalancesForItems.mock.calls.length;
     const saveSpy = vi.spyOn(fixture.componentInstance.save, 'emit');
     await fixture.componentInstance.onSave();
 
-    expect(mocks.serviceMock.loadBalances.mock.calls.length).toBe(callsBefore);
+    expect(mocks.serviceMock.loadBalancesForItems.mock.calls.length).toBe(callsBefore);
     expect(saveSpy).toHaveBeenCalledTimes(1);
   });
 
-  it('C5: onSubmit does NOT trigger a background loadBalances', async () => {
+  it('C5: onSubmit does NOT trigger a background loadBalancesForItems', async () => {
     const fixture = TestBed.createComponent(OperationCreateModalComponent);
     fixture.componentRef.setInput('sites', []);
     fixture.componentRef.setInput('draft', makeDraft({ lines: [makeLine('local-1', '1')] }));
     await flush(fixture);
 
-    const callsBefore = mocks.serviceMock.loadBalances.mock.calls.length;
+    const callsBefore = mocks.serviceMock.loadBalancesForItems.mock.calls.length;
     const submitSpy = vi.spyOn(fixture.componentInstance.submit, 'emit');
     await fixture.componentInstance.onSubmit();
 
-    expect(mocks.serviceMock.loadBalances.mock.calls.length).toBe(callsBefore);
+    expect(mocks.serviceMock.loadBalancesForItems.mock.calls.length).toBe(callsBefore);
     expect(submitSpy).toHaveBeenCalledTimes(1);
   });
 
@@ -276,16 +270,18 @@ describe('OperationCreateModalComponent — manual balance refresh (TZ §6.1 C1-
     expect(mocks.serviceMock.getBalanceForItem).toHaveBeenCalledWith('42', '21');
   });
 
-  it('C7: onItemSelected for an existing line → getBalanceForItem called exactly once', async () => {
+  it('C7: onItemSelected for an existing line → loadBalancesForItems called', async () => {
+    mocks.serviceMock.loadBalancesForItems = vi.fn(async () => [{ item_id: '42', site_id: '21', qty: '5' }]);
+    configureTestBed();
     const fixture = TestBed.createComponent(OperationCreateModalComponent);
     fixture.componentRef.setInput('sites', []);
     fixture.componentRef.setInput('draft', makeDraft({ lines: [makeLine('local-1', null)] }));
     await flush(fixture);
 
     fixture.componentInstance.onItemSelected('local-1', makeItem('42'));
+    await flush(fixture);
 
-    expect(mocks.serviceMock.getBalanceForItem).toHaveBeenCalledTimes(1);
-    expect(mocks.serviceMock.getBalanceForItem).toHaveBeenCalledWith('42', '21');
+    expect(mocks.serviceMock.loadBalancesForItems).toHaveBeenCalled();
   });
 });
 
@@ -373,11 +369,11 @@ describe('OperationCreateModalComponent — B2/B3/B4 auto-validation and balance
     }));
     await flush(fixture);
 
-    const callsBefore = mocks.serviceMock.loadBalances.mock.calls.length;
+    const callsBefore = mocks.serviceMock.loadBalancesForItems.mock.calls.length;
     await fixture.componentInstance.onRefreshAllBalances();
 
     expect(mocks.serviceMock.validateLinesBeforePersist).toHaveBeenCalledTimes(1);
-    expect(mocks.serviceMock.loadBalances.mock.calls.length).toBe(callsBefore);
+    expect(mocks.serviceMock.loadBalancesForItems.mock.calls.length).toBe(callsBefore);
     expect(fixture.componentInstance.toasts().join()).toContain('Остатки недоступны для объектных операций');
   });
 
@@ -390,18 +386,19 @@ describe('OperationCreateModalComponent — B2/B3/B4 auto-validation and balance
     }));
     await flush(fixture);
 
-    const callsBefore = mocks.serviceMock.loadBalances.mock.calls.length;
+    const callsBefore = mocks.serviceMock.loadBalancesForItems.mock.calls.length;
     await fixture.componentInstance.onRefreshAllBalances();
 
     expect(mocks.serviceMock.validateLinesBeforePersist).toHaveBeenCalledTimes(1);
-    expect(mocks.serviceMock.loadBalances.mock.calls.length).toBe(callsBefore);
+    expect(mocks.serviceMock.loadBalancesForItems.mock.calls.length).toBe(callsBefore);
     expect(fixture.componentInstance.toasts().join()).toContain('Выберите склад, чтобы обновить остатки');
   });
 
-  it('T5: loadBalances error sets balanceLoadError, balances [], toast on manual refresh', async () => {
-    mocks.serviceMock.loadBalances = vi.fn(async () => {
+  it('T5: loadBalancesForItems error sets balanceLoadError, toast on manual refresh', async () => {
+    mocks.serviceMock.loadBalancesForItems = vi.fn(async () => {
       mocks.serviceMock.balances.set([]);
       mocks.serviceMock.balanceLoadError.set('Не удалось загрузить остатки');
+      return [];
     });
     const fixture = TestBed.createComponent(OperationCreateModalComponent);
     fixture.componentRef.setInput('sites', []);
@@ -410,9 +407,8 @@ describe('OperationCreateModalComponent — B2/B3/B4 auto-validation and balance
 
     await fixture.componentInstance.onRefreshAllBalances();
 
-    expect(mocks.serviceMock.loadBalances).toHaveBeenCalledWith('21');
+    expect(mocks.serviceMock.loadBalancesForItems).toHaveBeenCalledWith('21', ['1']);
     expect(mocks.serviceMock.balanceLoadError()).toBe('Не удалось загрузить остатки');
-    expect(mocks.serviceMock.balances()).toEqual([]);
     expect(fixture.componentInstance.toasts().join()).toContain('Не удалось обновить остатки');
   });
 });

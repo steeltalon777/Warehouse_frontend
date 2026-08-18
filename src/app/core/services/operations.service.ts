@@ -743,6 +743,27 @@ export class OperationsService {
     }
   }
 
+  async loadBalancesForItems(siteId: string, itemIds: string[]): Promise<BalanceDto[]> {
+    if (!siteId || !itemIds.length) return [];
+    try {
+      this.balanceLoadError.set(null);
+      const params: Record<string, string> = {
+        site_id: siteId,
+        item_ids: itemIds.join(','),
+      };
+      const result = await firstValueFrom(
+        this.bff.getData<BalanceDto[] | { items?: BalanceDto[] }>('/balances', params)
+      );
+      const rows = Array.isArray(result) ? result : (result?.items ?? []);
+      // Update the global balances signal with the targeted results
+      this.balances.set(rows);
+      return rows;
+    } catch {
+      this.balanceLoadError.set('Не удалось загрузить остатки');
+      return [];
+    }
+  }
+
   getBalanceForItem(itemId: string, siteId?: string): number {
     const list = this.balances();
     const normalizedSiteId = siteId == null ? null : String(siteId);
