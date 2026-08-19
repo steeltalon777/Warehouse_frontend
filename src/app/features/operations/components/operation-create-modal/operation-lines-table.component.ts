@@ -35,26 +35,30 @@ export interface LineSubmitErrorState {
         </colgroup>
         <thead>
           <tr>
-            <th class="col-num" (click)="toggleSort('lineNumber')">
+            <th class="col-num" (click)="toggleSort('lineNumber')"
+                [attr.aria-sort]="sortColumn() === 'lineNumber' ? (sortDirection() === 'asc' ? 'ascending' : 'descending') : 'none'">
               №
               @if (sortColumn() === 'lineNumber') {
                 <span class="sort-indicator">{{ sortDirection() === 'asc' ? '▲' : '▼' }}</span>
               }
             </th>
-            <th class="col-item" (click)="toggleSort('itemName')">
+            <th class="col-item" (click)="toggleSort('itemName')"
+                [attr.aria-sort]="sortColumn() === 'itemName' ? (sortDirection() === 'asc' ? 'ascending' : 'descending') : 'none'">
               ТМЦ
               @if (sortColumn() === 'itemName') {
                 <span class="sort-indicator">{{ sortDirection() === 'asc' ? '▲' : '▼' }}</span>
               }
             </th>
-            <th class="col-qty" (click)="toggleSort('quantity')">
+            <th class="col-qty" (click)="toggleSort('quantity')"
+                [attr.aria-sort]="sortColumn() === 'quantity' ? (sortDirection() === 'asc' ? 'ascending' : 'descending') : 'none'">
               {{ qtyLabel() }}
               @if (sortColumn() === 'quantity') {
                 <span class="sort-indicator">{{ sortDirection() === 'asc' ? '▲' : '▼' }}</span>
               }
             </th>
             <th class="col-cat-id">category_id</th>
-            <th class="col-avail" (click)="toggleSort('availableQuantity')">
+            <th class="col-avail" (click)="toggleSort('availableQuantity')"
+                [attr.aria-sort]="sortColumn() === 'availableQuantity' ? (sortDirection() === 'asc' ? 'ascending' : 'descending') : 'none'">
               {{ availLabel() }}
               @if (sortColumn() === 'availableQuantity') {
                 <span class="sort-indicator">{{ sortDirection() === 'asc' ? '▲' : '▼' }}</span>
@@ -110,8 +114,10 @@ export interface LineSubmitErrorState {
                   type="number"
                   class="qty-input"
                   [class.qty-input--invalid]="!!line.error || !!submitErrorState(line.localId)"
+                  [class.qty-input--readonly]="isReadonly()"
                   [ngModel]="line.quantity"
                   (ngModelChange)="onQtyChange(line.localId, $event)"
+                  [disabled]="isReadonly()"
                   [attr.aria-invalid]="line.error || submitErrorState(line.localId) ? 'true' : null"
                   [attr.aria-describedby]="submitErrorState(line.localId) ? submitErrorHintId(line.localId) : null"
                   [attr.data-qty-for]="line.localId"
@@ -343,6 +349,11 @@ export interface LineSubmitErrorState {
       box-shadow: 0 0 0 3px rgba(185, 28, 28, 0.12);
       background: var(--l-danger-bg);
     }
+    .qty-input--readonly {
+      background: var(--l-surface-2);
+      color: var(--l-fg);
+      cursor: default;
+    }
     .qty-error {
       font-size: 11px;
       color: var(--l-danger);
@@ -503,6 +514,8 @@ export class OperationLinesTableComponent {
   submitErrorLines = input<Record<string, LineSubmitErrorState>>({});
   /** Filter text from the parent modal's lines-filter row (TZ §14). */
   nameFilter = input<string>('');
+  /** Read-only mode (submitted/cancelled operation); qty inputs become disabled (TZ §9). */
+  isReadonly = input<boolean>(false);
 
   quantityChange = output<LineQuantityChange>();
   removeLine = output<string>();

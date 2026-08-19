@@ -52,7 +52,7 @@ function currentDateTimeLocal(): string {
   providers: [SubmitErrorService],
   template: `
     <div class="wh-modal-overlay modal-overlay" [class.modal-overlay--pair]="isInlineModalOpen()">
-      <div class="wh-modal modal-container">
+      <div class="wh-modal modal-container" [attr.data-mode]="isReadonly() ? 'view' : 'edit'">
         <div class="modal-header">
           <div class="modal-header__title-group">
             <div class="modal-header__title-row">
@@ -348,6 +348,7 @@ function currentDateTimeLocal(): string {
             [isObjectSourceFlow]="isObjectSourceFlow()"
             [submitErrorLines]="lineSubmitErrors()"
             [nameFilter]="tableNameFilter()"
+            [isReadonly]="isReadonly()"
             (quantityChange)="onQuantityChange($event.localId, $event.quantity)"
             (removeLine)="removeLine($event)"
           />
@@ -707,6 +708,91 @@ function currentDateTimeLocal(): string {
       min-height: 0;
       background: var(--f-surface);
       scrollbar-gutter: stable;
+    }
+
+    /* ─── VIEW mode (TZ §9, §20) ──────────────────────────────── */
+    .modal-container[data-mode="view"] .modal-add-toolbar { display: none; }
+    .modal-container[data-mode="view"] .form-field > .control,
+    .modal-container[data-mode="view"] .form-row--full > .control,
+    .modal-container[data-mode="view"] .form-row--full > .issue-object-search,
+    .modal-container[data-mode="view"] .form-row--full > .issue-object-selected,
+    .modal-container[data-mode="view"] .form-row--full > .radio-group {
+      display: none;
+    }
+    .modal-container[data-mode="view"] .form-field > .readonly-value,
+    .modal-container[data-mode="view"] .form-row--full > .readonly-value {
+      display: block;
+      font-size: 13px;
+      color: var(--f-fg);
+      line-height: 1.4;
+      padding: 4px 0;
+      word-break: break-word;
+    }
+    .modal-container[data-mode="view"] .form-field__label,
+    .modal-container[data-mode="view"] .form-row__label {
+      margin-bottom: 0;
+    }
+    .modal-container[data-mode="view"] .modal-footer {
+      background: var(--f-surface);
+    }
+
+    /* ─── Responsive (TZ §19) ─────────────────────────────────── */
+    @media (max-width: 1280px) {
+      .modal-container {
+        max-width: 100%;
+      }
+      .form-grid {
+        grid-template-columns: minmax(0, 1fr) minmax(0, 1.2fr) minmax(0, 0.95fr);
+      }
+      .form-grid[data-variant="move"] {
+        grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+      }
+    }
+    @media (max-width: 1024px) {
+      .modal-container {
+        height: clamp(640px, 96vh, 1000px);
+      }
+      .form-grid {
+        grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+      }
+      .form-grid[data-variant="move"] {
+        grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+      }
+      .modal-table-wrap { overflow-x: auto; }
+      :host ::ng-deep app-operation-lines-table .lines-data-table { min-width: 760px; }
+    }
+    @media (max-width: 768px) {
+      .modal-container {
+        height: 96vh;
+      }
+      .form-grid,
+      .form-grid[data-variant="move"] {
+        grid-template-columns: 1fr;
+      }
+      .modal-add-toolbar {
+        flex-wrap: wrap;
+        padding: 10px 14px;
+      }
+      .modal-header,
+      .modal-table-toolbar,
+      .modal-lines-filter,
+      .modal-form-grid,
+      .modal-footer {
+        padding-left: 14px;
+        padding-right: 14px;
+      }
+      .modal-banners { padding: 10px 14px 0; }
+      .footer-actions { flex-wrap: wrap; }
+    }
+
+    /* Respect reduced-motion preference (TZ §20). */
+    @media (prefers-reduced-motion: reduce) {
+      .modal-container *,
+      .modal-container *::before,
+      .modal-container *::after {
+        animation-duration: 0.01ms !important;
+        transition-duration: 0.01ms !important;
+      }
     }
 
     .modal-footer {
