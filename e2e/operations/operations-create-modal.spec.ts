@@ -189,9 +189,12 @@ test.describe('Operation Create Modal — Layout', () => {
     await selectFirstWarehouse(page);
     await addFirstMatchingItem(page, ['сол', 'кабель', 'ка'], '1');
 
-    // Wait for targeted balance to load after item selection
+    // Wait for targeted balance response after item selection
+    await page.waitForResponse(resp => resp.url().includes('/bff/api/v1/balances') && resp.status() === 200, { timeout: 15000 });
+    await page.waitForTimeout(200);
+
     const availableCell = page.locator('.modal-overlay tbody tr').first().locator('.col-avail');
-    await expect(availableCell).toContainText(/\d+/, { timeout: 15000 });
+    await expect(availableCell).toContainText(/\d+/, { timeout: 5000 });
     await expect(availableCell).not.toContainText('—');
     await expect(availableCell).not.toContainText('превышает остаток');
   });
@@ -204,9 +207,12 @@ test.describe('Operation Create Modal — Layout', () => {
 
     const itemName = await addFirstMatchingItem(page, ['сол', 'кабель', 'ка'], '1');
 
-    // Wait for targeted balance to load after item selection
+    // Wait for targeted balance response after item selection
+    await page.waitForResponse(resp => resp.url().includes('/bff/api/v1/balances') && resp.status() === 200, { timeout: 15000 });
+    await page.waitForTimeout(200);
+
     const availableCell = page.locator('.modal-overlay tbody tr').first().locator('.col-avail');
-    await expect(availableCell).toContainText(/\d+/, { timeout: 15000 });
+    await expect(availableCell).toContainText(/\d+/, { timeout: 5000 });
 
     const expectedBalance = await fetchWarehouseBalance(page, selectedWarehouse, itemName).catch(() => null);
     if (expectedBalance !== null) {

@@ -135,9 +135,12 @@ test.describe('Operation Create Modal — manual balance refresh', () => {
     const warehouseA = await selectFirstWarehouse(page);
     const itemName = await addFirstMatchingItem(page, ['сол', 'кабель', 'ка'], '1');
 
-    // Wait for targeted balance to load after item selection
+    // Wait for targeted balance response after item selection
+    await page.waitForResponse(resp => resp.url().includes('/bff/api/v1/balances') && resp.status() === 200, { timeout: 15000 });
+    await page.waitForTimeout(200);
+
     const firstRowAvail = page.locator('.modal-overlay tbody tr').first().locator('.col-avail');
-    await expect(firstRowAvail).toContainText(/\d+/, { timeout: 10000 });
+    await expect(firstRowAvail).toContainText(/\d+/, { timeout: 5000 });
 
     const expectedA = await fetchWarehouseBalance(page, warehouseA, itemName).catch(() => null);
     if (expectedA !== null) {
@@ -152,9 +155,13 @@ test.describe('Operation Create Modal — manual balance refresh', () => {
     }
     const siteBId = await fetchSiteId(page, warehouseB);
 
-    // Exactly one new GET /bff/api/v1/balances for site B after the switch.
-    await expect.poll(() => tracker.siteIds.filter(siteId => siteId === siteBId).length, { timeout: 10000 }).toBe(1);
-    await page.waitForTimeout(300);
+    // Wait for targeted balance response for site B
+    await page.waitForResponse(
+      resp => resp.url().includes('/bff/api/v1/balances') && resp.url().includes(`site_id=${siteBId}`) && resp.status() === 200,
+      { timeout: 15000 },
+    );
+    await page.waitForTimeout(200);
+
     expect(tracker.siteIds.filter(siteId => siteId === siteBId).length).toBe(1);
     expect(tracker.siteIds.length).toBe(countBefore + 1);
 
@@ -181,8 +188,9 @@ test.describe('Operation Create Modal — manual balance refresh', () => {
     const itemName1 = await addFirstMatchingItem(page, ['сол', 'кабель', 'ка'], '1', usedNames);
     const itemName2 = await addFirstMatchingItem(page, ['сол', 'кабель', 'ка'], '1', usedNames);
 
-    // Wait for targeted balance to load
-    await expect(page.locator('.modal-overlay tbody tr .col-avail').first()).toContainText(/\d+/, { timeout: 10000 });
+    // Wait for targeted balance response after adding items
+    await page.waitForResponse(resp => resp.url().includes('/bff/api/v1/balances') && resp.status() === 200, { timeout: 15000 });
+    await page.waitForTimeout(300);
 
     const refreshBtn = page.locator('[data-testid="operation-lines-refresh-all"]');
     await expect(refreshBtn).toBeEnabled();
@@ -238,8 +246,9 @@ test.describe('Operation Create Modal — manual balance refresh', () => {
     await selectFirstWarehouse(page);
     await addFirstMatchingItem(page, ['сол', 'кабель', 'ка'], '1');
 
-    // Wait for targeted balance to load
-    await expect(page.locator('.modal-overlay tbody tr .col-avail').first()).toContainText(/\d+/, { timeout: 10000 });
+    // Wait for targeted balance response after item selection
+    await page.waitForResponse(resp => resp.url().includes('/bff/api/v1/balances') && resp.status() === 200, { timeout: 15000 });
+    await page.waitForTimeout(200);
 
     const tracker = trackBalanceRequests(page);
     const countBefore = tracker.urls.length;
