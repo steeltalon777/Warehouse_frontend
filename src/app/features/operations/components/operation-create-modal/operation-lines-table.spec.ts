@@ -99,72 +99,25 @@ describe('OperationLinesTableComponent', () => {
   });
 });
 
-describe('OperationLinesTableComponent — manual balance refresh button', () => {
+describe('OperationLinesTableComponent — balance column (refresh button moved to modal-table-toolbar)', () => {
   beforeEach(async () => {
     await TestBed.configureTestingModule({
       imports: [OperationLinesTableComponent],
     }).compileComponents();
   });
 
-  it('renders the «Обновить всё» button inside th.col-avail', () => {
+  it('does NOT render the refresh button inside the table (it now lives in modal-table-toolbar)', () => {
     const fixture = TestBed.createComponent(OperationLinesTableComponent);
     fixture.componentRef.setInput('lines', LINES);
     fixture.componentRef.setInput('operationType', 'MOVE');
     fixture.detectChanges();
 
+    // The «Имеется» column header still exists (TZ §22: .col-avail).
     const th = fixture.nativeElement.querySelector('th.col-avail');
     expect(th).toBeTruthy();
-    const button = th.querySelector('[data-testid="operation-lines-refresh-all"]');
-    expect(button).toBeTruthy();
-    expect(button.textContent).toContain('Обновить всё');
-  });
-
-  it('emits refreshAllBalances on click and does NOT toggle sorting', () => {
-    const fixture = TestBed.createComponent(OperationLinesTableComponent);
-    fixture.componentRef.setInput('lines', LINES);
-    fixture.componentRef.setInput('operationType', 'MOVE');
-    fixture.detectChanges();
-
-    const emitSpy = vi.spyOn(fixture.componentInstance.refreshAllBalances, 'emit');
-    expect(fixture.componentInstance.sortColumn()).toBe('lineNumber');
-
-    const button = fixture.nativeElement.querySelector(
-      '[data-testid="operation-lines-refresh-all"]',
-    );
-    button.click();
-    fixture.detectChanges();
-
-    expect(emitSpy).toHaveBeenCalledTimes(1);
-    expect(fixture.componentInstance.sortColumn()).toBe('lineNumber');
-    expect(fixture.componentInstance.sortDirection()).toBe('asc');
-  });
-
-  it('disables the button and shows the spinner when isBalanceRefreshing=true', () => {
-    const fixture = TestBed.createComponent(OperationLinesTableComponent);
-    fixture.componentRef.setInput('lines', LINES);
-    fixture.componentRef.setInput('operationType', 'MOVE');
-    fixture.componentRef.setInput('isBalanceRefreshing', true);
-    fixture.detectChanges();
-
-    const button = fixture.nativeElement.querySelector(
-      '[data-testid="operation-lines-refresh-all"]',
-    );
-    expect(button.disabled).toBe(true);
-    expect(button.querySelector('.avail-refresh-spinner')).toBeTruthy();
-    expect(button.querySelector('.avail-refresh-label').textContent).toBe('Обновить всё');
-  });
-
-  it('enables the button when isBalanceRefreshing=false', () => {
-    const fixture = TestBed.createComponent(OperationLinesTableComponent);
-    fixture.componentRef.setInput('lines', LINES);
-    fixture.componentRef.setInput('operationType', 'MOVE');
-    fixture.componentRef.setInput('isBalanceRefreshing', false);
-    fixture.detectChanges();
-
-    const button = fixture.nativeElement.querySelector(
-      '[data-testid="operation-lines-refresh-all"]',
-    );
-    expect(button.disabled).toBe(false);
-    expect(button.querySelector('.avail-refresh-spinner')).toBeNull();
+    // The refresh button is no longer inside the table — it lives in the
+    // modal-table-toolbar per TZ §13. The data-testid is preserved globally
+    // (modal E2E specs verify it).
+    expect(fixture.nativeElement.querySelector('[data-testid="operation-lines-refresh-all"]')).toBeNull();
   });
 });

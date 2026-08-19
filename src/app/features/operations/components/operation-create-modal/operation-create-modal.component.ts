@@ -295,27 +295,62 @@ function currentDateTimeLocal(): string {
             }
         </div>
 
-        <div class="modal-table-toolbar"></div>
-        <div class="modal-lines-filter"></div>
+        <div class="modal-table-toolbar">
+          <div class="table-toolbar__left">
+            <div class="section-header">
+              <h3>Позиции: {{ lines().length }}, Всего: {{ totalQuantity() }}</h3>
+            </div>
+          </div>
+          <div class="table-toolbar__right">
+            <button
+              type="button"
+              class="btn-refresh-balances"
+              data-testid="operation-lines-refresh-all"
+              [disabled]="isBalanceRefreshing()"
+              (click)="onRefreshAllBalances()"
+              [title]="isBalanceRefreshing() ? 'Обновление...' : 'Обновить остатки'"
+              aria-label="Обновить остатки"
+            >
+              @if (isBalanceRefreshing()) {
+                <span class="mini-spinner" aria-hidden="true"></span>
+              } @else {
+                <svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                  <path d="M3 12a9 9 0 0 1 15-6.7L21 8"/>
+                  <path d="M21 3v5h-5"/>
+                  <path d="M21 12a9 9 0 0 1-15 6.7L3 16"/>
+                  <path d="M3 21v-5h5"/>
+                </svg>
+              }
+              <span>Обновить остатки</span>
+            </button>
+          </div>
+        </div>
+
+        @if (showLinesFilter()) {
+          <div class="modal-lines-filter">
+            <input
+              type="search"
+              class="lines-filter-input"
+              [ngModel]="tableNameFilter()"
+              (ngModelChange)="tableNameFilter.set($event)"
+              placeholder="Фильтр уже добавленных ТМЦ..."
+              aria-label="Фильтр добавленных позиций"
+            />
+          </div>
+        }
 
         <div class="modal-table-wrap">
-          <!-- Lines table component -->
-            <div class="form-row lines-section">
-              <div class="section-header">
-                <h3>Позиции: {{ lines().length }}, Всего: {{ totalQuantity() }}</h3>
-              </div>
-              <app-operation-lines-table
-                [lines]="lines()"
-                [warehouseSiteId]="relevantSiteId()"
-                [isBalanceRefreshing]="isBalanceRefreshing()"
-                [operationType]="localDraft().type"
-                [isObjectSourceFlow]="isObjectSourceFlow()"
-                [submitErrorLines]="lineSubmitErrors()"
-                (quantityChange)="onQuantityChange($event.localId, $event.quantity)"
-                (removeLine)="removeLine($event)"
-                (refreshAllBalances)="onRefreshAllBalances()"
-              />
-            </div>
+          <app-operation-lines-table
+            [lines]="lines()"
+            [warehouseSiteId]="relevantSiteId()"
+            [isBalanceRefreshing]="isBalanceRefreshing()"
+            [operationType]="localDraft().type"
+            [isObjectSourceFlow]="isObjectSourceFlow()"
+            [submitErrorLines]="lineSubmitErrors()"
+            [nameFilter]="tableNameFilter()"
+            (quantityChange)="onQuantityChange($event.localId, $event.quantity)"
+            (removeLine)="removeLine($event)"
+          />
         </div>
 
         <div class="modal-footer">
@@ -573,17 +608,100 @@ function currentDateTimeLocal(): string {
     }
     .modal-add-toolbar:empty { display: none; }
     .modal-table-toolbar {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+      padding: 8px 20px;
       background: var(--f-surface);
       border-bottom: 1px solid var(--f-border);
       min-height: 38px;
     }
     .modal-table-toolbar:empty { display: none; }
+    .table-toolbar__left {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      min-width: 0;
+    }
+    .table-toolbar__right {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+    }
+    .btn-refresh-balances {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      height: var(--f-ctrl-h-sm);
+      padding: 0 10px;
+      border: 1px solid var(--f-border-2);
+      border-radius: var(--f-r-sm);
+      background: var(--f-surface);
+      color: var(--f-fg-2);
+      font-size: 12.5px;
+      font-weight: 510;
+      font-family: inherit;
+      cursor: pointer;
+      white-space: nowrap;
+      transition: background 120ms ease, border-color 120ms ease, color 120ms ease;
+    }
+    .btn-refresh-balances:hover:not(:disabled) {
+      background: var(--f-surface-2);
+      border-color: var(--f-muted-2);
+    }
+    .btn-refresh-balances:disabled {
+      opacity: 0.55;
+      cursor: not-allowed;
+    }
+    .btn-refresh-balances:focus-visible {
+      outline: 2px solid var(--f-accent);
+      outline-offset: 1px;
+    }
+    .mini-spinner {
+      display: inline-block;
+      width: 11px; height: 11px;
+      border-radius: 50%;
+      border: 1.5px solid var(--f-border-2);
+      border-top-color: var(--f-muted);
+      animation: f-spin 0.8s linear infinite;
+      flex-shrink: 0;
+    }
+    @keyframes f-spin { to { transform: rotate(360deg); } }
     .modal-lines-filter {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      padding: 8px 20px;
       background: var(--f-surface);
       border-bottom: 1px solid var(--f-border);
       min-height: 40px;
     }
     .modal-lines-filter:empty { display: none; }
+    .lines-filter-input {
+      flex: 1;
+      min-width: 0;
+      height: var(--f-ctrl-h-sm);
+      padding: 0 10px 0 30px;
+      border: 1px solid var(--f-border-2);
+      border-radius: var(--f-r-sm);
+      font-size: 13px;
+      color: var(--f-fg);
+      background: var(--f-surface);
+      background-image:
+        url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='13' height='13' viewBox='0 0 24 24' fill='none' stroke='%2394A3B8' stroke-width='1.8' stroke-linecap='round' stroke-linejoin='round'><circle cx='11' cy='11' r='7'/><path d='m21 21-4.3-4.3'/></svg>");
+      background-repeat: no-repeat;
+      background-position: 10px 50%;
+      font-family: inherit;
+      box-sizing: border-box;
+      transition: border-color 120ms ease, box-shadow 120ms ease;
+    }
+    .lines-filter-input:hover { border-color: var(--f-muted-2); }
+    .lines-filter-input:focus {
+      outline: none;
+      border-color: var(--f-accent);
+      box-shadow: 0 0 0 3px rgba(5, 150, 105, 0.15);
+    }
     .modal-table-wrap {
       overflow: auto;
       min-height: 0;
@@ -766,20 +884,18 @@ function currentDateTimeLocal(): string {
       align-self: flex-end;
     }
 
-    .lines-section {
-      flex: 1;
-      display: flex;
-      flex-direction: column;
-      min-height: 120px;
-      margin-bottom: 0;
-    }
     .section-header {
       display: flex;
       align-items: center;
       justify-content: space-between;
-      margin-bottom: 8px;
+      margin: 0;
     }
-    .section-header h3 { margin: 0; font-size: 14px; font-weight: 600; color: #374151; }
+    .section-header h3 {
+      margin: 0;
+      font-size: 12.5px;
+      font-weight: 500;
+      color: var(--f-fg-2);
+    }
 
     .validation-hint {
       font-size: 12px;
@@ -1026,6 +1142,11 @@ export class OperationCreateModalComponent implements OnInit, OnDestroy {
   readonly totalQuantity = computed(() => {
     return this.localDraft().lines.reduce((sum, l) => sum + (l.quantity ?? 0), 0);
   });
+
+  /** Lines-filter state — lives in the modal so the input is rendered outside
+   *  the table component but the filter is still applied to displayed lines. */
+  readonly tableNameFilter = signal<string>('');
+  readonly showLinesFilter = computed(() => this.lines().length > 3);
 
   /**
    * Maps local rows to their submit-error display state via the server line id
