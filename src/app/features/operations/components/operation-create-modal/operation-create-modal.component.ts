@@ -103,13 +103,15 @@ function currentDateTimeLocal(): string {
           }
         </div>
         <div class="modal-form-grid">
-            <!-- First row: type + warehouse(s) -->
-            <div class="form-row first-row">
-              <!-- Operation type: 40% -->
-              <div class="form-group form-group--type">
-                <label>Тип операции</label>
+            <!-- Form grid: type / warehouse(s) / date (TZ §11).
+                 data-variant switches between 3-col default and 4-col MOVE.
+                 DOM order of selects preserved (type, source[, destination]). -->
+            <div class="form-grid" [attr.data-variant]="isMove() ? 'move' : 'default'">
+              <!-- Operation type -->
+              <div class="form-field">
+                <label class="form-field__label">Тип операции</label>
                 @if (!isReadonly()) {
-                  <select class="wh-form-input input" [ngModel]="localDraft().type" (ngModelChange)="onTypeModelChange($event)" [disabled]="isReadonly() || isLockedFromAssetRow()">
+                  <select class="control" [ngModel]="localDraft().type" (ngModelChange)="onTypeModelChange($event)" [disabled]="isReadonly() || isLockedFromAssetRow()">
                     @for (t of typeOptions; track t.key) {
                       <option [value]="t.key">{{ t.label }}</option>
                     }
@@ -119,11 +121,11 @@ function currentDateTimeLocal(): string {
                 }
               </div>
 
-              <!-- Source warehouse: 30% for MOVE, 60% for others -->
-              <div class="form-group" [class.form-group--move-source]="isMove()" [class.form-group--single-warehouse]="!isMove()">
-                <label>{{ sourceLabel() }}</label>
+              <!-- Source warehouse -->
+              <div class="form-field">
+                <label class="form-field__label">{{ sourceLabel() }}</label>
                 @if (!isReadonly()) {
-                  <select class="wh-form-input input" [ngModel]="isMove() ? (localDraft().sourceSiteId ?? '') : (logicalWarehouseSiteId() ?? '')" (ngModelChange)="isMove() ? onSourceSiteChange($event) : onLogicalWarehouseSiteChange($event)" [disabled]="isReadonly()">
+                  <select class="control" [ngModel]="isMove() ? (localDraft().sourceSiteId ?? '') : (logicalWarehouseSiteId() ?? '')" (ngModelChange)="isMove() ? onSourceSiteChange($event) : onLogicalWarehouseSiteChange($event)" [disabled]="isReadonly()">
                     <option value="">—</option>
                     @for (site of sites(); track site.id) {
                       <option [value]="site.id">{{ site.name }}</option>
@@ -134,12 +136,12 @@ function currentDateTimeLocal(): string {
                 }
               </div>
 
-              <!-- Destination warehouse: 30%, only for MOVE -->
+              <!-- Destination warehouse: only for MOVE (3rd select in DOM order) -->
               @if (isMove()) {
-                <div class="form-group form-group--move-destination">
-                  <label>Склад-получатель</label>
+                <div class="form-field">
+                  <label class="form-field__label">Склад-получатель</label>
                   @if (!isReadonly()) {
-                    <select class="wh-form-input input" [ngModel]="localDraft().destinationSiteId ?? ''" (ngModelChange)="onDestinationSiteChange($event)" [disabled]="isReadonly()">
+                    <select class="control" [ngModel]="localDraft().destinationSiteId ?? ''" (ngModelChange)="onDestinationSiteChange($event)" [disabled]="isReadonly()">
                       <option value="">—</option>
                       @for (site of sites(); track site.id) {
                         <option [value]="site.id">{{ site.name }}</option>
@@ -150,103 +152,106 @@ function currentDateTimeLocal(): string {
                   }
                 </div>
               }
+
+              <!-- Date: integrated into the grid; type stays datetime-local (I7) -->
+              <div class="form-field form-field--date">
+                <label class="form-field__label">Дата проведения</label>
+                @if (!isReadonly()) {
+                  <input
+                    type="datetime-local"
+                    class="control"
+                    [ngModel]="localDraft().effectiveAt"
+                    (ngModelChange)="onEffectiveAtChange($event)"
+                  />
+                } @else {
+                  <span class="readonly-value">{{ localDraft().effectiveAt }}</span>
+                }
+              </div>
             </div>
 
-          <!-- Person name (EXPENSE only) -->
-            @if (showPersonName()) {
-              <div class="form-row">
-                <label>ФИО получателя / выдачи</label>
-                @if (!isReadonly()) {
-                  <input type="text" class="wh-form-input input" [ngModel]="localDraft().personName" (ngModelChange)="onPersonNameChange($event)" placeholder="Фамилия Имя Отчество" />
-                } @else {
-                  <span class="readonly-value">{{ localDraft().personName }}</span>
-                }
-              </div>
-            }
+          <!-- Conditional full-width rows (TZ §11). -->
+          @if (showPersonName()) {
+            <div class="form-row form-row--full">
+              <label class="form-row__label">ФИО получателя / выдачи</label>
+              @if (!isReadonly()) {
+                <input type="text" class="control" [ngModel]="localDraft().personName" (ngModelChange)="onPersonNameChange($event)" placeholder="Фамилия Имя Отчество" />
+              } @else {
+                <span class="readonly-value">{{ localDraft().personName }}</span>
+              }
+            </div>
+          }
 
-          <!-- Issue object search (ISSUE / ISSUE_RETURN / WRITE_OFF when object source) -->
-            @if (showIssueObjectSearch()) {
-              <div class="form-row">
-                <label>Объект выдачи</label>
-                @if (!isReadonly()) {
-                  @if (localDraft().issueObjectName) {
-                    <div class="issue-object-selected">
-                      <span class="selected-label">{{ localDraft().issueObjectName }}</span>
-                      @if (!isLockedFromAssetRow()) {
-                        <button class="wh-btn-icon btn-icon-sm" (click)="clearIssueObject()" title="Изменить">✎</button>
-                      }
-                    </div>
-                  } @else {
-                    <div class="issue-object-search">
-                      <input
-                        type="text"
-                        class="wh-form-input input"
-                        [ngModel]="issueObjectSearchQuery()"
-                        (ngModelChange)="onIssueObjectSearchChange($event)"
-                        placeholder="Поиск объекта выдачи..."
-                      />
-                      @if (issueObjectSearchResults().length > 0) {
-                        <div class="search-dropdown">
-                          @for (obj of issueObjectSearchResults(); track obj.id) {
-                            <button class="dropdown-item" (click)="selectIssueObject(obj)">
-                              <span class="item-title">{{ obj.display_name }}</span>
-                              <span class="item-subtitle">{{ objectTypeLabel(obj.object_type) }}{{ obj.code ? ' · ' + obj.code : '' }}</span>
-                            </button>
-                          }
-                        </div>
-                      }
-                    </div>
-                  }
-                } @else {
-                  <span class="readonly-value">{{ localDraft().issueObjectName || '—' }}</span>
-                }
-              </div>
-            }
-
-          <!-- WRITE_OFF source selector -->
-            @if (showWriteOffSource() && !isLockedFromAssetRow()) {
-              <div class="form-row">
-                <label>Источник списания</label>
-                @if (!isReadonly()) {
-                  <div class="radio-group">
-                    <label class="radio-item">
-                      <input type="radio" name="writeOffSource" [value]="'warehouse'" [ngModel]="localDraft().writeOffSource" (ngModelChange)="onWriteOffSourceChange('warehouse')" />
-                      <span>Со склада</span>
-                    </label>
-                    <label class="radio-item">
-                      <input type="radio" name="writeOffSource" [value]="'object'" [ngModel]="localDraft().writeOffSource" (ngModelChange)="onWriteOffSourceChange('object')" />
-                      <span>С объекта выдачи</span>
-                    </label>
+          @if (showIssueObjectSearch()) {
+            <div class="form-row form-row--full">
+              <label class="form-row__label">Объект выдачи</label>
+              @if (!isReadonly()) {
+                @if (localDraft().issueObjectName) {
+                  <div class="issue-object-selected">
+                    <span class="selected-label">{{ localDraft().issueObjectName }}</span>
+                    @if (!isLockedFromAssetRow()) {
+                      <button class="icon-btn btn-icon-sm" (click)="clearIssueObject()" title="Изменить">
+                        <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                          <path d="M17 3a2.85 2.85 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5Z"/>
+                        </svg>
+                      </button>
+                    }
                   </div>
                 } @else {
-                  <span class="readonly-value">{{ writeOffSourceLabel() }}</span>
+                  <div class="issue-object-search">
+                    <input
+                      type="text"
+                      class="control"
+                      [ngModel]="issueObjectSearchQuery()"
+                      (ngModelChange)="onIssueObjectSearchChange($event)"
+                      placeholder="Поиск объекта выдачи..."
+                    />
+                    @if (issueObjectSearchResults().length > 0) {
+                      <div class="search-dropdown">
+                        @for (obj of issueObjectSearchResults(); track obj.id) {
+                          <button class="dropdown-item" (click)="selectIssueObject(obj)">
+                            <span class="item-title">{{ obj.display_name }}</span>
+                            <span class="item-subtitle">{{ objectTypeLabel(obj.object_type) }}{{ obj.code ? ' · ' + obj.code : '' }}</span>
+                          </button>
+                        }
+                      </div>
+                    }
+                  </div>
                 }
-              </div>
+              } @else {
+                <span class="readonly-value">{{ localDraft().issueObjectName || '—' }}</span>
+              }
+            </div>
+          }
+
+          @if (showWriteOffSource() && !isLockedFromAssetRow()) {
+            <div class="form-row form-row--full">
+              <label class="form-row__label">Источник списания</label>
+              @if (!isReadonly()) {
+                <div class="radio-group">
+                  <label class="radio-item">
+                    <input type="radio" name="writeOffSource" [value]="'warehouse'" [ngModel]="localDraft().writeOffSource" (ngModelChange)="onWriteOffSourceChange('warehouse')" />
+                    <span>Со склада</span>
+                  </label>
+                  <label class="radio-item">
+                    <input type="radio" name="writeOffSource" [value]="'object'" [ngModel]="localDraft().writeOffSource" (ngModelChange)="onWriteOffSourceChange('object')" />
+                    <span>С объекта выдачи</span>
+                  </label>
+                </div>
+              } @else {
+                <span class="readonly-value">{{ writeOffSourceLabel() }}</span>
+              }
+            </div>
+          }
+
+          <!-- Comment row: full-width, 2 rows (TZ §11). -->
+          <div class="form-row form-row--full">
+            <label class="form-row__label">Комментарий</label>
+            @if (!isReadonly()) {
+              <textarea class="control comment-area" rows="2" [ngModel]="localDraft().comment" (ngModelChange)="onCommentChange($event)" placeholder="Комментарий к операции..."></textarea>
+            } @else {
+              <span class="readonly-value">{{ localDraft().comment || '—' }}</span>
             }
-
-          <!-- Comment row: full-width, 2 rows -->
-            <div class="form-row effective-at-row">
-              <label>Дата проведения</label>
-              @if (!isReadonly()) {
-                <input
-                  type="datetime-local"
-                  class="wh-form-input input effective-at-input"
-                  [ngModel]="localDraft().effectiveAt"
-                  (ngModelChange)="onEffectiveAtChange($event)"
-                />
-              } @else {
-                <span class="readonly-value">{{ localDraft().effectiveAt }}</span>
-              }
-            </div>
-
-            <div class="form-row">
-              <label>Комментарий</label>
-              @if (!isReadonly()) {
-                <textarea class="wh-form-input input comment-area" rows="2" [ngModel]="localDraft().comment" (ngModelChange)="onCommentChange($event)" placeholder="Комментарий к операции..."></textarea>
-              } @else {
-                <span class="readonly-value">{{ localDraft().comment || '—' }}</span>
-              }
-            </div>
+          </div>
         </div>
 
         <div class="modal-add-toolbar">
@@ -603,73 +608,147 @@ function currentDateTimeLocal(): string {
       margin-left: auto;
     }
 
-    .form-row {
-      width: 100%;
-      margin-bottom: 12px;
-      flex-shrink: 0;
+    /* ─── Form-grid (TZ §11) ──────────────────────────────────── */
+.form-row {
+      display: flex;
+      flex-direction: column;
+      gap: 4px;
+      min-width: 0;
       box-sizing: border-box;
     }
+    .form-row--full {
+      width: 100%;
+    }
+    .form-grid {
+      display: grid;
+      gap: 12px;
+      align-items: start;
+      grid-template-columns:
+        minmax(0, 1.2fr)
+        minmax(0, 1.8fr)
+        minmax(0, 0.95fr);
+    }
+    .form-grid[data-variant="move"] {
+      grid-template-columns:
+        minmax(0, 1fr)
+        minmax(0, 1.2fr)
+        minmax(0, 1.2fr)
+        minmax(0, 0.85fr);
+    }
+    .form-field {
+      display: flex;
+      flex-direction: column;
+      gap: 4px;
+      min-width: 0;
+    }
+    .form-field__label,
+    .form-row__label {
+      display: block;
+      font-size: 11px;
+      text-transform: uppercase;
+      letter-spacing: 0.06em;
+      color: var(--f-muted);
+      font-weight: 550;
+      line-height: 1.2;
+    }
+    .form-field--date {
+      min-width: 0;
+    }
+
+    /* ─── Control (token-based replacement for .input) ──────── */
+    .control {
+      appearance: none;
+      width: 100%;
+      height: var(--f-ctrl-h);
+      padding: 0 10px;
+      border: 1px solid var(--f-border-2);
+      border-radius: var(--f-r-sm);
+      font-size: 13px;
+      font-family: inherit;
+      background: var(--f-surface);
+      color: var(--f-fg);
+      box-sizing: border-box;
+      transition: border-color 120ms ease, box-shadow 120ms ease;
+    }
+    .control:hover { border-color: var(--f-muted-2); }
+    .control:focus {
+      outline: none;
+      border-color: var(--f-accent);
+      box-shadow: 0 0 0 3px rgba(5, 150, 105, 0.15);
+    }
+    .control:disabled {
+      background: var(--f-surface-2);
+      color: var(--f-muted);
+      cursor: not-allowed;
+    }
+    select.control {
+      background-image:
+        linear-gradient(45deg, transparent 50%, var(--f-muted) 50%),
+        linear-gradient(-45deg, transparent 50%, var(--f-muted) 50%);
+      background-position: calc(100% - 14px) 50%, calc(100% - 9px) 50%;
+      background-size: 5px 5px;
+      background-repeat: no-repeat;
+      padding-right: 24px;
+      cursor: pointer;
+    }
+    textarea.control {
+      height: auto;
+      min-height: 38px;
+      padding: 7px 10px;
+      line-height: 1.45;
+      resize: vertical;
+    }
+    .comment-area { resize: vertical; }
+    /* legacy aliases — keep selectors working for child components */
+    .input,
+    .wh-form-input {
+      width: 100%;
+      height: var(--f-ctrl-h);
+      padding: 0 10px;
+      border: 1px solid var(--f-border-2);
+      border-radius: var(--f-r-sm);
+      font-size: 13px;
+      font-family: inherit;
+      background: var(--f-surface);
+      color: var(--f-fg);
+      box-sizing: border-box;
+    }
+    .input:disabled,
+    .wh-form-input:disabled {
+      background: var(--f-surface-2);
+      color: var(--f-muted);
+      cursor: not-allowed;
+    }
+    .input:focus,
+    .wh-form-input:focus {
+      outline: none;
+      border-color: var(--f-accent);
+      box-shadow: 0 0 0 3px rgba(5, 150, 105, 0.15);
+    }
+    textarea.input,
+    textarea.wh-form-input {
+      height: auto;
+      padding: 7px 10px;
+      resize: vertical;
+    }
+
     .object-source-hint .hint-card {
       display: flex;
       gap: 8px;
       align-items: flex-start;
       padding: 10px 12px;
-      background: #EFF6FF;
-      border: 1px solid #BFDBFE;
-      border-radius: 8px;
+      background: var(--f-info-bg);
+      border: 1px solid var(--f-info-border);
+      border-radius: var(--f-r-md);
       color: #1E3A8A;
       font-size: 12px;
       line-height: 1.4;
     }
     .object-source-hint .hint-icon {
       font-size: 14px;
-      color: #2563EB;
+      color: var(--f-info);
       line-height: 1.2;
     }
-    .first-row {
-      display: flex;
-      gap: 12px;
-      align-items: flex-start;
-    }
-    .form-group {
-      display: flex;
-      flex-direction: column;
-      min-width: 0;
-      box-sizing: border-box;
-    }
-    .form-group--type { flex: 0 0 calc(40% - 4.8px); }
-    .form-group--move-source { flex: 0 0 calc(30% - 4px); }
-    .form-group--move-destination { flex: 0 0 calc(30% - 4px); }
-    .form-group--single-warehouse { flex: 0 0 calc(60% - 7.2px); }
-    .form-row label {
-      display: block;
-      font-size: 12px;
-      font-weight: 500;
-      color: #64748B;
-      margin-bottom: 4px;
-    }
-
-    .input {
-      width: 100%;
-      height: 36px;
-      padding: 0 10px;
-      border: 1px solid #D1D5DB;
-      border-radius: 8px;
-      font-size: 13px;
-      font-family: inherit;
-      background: #FFFFFF;
-      color: #1F2937;
-      box-sizing: border-box;
-    }
-    .input:disabled {
-      background: #F8FAFC;
-      color: #64748B;
-      cursor: not-allowed;
-    }
-    .input:focus { outline: none; border-color: #3B82F6; box-shadow: 0 0 0 2px rgba(59,130,246,0.15); }
-    .effective-at-row { max-width: 280px; }
-    textarea.input { height: auto; padding: 8px 10px; resize: vertical; }
-    .comment-area { resize: vertical; }
 
     .add-tmc-row {
       display: flex;
