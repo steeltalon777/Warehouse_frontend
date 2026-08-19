@@ -137,10 +137,6 @@ test.describe('TZ-V3.2 §7.5: operations save/submit reliability', () => {
       data: { type: 'RECEIVE', site_id: 1, notes: tag, lines: saveLines, expected_version: versionBefore },
       failOnStatusCode: false,
     });
-    if (patch.status() === 409) {
-      test.skip(true, `Server rejected lines (may lack seed items 2/3); body: ${await patch.text().catch(() => '?')}`);
-      return;
-    }
     expect(patch.status(), 'save PATCH must succeed').toBe(200);
     const saved = await patch.json();
     const versionAfter = Number(saved?.data?.version ?? versionBefore + 1);

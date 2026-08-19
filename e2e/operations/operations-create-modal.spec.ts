@@ -64,6 +64,23 @@ async function fetchWarehouseBalance(page: Page, siteName: string, itemNamePart:
   }, { siteName, itemNamePart });
 }
 
+/** Fetch one item with a positive balance on the given site (name + qty). */
+async function fetchStockedItem(page: Page, siteName: string): Promise<{ name: string; qty: string }> {
+  return page.evaluate(async (siteName) => {
+    const sitesResponse = await fetch('/bff/api/v1/catalog/sites', { credentials: 'include' });
+    const sitesPayload = await sitesResponse.json();
+    const site = (sitesPayload?.data?.sites ?? []).find((s: any) => s.name === siteName);
+    if (!site) throw new Error(`Site not found: ${siteName}`);
+
+    const balancesResponse = await fetch(`/bff/api/v1/balances?site_id=${site.site_id}`, { credentials: 'include' });
+    const balancesPayload = await balancesResponse.json();
+    const rows = Array.isArray(balancesPayload?.data) ? balancesPayload.data : (balancesPayload?.data?.items ?? []);
+    const row = rows.find((b: any) => parseFloat(b.qty) > 0);
+    if (!row) throw new Error(`No positive balance row on ${siteName}`);
+    return { name: String(row.item_name ?? ''), qty: String(parseFloat(row.qty)) };
+  }, siteName);
+}
+
 async function addVisibleItemToDraft(page: Page, query: string, quantity: string, usedNames: Set<string>): Promise<string | null> {
   const modal = page.locator('.modal-overlay');
   const search = modal.locator('input[placeholder*="Поиск ТМЦ для добавления"]');
@@ -182,18 +199,25 @@ test.describe('Operation Create Modal — Layout', () => {
     await expect(page.locator('.modal-overlay .search-option').first()).toBeVisible();
   });
 
-  test('available quantity column shows a numeric balance, never dash', async ({ page }) => {
+  test('available quantity column shows the authoritative balance value', async ({ page }) => {
     await openCreateModal(page);
 
     await page.locator('.modal-overlay select').first().selectOption('RECEIVE');
-    await selectFirstWarehouse(page);
-    await addFirstMatchingItem(page, ['сол', 'кабель', 'ка'], '1');
+    const selectedWarehouse = await selectFirstWarehouse(page);
+    const stocked = await fetchStockedItem(page, selectedWarehouse);
+    await addVisibleItemToDraft(page, stocked.name, '1', new Set());
 
-    // Verify the line was added and balance request was made
+    // Verify the line was added.
     await expect(page.locator('.modal-overlay tbody tr')).toHaveCount(1, { timeout: 5000 });
-    const availableCell = page.locator('.modal-overlay tbody tr').first().locator('.col-avail');
-    // Balance cell should exist (may be loading or loaded)
-    await expect(availableCell).toBeVisible({ timeout: 5000 });
+
+    // The value must match the authoritative API balance for this site+item.
+    const expected = parseFloat(stocked.qty);
+    const valueEl = page.locator('.modal-overlay tbody tr').first().locator('.col-avail .avail-value');
+    await expect(valueEl).toBeVisible({ timeout: 15000 });
+    await expect.poll(async () => {
+      const text = ((await valueEl.textContent()) ?? '').trim().replace(',', '.');
+      return parseFloat(text);
+    }, { timeout: 15000 }).toBe(expected);
   });
 
   test('available quantity uses current warehouse balance for selected warehouse', async ({ page }) => {
@@ -201,13 +225,20 @@ test.describe('Operation Create Modal — Layout', () => {
 
     await page.locator('.modal-overlay select').first().selectOption('RECEIVE');
     const selectedWarehouse = await selectFirstWarehouse(page);
+    const stocked = await fetchStockedItem(page, selectedWarehouse);
+    await addVisibleItemToDraft(page, stocked.name, '1', new Set());
 
-    const itemName = await addFirstMatchingItem(page, ['сол', 'кабель', 'ка'], '1');
-
-    // Verify the line was added
+    // Verify the line was added.
     await expect(page.locator('.modal-overlay tbody tr')).toHaveCount(1, { timeout: 5000 });
-    const availableCell = page.locator('.modal-overlay tbody tr').first().locator('.col-avail');
-    await expect(availableCell).toBeVisible({ timeout: 5000 });
+
+    // Displayed value equals the warehouse balance of the selected site.
+    const expected = parseFloat(stocked.qty);
+    const valueEl = page.locator('.modal-overlay tbody tr').first().locator('.col-avail .avail-value');
+    await expect(valueEl).toBeVisible({ timeout: 15000 });
+    await expect.poll(async () => {
+      const text = ((await valueEl.textContent()) ?? '').trim().replace(',', '.');
+      return parseFloat(text);
+    }, { timeout: 15000 }).toBe(expected);
   });
 
   test('modal has comment textarea with 2 rows', async ({ page }) => {

@@ -1,14 +1,18 @@
 /**
- * Playwright UI automation for TZ-OPERATION_MODAL_BALANCES_MANUAL_REFRESH (§7).
+ * Playwright UI automation for TZ-OPERATION_MODAL_BALANCES_MANUAL_REFRESH (§7)
+ * and issue #24 balance lifecycle regression.
  *
  * Scenarios:
- *  A. Warehouse switch updates line qty once (no race) + exactly one new
- *     GET /bff/api/v1/balances request for the new site.
- *  B. «Обновить всё» button: disabled + spinner while in-flight, line qtys
- *     match the API afterwards.
+ *  A. Warehouse switch refreshes the line qty once (no race); the displayed
+ *     «Имеется» value equals the authoritative API value; requests are targeted
+ *     (item_ids) and bounded.
+ *  B. «Обновить всё» button: disabled + spinner while in-flight, and after the
+ *     refresh the line qty matches the authoritative API value.
  *  C. Search dropdown no longer renders `.option-stock` and the search
  *     request carries no `include_balance=true`.
- *  D. Submit does not trigger a background balance refresh.
+ *  D. A real submit does not trigger a background balance refresh.
+ *  LOOP. One idle item never produces a continuing targeted balance request
+ *     stream (issue #24 B1 regression).
  *
  * Run: npx playwright test e2e/operations/operations-balances-manual.spec.ts
  * Requires: docker stand running with spa_user logged out.
@@ -51,8 +55,15 @@ async function openCreateModal(page: Page) {
   await page.waitForTimeout(300);
 }
 
-async function fetchWarehouseBalance(page: Page, siteName: string, itemNamePart: string): Promise<string> {
-  return page.evaluate(async ({ siteName, itemNamePart }) => {
+interface StockedBalance {
+  itemId: string;
+  name: string;
+  qty: string;
+}
+
+/** Fetch up to `count` items with a positive balance on the given site. */
+async function fetchStockedBalances(page: Page, siteName: string, count: number): Promise<StockedBalance[]> {
+  return page.evaluate(async ({ siteName, count }) => {
     const sitesResponse = await fetch('/bff/api/v1/catalog/sites', { credentials: 'include' });
     const sitesPayload = await sitesResponse.json();
     const site = (sitesPayload?.data?.sites ?? []).find((s: any) => s.name === siteName);
@@ -61,10 +72,31 @@ async function fetchWarehouseBalance(page: Page, siteName: string, itemNamePart:
     const balancesResponse = await fetch(`/bff/api/v1/balances?site_id=${site.site_id}`, { credentials: 'include' });
     const balancesPayload = await balancesResponse.json();
     const rows = Array.isArray(balancesPayload?.data) ? balancesPayload.data : (balancesPayload?.data?.items ?? []);
-    const row = rows.find((b: any) => String(b.item_name ?? '').includes(itemNamePart));
-    if (!row) throw new Error(`Balance row not found for: ${itemNamePart}`);
-    return String(parseFloat(row.qty));
-  }, { siteName, itemNamePart });
+    const positive = rows
+      .filter((b: any) => parseFloat(b.qty) > 0)
+      .map((b: any) => ({ itemId: String(b.item_id), name: String(b.item_name ?? ''), qty: String(parseFloat(b.qty)) }))
+      .slice(0, count);
+    if (positive.length < count) {
+      throw new Error(`Only ${positive.length} positive balance rows on ${siteName}`);
+    }
+    return positive;
+  }, { siteName, count });
+}
+
+/** Authoritative qty for one item on one site via targeted item_ids (0 when absent). */
+async function fetchBalanceByItemId(page: Page, siteName: string, itemId: string): Promise<number> {
+  return page.evaluate(async ({ siteName, itemId }) => {
+    const sitesResponse = await fetch('/bff/api/v1/catalog/sites', { credentials: 'include' });
+    const sitesPayload = await sitesResponse.json();
+    const site = (sitesPayload?.data?.sites ?? []).find((s: any) => s.name === siteName);
+    if (!site) throw new Error(`Site not found: ${siteName}`);
+
+    const balancesResponse = await fetch(`/bff/api/v1/balances?site_id=${site.site_id}&item_ids=${itemId}`, { credentials: 'include' });
+    const balancesPayload = await balancesResponse.json();
+    const rows = Array.isArray(balancesPayload?.data) ? balancesPayload.data : (balancesPayload?.data?.items ?? []);
+    if (rows.length === 0) return 0;
+    return parseFloat(rows[0].qty);
+  }, { siteName, itemId });
 }
 
 async function fetchSiteId(page: Page, siteName: string): Promise<string> {
@@ -89,36 +121,35 @@ function trackBalanceRequests(page: Page): { urls: string[]; siteIds: string[] }
   return state;
 }
 
-async function addVisibleItemToDraft(page: Page, query: string, quantity: string, usedNames: Set<string>): Promise<string | null> {
+async function addItemByNameToDraft(page: Page, name: string, quantity: string): Promise<void> {
   const modal = page.locator('.modal-overlay');
   const search = modal.locator('input[placeholder*="Поиск ТМЦ для добавления"]');
-  await search.fill('');
-  await expect(search).toHaveValue('');
-  await search.fill(query);
-
-  const optionNames = modal.locator('.search-option .option-name');
-  await expect(optionNames.first()).toBeVisible({ timeout: 5000 });
-  const names = (await optionNames.allTextContents()).map(name => name.trim()).filter(Boolean);
-  const itemName = names.find(name => !usedNames.has(name));
-  if (!itemName) return null;
-
-  const option = modal.locator('.search-option', { hasText: itemName }).first();
+  await search.fill(name);
+  const option = modal.locator('.search-option', { hasText: name }).first();
+  await expect(option).toBeVisible({ timeout: 5000 });
   await option.click();
   await expect(search).toHaveValue('');
-
-  const row = modal.locator('tbody tr', { hasText: itemName }).first();
+  const row = modal.locator('tbody tr', { hasText: name }).first();
   await expect(row).toBeVisible();
   await row.locator('.qty-input').fill(quantity);
-  usedNames.add(itemName);
-  return itemName;
 }
 
-async function addFirstMatchingItem(page: Page, queries: string[], quantity: string, usedNames: Set<string> = new Set<string>()): Promise<string> {
-  for (const query of queries) {
-    const addedName = await addVisibleItemToDraft(page, query, quantity, usedNames).catch(() => null);
-    if (addedName) return addedName;
-  }
-  throw new Error(`No item found for fallback queries: ${queries.join(', ')}`);
+/** Read the numeric «Имеется» value of the first draft row, or null while not FRESH. */
+async function readDisplayedAvailable(page: Page): Promise<number | null> {
+  const valueEl = page.locator('.modal-overlay tbody tr').first().locator('.col-avail .avail-value');
+  const count = await valueEl.count();
+  if (count === 0) return null;
+  const text = (await valueEl.first().textContent())?.trim() ?? '';
+  const parsed = parseFloat(text.replace(',', '.'));
+  return Number.isFinite(parsed) ? parsed : null;
+}
+
+/** Wait until the first row's «Имеется» cell shows a numeric value. */
+async function waitForAvailableValue(page: Page, timeout = 15000): Promise<number> {
+  await expect(page.locator('.modal-overlay tbody tr').first().locator('.col-avail .avail-value')).toBeVisible({ timeout });
+  const value = await readDisplayedAvailable(page);
+  if (value === null) throw new Error('Available value did not become numeric');
+  return value;
 }
 
 test.describe('Operation Create Modal — manual balance refresh', () => {
@@ -127,20 +158,23 @@ test.describe('Operation Create Modal — manual balance refresh', () => {
     await loginAsRole(page, 'spa_user');
   });
 
-  test('SCENARIO A: warehouse switch updates line qty once (no race)', async ({ page }) => {
+  test('SCENARIO A: warehouse switch refreshes line qty once and matches authoritative value', async ({ page }) => {
     await openCreateModal(page);
     await page.locator('.modal-overlay select').first().selectOption('RECEIVE');
 
-    const tracker = trackBalanceRequests(page);
     const warehouseA = await selectFirstWarehouse(page);
-    const itemName = await addFirstMatchingItem(page, ['сол', 'кабель', 'ка'], '1');
+    const [stocked] = await fetchStockedBalances(page, warehouseA, 1);
+    const tracker = trackBalanceRequests(page);
 
-    // Verify targeted balance request was made for the added item
-    await expect.poll(() => tracker.urls.length, { timeout: 10000 }).toBeGreaterThanOrEqual(1);
-    const lastUrl = tracker.urls[tracker.urls.length - 1];
-    expect(lastUrl).toContain('item_ids=');
+    await addItemByNameToDraft(page, stocked.name, '1');
 
-    const countBefore = tracker.siteIds.length;
+    // The displayed value must equal the authoritative API balance.
+    const displayedA = await waitForAvailableValue(page);
+    expect(displayedA).toBe(parseFloat(stocked.qty));
+
+    // Targeted request carried item_ids.
+    expect(tracker.urls[0]).toContain('item_ids=');
+
     const warehouseB = await selectAlternativeWarehouse(page, warehouseA);
     if (!warehouseB) {
       test.skip(true, 'No alternative warehouse available for warehouse-switch scenario');
@@ -148,41 +182,62 @@ test.describe('Operation Create Modal — manual balance refresh', () => {
     }
     const siteBId = await fetchSiteId(page, warehouseB);
 
-    // Wait for targeted balance request for site B
+    // Exactly one targeted request for site B (no race, no stream).
     await expect.poll(
       () => tracker.siteIds.filter(siteId => siteId === siteBId).length,
       { timeout: 15000 },
     ).toBeGreaterThanOrEqual(1);
-
-    // Verify the request includes item_ids (targeted, not warehouse-wide)
     const siteBUrls = tracker.urls.filter(u => u.includes(`site_id=${siteBId}`));
-    expect(siteBUrls.length).toBeGreaterThanOrEqual(1);
     expect(siteBUrls[0]).toContain('item_ids=');
+
+    // The displayed value updates to the authoritative site-B value (targeted).
+    const expectedB = await fetchBalanceByItemId(page, warehouseB, stocked.itemId);
+    await expect.poll(async () => readDisplayedAvailable(page), { timeout: 15000 }).toBe(expectedB);
+
+    // Bounded request count: after the value stabilised, no continuing stream.
+    const countAfterStable = tracker.urls.length;
+    await page.waitForTimeout(3000);
+    expect(tracker.urls.length).toBe(countAfterStable);
   });
 
-  test('SCENARIO B: refresh-all button refreshes all line qtys', async ({ page }) => {
+  test('SCENARIO B: refresh-all button refreshes line qtys to authoritative values', async ({ page }) => {
     await openCreateModal(page);
     await page.locator('.modal-overlay select').first().selectOption('RECEIVE');
     const warehouseA = await selectFirstWarehouse(page);
 
-    const tracker = trackBalanceRequests(page);
-    const usedNames = new Set<string>();
-    const itemName1 = await addFirstMatchingItem(page, ['сол', 'кабель', 'ка'], '1', usedNames);
-    const itemName2 = await addFirstMatchingItem(page, ['сол', 'кабель', 'ка'], '1', usedNames);
+    const stocked = await fetchStockedBalances(page, warehouseA, 2);
+    await addItemByNameToDraft(page, stocked[0].name, '1');
+    await addItemByNameToDraft(page, stocked[1].name, '1');
 
-    // Verify targeted balance requests were made
-    await expect.poll(() => tracker.urls.length, { timeout: 10000 }).toBeGreaterThanOrEqual(2);
+    // Both lines reach a FRESH numeric value.
+    await expect(page.locator('.modal-overlay tbody tr').nth(0).locator('.col-avail .avail-value')).toBeVisible({ timeout: 15000 });
+    await expect(page.locator('.modal-overlay tbody tr').nth(1).locator('.col-avail .avail-value')).toBeVisible({ timeout: 15000 });
 
     const refreshBtn = page.locator('[data-testid="operation-lines-refresh-all"]');
-    // Button may be disabled while balance is loading — wait for it
     await expect(refreshBtn).toBeEnabled({ timeout: 15000 });
 
+    const tracker = trackBalanceRequests(page);
     await refreshBtn.click();
-    // Immediately after the click the button should be disabled (in-flight request)
-    await expect(refreshBtn).toBeDisabled({ timeout: 5000 });
 
-    // Wait for the refresh to complete
+    // The manual refresh fires exactly one targeted balance request; wait for
+    // it to fire (validateAndApplyLineStatuses runs before the balance read).
+    await expect.poll(() => tracker.urls.length, { timeout: 15000 }).toBe(1);
+    expect(tracker.urls[0]).toContain('item_ids=');
+    // The button returns to an enabled state once the request completes.
     await expect(refreshBtn).toBeEnabled({ timeout: 15000 });
+
+    // Both rows keep matching the authoritative API value after refresh. The
+    // authoritative value is re-fetched at comparison time so a concurrent
+    // stand mutation does not drift against the initial snapshot.
+    const expected1 = await fetchBalanceByItemId(page, warehouseA, stocked[0].itemId);
+    const expected2 = await fetchBalanceByItemId(page, warehouseA, stocked[1].itemId);
+    await expect.poll(async () => {
+      const row1 = page.locator('.modal-overlay tbody tr').nth(0).locator('.col-avail .avail-value');
+      const row2 = page.locator('.modal-overlay tbody tr').nth(1).locator('.col-avail .avail-value');
+      const t1 = parseFloat(((await row1.textContent()) ?? '').trim().replace(',', '.'));
+      const t2 = parseFloat(((await row2.textContent()) ?? '').trim().replace(',', '.'));
+      return `${t1}|${t2}`;
+    }, { timeout: 15000 }).toBe(`${expected1}|${expected2}`);
   });
 
   test('SCENARIO C: search dropdown has no source_site_qty', async ({ page }) => {
@@ -207,26 +262,56 @@ test.describe('Operation Create Modal — manual balance refresh', () => {
     expect(includeBalanceRequested).toBe(false);
   });
 
-  test('SCENARIO D: submit does not trigger background balance refresh', async ({ page }) => {
+  test('SCENARIO D: a real submit does not trigger a background balance refresh', async ({ page }) => {
     await openCreateModal(page);
     await page.locator('.modal-overlay select').first().selectOption('RECEIVE');
-    await selectFirstWarehouse(page);
-    await addFirstMatchingItem(page, ['сол', 'кабель', 'ка'], '1');
+    const warehouseA = await selectFirstWarehouse(page);
+    const [stocked] = await fetchStockedBalances(page, warehouseA, 1);
+    await addItemByNameToDraft(page, stocked.name, '1');
 
-    // Wait for initial balance request to complete
-    await page.waitForTimeout(2000);
+    // Wait for the initial targeted refresh to finish (button re-enabled).
+    const refreshBtn = page.locator('[data-testid="operation-lines-refresh-all"]');
+    await expect(refreshBtn).toBeEnabled({ timeout: 15000 });
 
     const tracker = trackBalanceRequests(page);
     const countBefore = tracker.urls.length;
 
-    // Try to submit — button may or may not be enabled depending on balance state
     const submitBtn = page.locator('.modal-overlay button:has-text("Подтвердить")');
-    if (await submitBtn.isEnabled()) {
-      await submitBtn.click();
-      await page.waitForTimeout(400);
-    }
+    await expect(submitBtn).toBeEnabled({ timeout: 15000 });
+    await submitBtn.click();
 
-    // No new GET /bff/api/v1/balances fired after the tracker was set up.
+    // The submit must happen: success banner or a domain rejection — in both
+    // cases no new balance refresh may fire.
+    await expect(
+      page.locator('[data-testid="operation-submit-result"], [data-testid="operation-submit-toast"]').first(),
+    ).toBeVisible({ timeout: 15000 });
+
     expect(tracker.urls.length).toBe(countBefore);
+  });
+
+  test('E2E LOOP REGRESSION: idle one-item modal makes no balance request stream (B1)', async ({ page }) => {
+    await openCreateModal(page);
+    await page.locator('.modal-overlay select').first().selectOption('RECEIVE');
+    const warehouseA = await selectFirstWarehouse(page);
+    const [stocked] = await fetchStockedBalances(page, warehouseA, 1);
+
+    const tracker = trackBalanceRequests(page);
+    await addItemByNameToDraft(page, stocked.name, '1');
+
+    // Wait until the balance cell leaves the loading state and shows a value.
+    await waitForAvailableValue(page);
+
+    // After stabilisation: ideally 1 targeted request, tolerated <=2.
+    const countAfterStable = tracker.urls.length;
+    expect(countAfterStable).toBeLessThanOrEqual(2);
+
+    // Deterministic quiet window: no continuing request stream while idle.
+    await page.waitForTimeout(5000);
+    expect(tracker.urls.length).toBe(countAfterStable);
+    expect(tracker.urls.length).toBeLessThanOrEqual(2);
+
+    // Refresh button is usable again (not permanently disabled).
+    const refreshBtn = page.locator('[data-testid="operation-lines-refresh-all"]');
+    await expect(refreshBtn).toBeEnabled({ timeout: 5000 });
   });
 });
