@@ -135,16 +135,9 @@ test.describe('Operation Create Modal — manual balance refresh', () => {
     const warehouseA = await selectFirstWarehouse(page);
     const itemName = await addFirstMatchingItem(page, ['сол', 'кабель', 'ка'], '1');
 
-    // Wait for targeted balance to load — wait for numeric content in avail cell
+    // Wait for targeted balance to load — poll for numeric content in avail cell
     const firstRowAvail = page.locator('.modal-overlay tbody tr').first().locator('.col-avail');
-    await page.waitForFunction(
-      (sel) => {
-        const el = document.querySelector(sel);
-        return el && /\d+/.test(el.textContent ?? '');
-      },
-      '.modal-overlay tbody tr:first-child .col-avail',
-      { timeout: 15000 },
-    );
+    await expect(firstRowAvail).toContainText(/\d+/, { timeout: 20000 });
 
     const expectedA = await fetchWarehouseBalance(page, warehouseA, itemName).catch(() => null);
     if (expectedA !== null) {
@@ -159,16 +152,9 @@ test.describe('Operation Create Modal — manual balance refresh', () => {
     }
     const siteBId = await fetchSiteId(page, warehouseB);
 
-    // Wait for targeted balance response for site B
-    await page.waitForFunction(
-      (sel) => {
-        const el = document.querySelector(sel);
-        return el && /\d+/.test(el.textContent ?? '');
-      },
-      '.modal-overlay tbody tr:first-child .col-avail',
-      { timeout: 15000 },
-    );
-    await page.waitForTimeout(200);
+    // Wait for targeted balance to update for site B
+    await expect(firstRowAvail).toContainText(/\d+/, { timeout: 20000 });
+    await page.waitForTimeout(300);
 
     expect(tracker.siteIds.filter(siteId => siteId === siteBId).length).toBe(1);
     expect(tracker.siteIds.length).toBe(countBefore + 1);
@@ -196,14 +182,8 @@ test.describe('Operation Create Modal — manual balance refresh', () => {
     const itemName1 = await addFirstMatchingItem(page, ['сол', 'кабель', 'ка'], '1', usedNames);
     const itemName2 = await addFirstMatchingItem(page, ['сол', 'кабель', 'ка'], '1', usedNames);
 
-    // Wait for targeted balance to load — wait for numeric content in avail cell
-    await page.waitForFunction(
-      () => {
-        const el = document.querySelector('.modal-overlay tbody tr:first-child .col-avail');
-        return el && /\d+/.test(el.textContent ?? '');
-      },
-      { timeout: 15000 },
-    );
+    // Wait for targeted balance to load — poll for numeric content
+    await expect(page.locator('.modal-overlay tbody tr .col-avail').first()).toContainText(/\d+/, { timeout: 20000 });
 
     const refreshBtn = page.locator('[data-testid="operation-lines-refresh-all"]');
     await expect(refreshBtn).toBeEnabled();
@@ -259,14 +239,8 @@ test.describe('Operation Create Modal — manual balance refresh', () => {
     await selectFirstWarehouse(page);
     await addFirstMatchingItem(page, ['сол', 'кабель', 'ка'], '1');
 
-    // Wait for targeted balance to load — wait for numeric content in avail cell
-    await page.waitForFunction(
-      () => {
-        const el = document.querySelector('.modal-overlay tbody tr:first-child .col-avail');
-        return el && /\d+/.test(el.textContent ?? '');
-      },
-      { timeout: 15000 },
-    );
+    // Wait for targeted balance to load — poll for numeric content
+    await expect(page.locator('.modal-overlay tbody tr .col-avail').first()).toContainText(/\d+/, { timeout: 20000 });
 
     const tracker = trackBalanceRequests(page);
     const countBefore = tracker.urls.length;

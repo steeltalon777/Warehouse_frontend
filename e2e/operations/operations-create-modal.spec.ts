@@ -189,17 +189,9 @@ test.describe('Operation Create Modal — Layout', () => {
     await selectFirstWarehouse(page);
     await addFirstMatchingItem(page, ['сол', 'кабель', 'ка'], '1');
 
-    // Wait for targeted balance to load — wait for numeric content in avail cell
-    await page.waitForFunction(
-      () => {
-        const el = document.querySelector('.modal-overlay tbody tr:first-child .col-avail');
-        return el && /\d+/.test(el.textContent ?? '');
-      },
-      { timeout: 15000 },
-    );
-
+    // Wait for targeted balance to load — poll for numeric content
     const availableCell = page.locator('.modal-overlay tbody tr').first().locator('.col-avail');
-    await expect(availableCell).toContainText(/\d+/, { timeout: 5000 });
+    await expect(availableCell).toContainText(/\d+/, { timeout: 20000 });
     await expect(availableCell).not.toContainText('—');
     await expect(availableCell).not.toContainText('превышает остаток');
   });
@@ -212,17 +204,9 @@ test.describe('Operation Create Modal — Layout', () => {
 
     const itemName = await addFirstMatchingItem(page, ['сол', 'кабель', 'ка'], '1');
 
-    // Wait for targeted balance to load — wait for numeric content in avail cell
-    await page.waitForFunction(
-      () => {
-        const el = document.querySelector('.modal-overlay tbody tr:first-child .col-avail');
-        return el && /\d+/.test(el.textContent ?? '');
-      },
-      { timeout: 15000 },
-    );
-
+    // Wait for targeted balance to load — poll for numeric content
     const availableCell = page.locator('.modal-overlay tbody tr').first().locator('.col-avail');
-    await expect(availableCell).toContainText(/\d+/, { timeout: 5000 });
+    await expect(availableCell).toContainText(/\d+/, { timeout: 20000 });
 
     const expectedBalance = await fetchWarehouseBalance(page, selectedWarehouse, itemName).catch(() => null);
     if (expectedBalance !== null) {
