@@ -255,44 +255,43 @@ function currentDateTimeLocal(): string {
         </div>
 
         <div class="modal-add-toolbar">
-          <!-- Add TMC row: 80% search + 20% disabled button -->
-            @if (!isReadonly()) {
-              @if (!isObjectSourceFlow()) {
-                <div class="form-row add-tmc-row">
-                  <div class="tmc-search-wrapper">
-                    <label>Добавить ТМЦ в операцию</label>
-                    <app-item-cache-search
-                      #itemSearch
-                      [placeholder]="'Поиск ТМЦ для добавления: название, SKU или хештег...'"
-                      [sourceSiteId]="relevantSiteId()"
-                      [consistency]="'authoritative'"
-                      (itemSelected)="onNewItemSelected($event)"
-                      (refreshRequested)="onRefreshCheckItems()"
-                    />
-                    @if (inlineItemsForSearch().length > 0) {
-                      <div class="inline-search-hint">
-                        <span class="hint-label">Временные позиции в операции:</span>
-                        @for (inline of inlineItemsForSearch(); track inline.clientKey) {
-                          <button class="inline-item-chip" (click)="onInlineSearchSelected(inline)">
-                            {{ inline.name }} ({{ inline.unitName }})
-                          </button>
-                        }
-                      </div>
-                    }
-                  </div>
-                  <button class="wh-btn wh-btn--secondary btn btn-tmc" title="Создать новую ТМЦ для операции" (click)="openInlineModal()">
-                    Создать ТМЦ
-                  </button>
+          @if (!isReadonly()) {
+            @if (!isObjectSourceFlow()) {
+              <div class="modal-add-toolbar__inner">
+                <label class="at-label">Добавить ТМЦ в операцию</label>
+                <div class="at-search">
+                  <app-item-cache-search
+                    #itemSearch
+                    [placeholder]="'Поиск ТМЦ для добавления: название, SKU или хештег...'"
+                    [sourceSiteId]="relevantSiteId()"
+                    [consistency]="'authoritative'"
+                    (itemSelected)="onNewItemSelected($event)"
+                    (refreshRequested)="onRefreshCheckItems()"
+                  />
+                  @if (inlineItemsForSearch().length > 0) {
+                    <div class="inline-search-hint">
+                      <span class="hint-label">Временные позиции в операции:</span>
+                      @for (inline of inlineItemsForSearch(); track inline.clientKey) {
+                        <button class="inline-item-chip" (click)="onInlineSearchSelected(inline)">
+                          {{ inline.name }} ({{ inline.unitName }})
+                        </button>
+                      }
+                    </div>
+                  }
                 </div>
-              } @else {
-                <div class="form-row object-source-hint">
-                  <div class="hint-card">
-                    <span class="hint-icon" aria-hidden="true">ⓘ</span>
-                    <span>Позиция зафиксирована за объектом выдачи. Дополнительные позиции добавлять нельзя — доступно только то, что уже назначено на «{{ localDraft().issueObjectName || 'объект' }}».</span>
-                  </div>
+                <button class="btn-tmc" title="Создать новую ТМЦ для операции" (click)="openInlineModal()">
+                  Создать ТМЦ
+                </button>
+              </div>
+            } @else {
+              <div class="form-row form-row--full object-source-hint">
+                <div class="hint-card">
+                  <span class="hint-icon" aria-hidden="true">ⓘ</span>
+                  <span>Позиция зафиксирована за объектом выдачи. Дополнительные позиции добавлять нельзя — доступно только то, что уже назначено на «{{ localDraft().issueObjectName || 'объект' }}».</span>
                 </div>
-              }
+              </div>
             }
+          }
         </div>
 
         <div class="modal-table-toolbar">
@@ -496,12 +495,13 @@ function currentDateTimeLocal(): string {
 
     .modal-header {
       display: flex;
-      align-items: flex-start;
+      align-items: center;
       justify-content: space-between;
       gap: 16px;
-      padding: 14px 20px;
+      padding: 10px 20px;
       border-bottom: 1px solid var(--f-border);
       background: var(--f-surface);
+      min-height: 48px;
     }
     .modal-header__title-group {
       display: flex;
@@ -583,40 +583,84 @@ function currentDateTimeLocal(): string {
     }
 
     .modal-banners {
-      padding: 10px 20px 0;
+      padding: 8px 20px 0;
       display: flex;
       flex-direction: column;
-      gap: 8px;
+      gap: 6px;
       background: var(--f-surface);
     }
     .modal-banners:empty { display: none; }
 
     .modal-form-grid {
-      padding: 14px 20px 12px;
+      padding: 10px 20px 8px;
       background: var(--f-surface);
       border-bottom: 1px solid var(--f-border);
       display: flex;
       flex-direction: column;
-      gap: 10px;
+      gap: 8px;
     }
     .modal-add-toolbar {
-      padding: 10px 20px;
+      padding: 8px 20px;
       background: var(--f-surface-2);
       border-bottom: 1px solid var(--f-border);
+    }
+    .modal-add-toolbar:empty { display: none; }
+    .modal-add-toolbar__inner {
       display: flex;
       align-items: center;
       gap: 10px;
     }
-    .modal-add-toolbar:empty { display: none; }
+    .at-label {
+      display: inline-flex;
+      align-items: center;
+      height: var(--f-ctrl-h);
+      padding: 0 12px 0 0;
+      border-right: 1px solid var(--f-border);
+      margin-right: 2px;
+      font-size: 11px;
+      text-transform: uppercase;
+      letter-spacing: 0.06em;
+      color: var(--f-muted);
+      font-weight: 550;
+      flex-shrink: 0;
+      white-space: nowrap;
+    }
+    .at-search {
+      flex: 1 1 auto;
+      min-width: 240px;
+      display: flex;
+      align-items: center;
+      position: relative;
+    }
+    .btn-tmc {
+      flex: 0 0 auto;
+      height: var(--f-ctrl-h);
+      padding: 0 12px;
+      border: 1px solid var(--f-border-2);
+      border-radius: var(--f-r-sm);
+      background: var(--f-surface);
+      color: var(--f-fg-2);
+      font-size: 13px;
+      font-weight: 510;
+      font-family: inherit;
+      cursor: pointer;
+      white-space: nowrap;
+      transition: background 120ms ease, border-color 120ms ease, color 120ms ease;
+    }
+    .btn-tmc:hover { background: var(--f-surface-2); border-color: var(--f-muted-2); }
+    .btn-tmc:focus-visible {
+      outline: 2px solid var(--f-accent);
+      outline-offset: 1px;
+    }
     .modal-table-toolbar {
       display: flex;
       align-items: center;
       justify-content: space-between;
       gap: 12px;
-      padding: 8px 20px;
+      padding: 6px 20px;
       background: var(--f-surface);
       border-bottom: 1px solid var(--f-border);
-      min-height: 38px;
+      min-height: 34px;
     }
     .modal-table-toolbar:empty { display: none; }
     .table-toolbar__left {
@@ -673,10 +717,10 @@ function currentDateTimeLocal(): string {
       display: flex;
       align-items: center;
       gap: 10px;
-      padding: 8px 20px;
+      padding: 6px 20px;
       background: var(--f-surface);
       border-bottom: 1px solid var(--f-border);
-      min-height: 40px;
+      min-height: 36px;
     }
     .modal-lines-filter:empty { display: none; }
     .lines-filter-input {
@@ -799,10 +843,10 @@ function currentDateTimeLocal(): string {
       align-items: center;
       justify-content: space-between;
       gap: 16px;
-      padding: 12px 20px;
+      padding: 10px 20px;
       background: var(--f-surface);
       border-top: 1px solid var(--f-border);
-      min-height: 56px;
+      min-height: 50px;
     }
     .footer-actions {
       display: flex;
@@ -812,10 +856,10 @@ function currentDateTimeLocal(): string {
     }
 
     /* ─── Form-grid (TZ §11) ──────────────────────────────────── */
-.form-row {
+    .form-row {
       display: flex;
       flex-direction: column;
-      gap: 4px;
+      gap: 3px;
       min-width: 0;
       box-sizing: border-box;
     }
@@ -824,7 +868,7 @@ function currentDateTimeLocal(): string {
     }
     .form-grid {
       display: grid;
-      gap: 12px;
+      gap: 10px;
       align-items: start;
       grid-template-columns:
         minmax(0, 1.2fr)
@@ -841,7 +885,7 @@ function currentDateTimeLocal(): string {
     .form-field {
       display: flex;
       flex-direction: column;
-      gap: 4px;
+      gap: 3px;
       min-width: 0;
     }
     .form-field__label,
@@ -896,44 +940,12 @@ function currentDateTimeLocal(): string {
     }
     textarea.control {
       height: auto;
-      min-height: 38px;
-      padding: 7px 10px;
-      line-height: 1.45;
+      min-height: 32px;
+      padding: 5px 10px;
+      line-height: 1.4;
       resize: vertical;
     }
     .comment-area { resize: vertical; }
-    /* legacy aliases — keep selectors working for child components */
-    .input,
-    .wh-form-input {
-      width: 100%;
-      height: var(--f-ctrl-h);
-      padding: 0 10px;
-      border: 1px solid var(--f-border-2);
-      border-radius: var(--f-r-sm);
-      font-size: 13px;
-      font-family: inherit;
-      background: var(--f-surface);
-      color: var(--f-fg);
-      box-sizing: border-box;
-    }
-    .input:disabled,
-    .wh-form-input:disabled {
-      background: var(--f-surface-2);
-      color: var(--f-muted);
-      cursor: not-allowed;
-    }
-    .input:focus,
-    .wh-form-input:focus {
-      outline: none;
-      border-color: var(--f-accent);
-      box-shadow: 0 0 0 3px rgba(5, 150, 105, 0.15);
-    }
-    textarea.input,
-    textarea.wh-form-input {
-      height: auto;
-      padding: 7px 10px;
-      resize: vertical;
-    }
 
     .object-source-hint .hint-card {
       display: flex;
@@ -953,22 +965,6 @@ function currentDateTimeLocal(): string {
       line-height: 1.2;
     }
 
-    .add-tmc-row {
-      display: flex;
-      gap: 12px;
-      align-items: flex-start;
-      width: 100%;
-    }
-    .tmc-search-wrapper {
-      flex: 0 0 calc(80% - 9.6px);
-      min-width: 0;
-    }
-    .btn-tmc {
-      flex: 0 0 calc(20% - 2.4px);
-      height: 36px;
-      align-self: flex-end;
-    }
-
     .section-header {
       display: flex;
       align-items: center;
@@ -978,8 +974,9 @@ function currentDateTimeLocal(): string {
     .section-header h3 {
       margin: 0;
       font-size: 12.5px;
-      font-weight: 500;
+      font-weight: 600;
       color: var(--f-fg-2);
+      font-feature-settings: "tnum";
     }
 
     .validation-hint {

@@ -232,10 +232,10 @@ export interface LineSubmitErrorState {
     }
     .lines-data-table col.col-num-col    { width: 44px; }
     .lines-data-table col.col-item-col   { width: auto; }
-    .lines-data-table col.col-qty-col    { width: 130px; }
-    .lines-data-table col.col-cat-col    { width: 130px; }
+    .lines-data-table col.col-qty-col    { width: 170px; }
+    .lines-data-table col.col-cat-col    { width: 120px; }
     .lines-data-table col.col-avail-col  { width: 130px; }
-    .lines-data-table col.col-actions-col{ width: 60px; }
+    .lines-data-table col.col-actions-col{ width: 56px; }
 
     .lines-data-table thead th {
       position: sticky;
@@ -244,13 +244,13 @@ export interface LineSubmitErrorState {
       background: var(--l-surface-2);
       border-bottom: 1px solid var(--l-border-2);
       text-align: left;
-      font-size: 11px;
+      font-size: 10.5px;
       text-transform: uppercase;
-      letter-spacing: 0.06em;
+      letter-spacing: 0.04em;
       color: var(--l-muted);
       font-weight: 550;
-      padding: 8px 10px;
-      height: 34px;
+      padding: 6px 10px;
+      height: 30px;
       white-space: nowrap;
       user-select: none;
       cursor: pointer;
@@ -260,10 +260,10 @@ export interface LineSubmitErrorState {
     .lines-data-table thead th:hover:not(.col-cat-id):not(.col-del) { background: #F1F5F9; }
 
     .lines-data-table tbody td {
-      padding: 8px 10px;
+      padding: 6px 10px;
       border-bottom: 1px solid var(--l-border);
-      vertical-align: top;
-      height: 44px;
+      vertical-align: middle;
+      height: 38px;
     }
     .lines-data-table tbody tr:hover td { background: var(--l-surface-2); }
 
@@ -384,7 +384,7 @@ export interface LineSubmitErrorState {
     .avail-loading {
       font-family: var(--l-font-mono);
       font-size: 13px;
-      color: var(--l-muted-2);
+      color: var(--l-muted);
       display: inline-flex;
       align-items: center;
       gap: 6px;
@@ -405,7 +405,7 @@ export interface LineSubmitErrorState {
     .avail-na {
       font-family: var(--l-font-mono);
       font-size: 13px;
-      color: var(--l-muted-2);
+      color: var(--l-muted);
     }
     .avail-inline {
       font-size: 11.5px;
