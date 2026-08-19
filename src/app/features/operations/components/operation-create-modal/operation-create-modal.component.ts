@@ -736,15 +736,16 @@ function currentDateTimeLocal(): string {
       background: var(--f-surface);
     }
 
-    /* ─── Responsive (TZ §19) ─────────────────────────────────── */
+    /* ─── Responsive (TZ §19) — selectors use .modal-form-grid ancestor
+       to win CSS cascade against the default .form-grid rule below. ─── */
     @media (max-width: 1280px) {
       .modal-container {
         max-width: 100%;
       }
-      .form-grid {
+      .modal-form-grid .form-grid {
         grid-template-columns: minmax(0, 1fr) minmax(0, 1.2fr) minmax(0, 0.95fr);
       }
-      .form-grid[data-variant="move"] {
+      .modal-form-grid .form-grid[data-variant="move"] {
         grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
       }
     }
@@ -752,10 +753,8 @@ function currentDateTimeLocal(): string {
       .modal-container {
         height: clamp(640px, 96vh, 1000px);
       }
-      .form-grid {
-        grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
-      }
-      .form-grid[data-variant="move"] {
+      .modal-form-grid .form-grid,
+      .modal-form-grid .form-grid[data-variant="move"] {
         grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
       }
       .modal-table-wrap { overflow-x: auto; }
@@ -765,8 +764,8 @@ function currentDateTimeLocal(): string {
       .modal-container {
         height: 96vh;
       }
-      .form-grid,
-      .form-grid[data-variant="move"] {
+      .modal-form-grid .form-grid,
+      .modal-form-grid .form-grid[data-variant="move"] {
         grid-template-columns: 1fr;
       }
       .modal-add-toolbar {
