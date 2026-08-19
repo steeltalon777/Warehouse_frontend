@@ -121,10 +121,15 @@ describe('DiagnosticsService', () => {
     expect(e.operation_type).toBe('RECEIVE');
     // itemsCount is allowed (aggregate)
     expect(e.details?.items_count).toBe(1);
-    // But the lines themselves must NOT appear
+    // But the lines themselves must NOT appear.
     const json = JSON.stringify(e);
     expect(json).not.toContain('Секретный ТМЦ');
-    expect(json).not.toContain('999');
+    // Check only the details payload for the leaked qty: the top-level event
+    // carries a real occurred_at timestamp whose milliseconds can legitimately
+    // contain "999", so asserting on the whole event is flaky.
+    const detailsJson = JSON.stringify(e.details ?? {});
+    expect(detailsJson).not.toContain('999');
+    expect(e.details).not.toHaveProperty('lines');
   });
 
   it('handles null auth context gracefully', () => {

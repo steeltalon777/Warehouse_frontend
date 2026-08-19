@@ -19,6 +19,7 @@ import {
   STATUS_TABS,
   OperationDto,
   OperationSubmitResult,
+  OperationSaveLineError,
   OPERATION_TYPE_LABELS,
   OPERATION_STATUS_LABELS,
 } from '../../../../core/models/operations.models';
@@ -141,6 +142,7 @@ type OperationSubmitState =
            [isSubmitting]="service.isSubmitting() || submitState() === 'submitting' || submitState() === 'resolving'"
            [submitError]="createModalSubmitError()"
            [submitErrorPayload]="createModalSubmitErrorPayload()"
+           [saveLineErrors]="createModalLineErrors()"
            [submitState]="submitState()"
            [submitMessage]="submitMessage()"
            (save)="onDraftSave($event)"
@@ -380,6 +382,8 @@ export class OperationsPageComponent implements OnInit, OnDestroy {
   readonly createModalSubmitError = signal<string>('');
   /** Raw rejected-submit payload (problem envelope) forwarded to the modal. */
   readonly createModalSubmitErrorPayload = signal<unknown>(null);
+  /** Structured create/update line errors (`operation_lines_invalid`). */
+  readonly createModalLineErrors = signal<OperationSaveLineError[]>([]);
   readonly submitState = signal<OperationSubmitState>('editing');
   readonly lastSubmitResult = signal<OperationSubmitResult | null>(null);
   readonly submitMessage = signal<string>('');
@@ -504,6 +508,7 @@ export class OperationsPageComponent implements OnInit, OnDestroy {
     });
     this.createModalSubmitError.set('');
     this.createModalSubmitErrorPayload.set(null);
+    this.createModalLineErrors.set([]);
     this.resetSubmitUx();
     this.showCreateModal.set(true);
   }
@@ -583,6 +588,7 @@ export class OperationsPageComponent implements OnInit, OnDestroy {
       this.editingDraft.set(draft);
       this.createModalSubmitError.set('');
       this.createModalSubmitErrorPayload.set(null);
+      this.createModalLineErrors.set([]);
       this.showCreateModal.set(true);
     } catch {
       // error already in service.error
@@ -774,28 +780,21 @@ export class OperationsPageComponent implements OnInit, OnDestroy {
         this.editingDraft.set(savedDraft);
         this.createModalSubmitError.set('');
         this.createModalSubmitErrorPayload.set(null);
+        this.createModalLineErrors.set([]);
       }
       void this.loadList();
     } catch (err: any) {
-      // Handle structured operation_lines_invalid errors
-      const raw = err?.raw;
-      if (raw?.code === 'operation_lines_invalid' && Array.isArray(raw.lines)) {
-        const lineErrors = raw.lines as Array<{ line_number: number; item_id?: number; reason: string; first_line_number?: number }>;
-        const summary = lineErrors.map(le => {
-          const reasonMap: Record<string, string> = {
-            'item_not_found': 'ТМЦ не найдена',
-            'deleted': 'ТМЦ удалена',
-            'inactive': 'ТМЦ деактивирована',
-            'duplicate_item': `дубликат (строка ${le.first_line_number})`,
-            'unit_unusable': 'ед. изм. недоступна',
-            'category_unusable': 'категория недоступна',
-          };
-          return `Строка ${le.line_number}: ${reasonMap[le.reason] || le.reason}`;
-        }).join('; ');
-        this.createModalSubmitError.set(`Ошибки в строках: ${summary}`);
-        // Store structured errors for line-level highlighting
-        this.createModalSubmitErrorPayload.set(raw);
+      // Handle structured operation_lines_invalid errors. The BFF envelope is
+      // { ok:false, error:{ code, message, detail:{...}, lines:[...] } } — the
+      // handler promotes `lines`/`operation_id` to `error.*`, so read there
+      // first, falling back to the nested `detail` for older BFF shapes.
+      const lineErrors = this.extractSaveLineErrors(err);
+      if (lineErrors !== null) {
+        this.createModalLineErrors.set(lineErrors);
+        this.createModalSubmitError.set(this.summarizeSaveLineErrors(lineErrors));
+        this.createModalSubmitErrorPayload.set(null);
       } else {
+        this.createModalLineErrors.set([]);
         const message = this.service.error()
           || err?.message
           || err?.error?.message
@@ -803,6 +802,30 @@ export class OperationsPageComponent implements OnInit, OnDestroy {
         this.createModalSubmitError.set(message);
       }
     }
+  }
+
+  private extractSaveLineErrors(err: any): OperationSaveLineError[] | null {
+    const bffError = err?.error ?? err?.raw?.error;
+    const code = err?.error?.code ?? err?.raw?.error?.code ?? err?.code;
+    if (code !== 'operation_lines_invalid') return null;
+    const lines = bffError?.lines ?? err?.raw?.error?.detail?.lines ?? err?.raw?.lines;
+    if (!Array.isArray(lines)) return null;
+    return lines as OperationSaveLineError[];
+  }
+
+  private summarizeSaveLineErrors(lineErrors: OperationSaveLineError[]): string {
+    const reasonMap: Record<string, string> = {
+      'item_not_found': 'ТМЦ не найдена',
+      'deleted': 'ТМЦ удалена',
+      'inactive': 'ТМЦ деактивирована',
+      'duplicate_item': 'дубликат',
+      'unit_unusable': 'ед. изм. недоступна',
+      'category_unusable': 'категория недоступна',
+    };
+    const summary = lineErrors
+      .map(le => `Строка ${le.line_number}: ${reasonMap[le.reason] || le.reason}`)
+      .join('; ');
+    return `Ошибки в строках: ${summary}`;
   }
 
   async onDraftSubmit(draft: OperationDraftVm): Promise<void> {

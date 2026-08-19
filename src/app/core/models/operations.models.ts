@@ -310,6 +310,17 @@ export interface OperationLineDraftVm {
   availableQuantity?: number | null;
   sourceSiteQuantity?: number | null;
   destinationSiteQuantity?: number | null;
+  /**
+   * Authoritative balance lifecycle state (issue #24).
+   *
+   * - NOT_LOADED: not yet requested; `availableQuantity` is meaningless (null).
+   * - LOADING: targeted request in-flight.
+   * - FRESH: a successful targeted request applied; `availableQuantity` is the
+   *   authoritative value (0 = confirmed zero for a missing/zero row).
+   * - ERROR: the targeted request failed; `availableQuantity` must NOT be
+   *   treated as a confirmed zero.
+   */
+  balanceState?: BalanceLineState;
   isTemporary: boolean;
   fromBalances: boolean;
   error?: string | null;
@@ -358,6 +369,20 @@ export interface BalanceDto {
   unit_symbol?: string;
   category_id?: string;
   category_name?: string;
+}
+
+export type BalanceLineState = 'NOT_LOADED' | 'LOADING' | 'FRESH' | 'ERROR';
+
+/**
+ * Structured create/update line error (issue #24, BFF `operation_lines_invalid`).
+ * Correlation key is `line_number` (payload position) for create and the server
+ * line id for update; the modal maps `line_number` back to the draft row.
+ */
+export interface OperationSaveLineError {
+  line_number: number;
+  item_id?: number | null;
+  reason: string;
+  first_line_number?: number | null;
 }
 
 export const OPERATION_TYPE_LABELS: Record<OperationType, string> = {

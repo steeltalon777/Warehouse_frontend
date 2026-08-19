@@ -743,10 +743,18 @@ export class OperationsService {
     }
   }
 
+  /**
+   * Targeted authoritative balance read for a set of item IDs on one site.
+   *
+   * Returns the raw rows on success. On ANY failure (HTTP, timeout, non-200)
+   * it throws — callers must NOT interpret an empty result as "confirmed 0".
+   * The `balanceLoadError` signal is set with a user-facing message before the
+   * throw for surfaces that need it.
+   */
   async loadBalancesForItems(siteId: string, itemIds: string[]): Promise<BalanceDto[]> {
     if (!siteId || !itemIds.length) return [];
+    this.balanceLoadError.set(null);
     try {
-      this.balanceLoadError.set(null);
       const params: Record<string, string> = {
         site_id: siteId,
         item_ids: itemIds.join(','),
@@ -760,19 +768,8 @@ export class OperationsService {
       return rows;
     } catch {
       this.balanceLoadError.set('Не удалось загрузить остатки');
-      return [];
+      throw new Error('Не удалось загрузить остатки');
     }
-  }
-
-  getBalanceForItem(itemId: string, siteId?: string): number {
-    const list = this.balances();
-    const normalizedSiteId = siteId == null ? null : String(siteId);
-    const row = list.find(
-      b => String(b.item_id) === String(itemId) && (!normalizedSiteId || String(b.site_id) === normalizedSiteId)
-    );
-    if (!row) return 0;
-    const qty = parseFloat(row.qty);
-    return isNaN(qty) ? 0 : qty;
   }
 
   // ─── Mappers ─────────────────────────────────────────────────

@@ -149,14 +149,20 @@ export interface LineSubmitErrorState {
                 <td class="col-avail">
                   @if (line.inlineItem) {
                     <span class="avail-inline">будет создана при подтверждении</span>
-                  } @else if (isBalanceRefreshing()) {
+                  } @else if (isObjectSourceFlow()) {
+                    @if (line.availableQuantity == null) {
+                      <span class="avail-na">—</span>
+                    } @else {
+                      <span class="avail-value avail-value--object">{{ line.availableQuantity }}</span>
+                    }
+                  } @else if (line.balanceState === 'LOADING') {
                     <span class="avail-loading">…</span>
-                  } @else if (isObjectSourceFlow() && line.availableQuantity == null) {
-                    <span class="avail-na">—</span>
+                  } @else if (line.balanceState === 'ERROR') {
+                    <span class="avail-error" data-testid="operation-line-balance-error">ошибка</span>
+                  } @else if (line.balanceState === 'FRESH') {
+                    <span class="avail-value">{{ line.availableQuantity ?? 0 }}</span>
                   } @else {
-                    <span class="avail-value" [class.avail-value--object]="isObjectSourceFlow()">
-                      {{ availableQuantity(line) }}
-                    </span>
+                    <span class="avail-na" data-testid="operation-line-balance-na">—</span>
                   }
                 </td>
                 <td class="col-del">
@@ -326,6 +332,7 @@ export interface LineSubmitErrorState {
     .avail-value { font-weight: 500; color: #059669; }
     .avail-value--object { color: #2563EB; }
     .avail-loading { color: #94A3B8; }
+    .avail-error { color: #DC2626; font-size: 12px; }
     .avail-na { color: #CBD5E1; }
     .avail-inline { font-size: 11px; color: #64748B; font-style: italic; }
 
@@ -499,10 +506,6 @@ export class OperationLinesTableComponent {
 
   onQtyChange(localId: string, value: number | null): void {
     this.quantityChange.emit({ localId, quantity: value });
-  }
-
-  availableQuantity(line: OperationLineDraftVm): number {
-    return line.availableQuantity ?? 0;
   }
 
   submitErrorHintId(localId: string): string {

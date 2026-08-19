@@ -25,7 +25,7 @@ function makeDraft(overrides: Partial<OperationDraftVm> = {}): OperationDraftVm 
   };
 }
 
-function makeLine(localId: string, itemId: string | null = '1'): OperationLineDraftVm {
+function makeLine(localId: string, itemId: string | null = '1', lineNumber: number = 1): OperationLineDraftVm {
   return {
     localId,
     itemId,
@@ -35,7 +35,7 @@ function makeLine(localId: string, itemId: string | null = '1'): OperationLineDr
     quantity: 1,
     isTemporary: false,
     fromBalances: false,
-    lineNumber: 1,
+    lineNumber,
   };
 }
 
@@ -59,7 +59,6 @@ interface Mocks {
     balanceLoadError: WritableSignal<string | null>;
     loadBalances: ReturnType<typeof vi.fn>;
     loadBalancesForItems: ReturnType<typeof vi.fn>;
-    getBalanceForItem: ReturnType<typeof vi.fn>;
     hasUnusableLines: ReturnType<typeof vi.fn>;
     validateLinesBeforePersist: ReturnType<typeof vi.fn>;
     applyResolvedStatuses: ReturnType<typeof vi.fn>;
@@ -80,7 +79,6 @@ function createMocks(): Mocks {
       balanceLoadError: signal<string | null>(null),
       loadBalances: vi.fn(async () => {}),
       loadBalancesForItems: vi.fn(async () => []),
-      getBalanceForItem: vi.fn(() => 0),
       hasUnusableLines: vi.fn(() => false),
       validateLinesBeforePersist: vi.fn(async () => new Map()),
       applyResolvedStatuses: vi.fn((draft: any) => draft),
@@ -175,7 +173,6 @@ describe('OperationCreateModalComponent — manual balance refresh (TZ §6.1 C1-
       balanceLoadError: signal<string | null>(null),
       loadBalances: vi.fn(async () => {}),
       loadBalancesForItems,
-      getBalanceForItem: vi.fn(() => 0),
       hasUnusableLines: vi.fn(() => false),
       validateLinesBeforePersist: vi.fn(async () => new Map()),
       applyResolvedStatuses: vi.fn((draft: any) => draft),
@@ -251,7 +248,7 @@ describe('OperationCreateModalComponent — manual balance refresh (TZ §6.1 C1-
     expect(submitSpy).toHaveBeenCalledTimes(1);
   });
 
-  it('C6: onNewItemSelected → getBalanceForItem called exactly once with (itemId, siteId)', async () => {
+  it('C6: onNewItemSelected appends NOT_LOADED (never 0) and triggers a targeted refresh', async () => {
     mocks.catalogSearchMock.resolveItems = vi.fn(() => of([{
       requested_id: '42',
       status: 'active',
@@ -265,12 +262,18 @@ describe('OperationCreateModalComponent — manual balance refresh (TZ §6.1 C1-
     await flush(fixture);
 
     await fixture.componentInstance.onNewItemSelected(makeItem('42'));
+    await flush(fixture);
 
-    expect(mocks.serviceMock.getBalanceForItem).toHaveBeenCalledTimes(1);
-    expect(mocks.serviceMock.getBalanceForItem).toHaveBeenCalledWith('42', '21');
+    const line = fixture.componentInstance.localDraft().lines[0];
+    expect(line.itemId).toBe('42');
+    // Success + missing row → confirmed zero (FRESH), not a false NOT_LOADED zero.
+    expect(line.balanceState).toBe('FRESH');
+    expect(line.availableQuantity).toBe(0);
+    // The targeted refresh (via the effect) is the source of balance data.
+    expect(mocks.serviceMock.loadBalancesForItems).toHaveBeenCalledWith('21', ['42']);
   });
 
-  it('C7: onItemSelected for an existing line → loadBalancesForItems called', async () => {
+  it('C7: onItemSelected for an existing line → line becomes NOT_LOADED and triggers a targeted refresh', async () => {
     mocks.serviceMock.loadBalancesForItems = vi.fn(async () => [{ item_id: '42', site_id: '21', qty: '5' }]);
     configureTestBed();
     const fixture = TestBed.createComponent(OperationCreateModalComponent);
@@ -282,6 +285,10 @@ describe('OperationCreateModalComponent — manual balance refresh (TZ §6.1 C1-
     await flush(fixture);
 
     expect(mocks.serviceMock.loadBalancesForItems).toHaveBeenCalled();
+    const line = fixture.componentInstance.localDraft().lines[0];
+    expect(line.itemId).toBe('42');
+    expect(line.availableQuantity).toBe(5);
+    expect(line.balanceState).toBe('FRESH');
   });
 });
 
@@ -394,11 +401,10 @@ describe('OperationCreateModalComponent — B2/B3/B4 auto-validation and balance
     expect(fixture.componentInstance.toasts().join()).toContain('Выберите склад, чтобы обновить остатки');
   });
 
-  it('T5: loadBalancesForItems error sets balanceLoadError, toast on manual refresh', async () => {
+  it('T5: loadBalancesForItems error marks line ERROR (never 0), toast on manual refresh', async () => {
     mocks.serviceMock.loadBalancesForItems = vi.fn(async () => {
-      mocks.serviceMock.balances.set([]);
       mocks.serviceMock.balanceLoadError.set('Не удалось загрузить остатки');
-      return [];
+      throw new Error('Не удалось загрузить остатки');
     });
     const fixture = TestBed.createComponent(OperationCreateModalComponent);
     fixture.componentRef.setInput('sites', []);
@@ -409,6 +415,159 @@ describe('OperationCreateModalComponent — B2/B3/B4 auto-validation and balance
 
     expect(mocks.serviceMock.loadBalancesForItems).toHaveBeenCalledWith('21', ['1']);
     expect(mocks.serviceMock.balanceLoadError()).toBe('Не удалось загрузить остатки');
+    // B2: error must NOT become a confirmed zero.
+    const line = fixture.componentInstance.localDraft().lines[0];
+    expect(line.balanceState).toBe('ERROR');
+    expect(line.availableQuantity).toBeNull();
     expect(fixture.componentInstance.toasts().join()).toContain('Не удалось обновить остатки');
+  });
+});
+
+describe('OperationCreateModalComponent — B1/B2 balance lifecycle regressions (issue #24)', () => {
+  beforeEach(() => {
+    mocks = createMocks();
+    configureTestBed();
+  });
+
+  it('B1: applying a successful balance response does NOT retrigger the effect (no self-trigger loop)', async () => {
+    mocks.serviceMock.loadBalancesForItems = vi.fn(async () => [
+      { item_id: '1', site_id: '21', qty: '12' },
+    ]);
+    const fixture = TestBed.createComponent(OperationCreateModalComponent);
+    fixture.componentRef.setInput('sites', []);
+    fixture.componentRef.setInput('draft', makeDraft({ lines: [makeLine('local-1', '1')] }));
+    await flush(fixture, 10);
+
+    // Exactly one targeted request for the single line — a loop would keep firing.
+    expect(mocks.serviceMock.loadBalancesForItems).toHaveBeenCalledTimes(1);
+    const line = fixture.componentInstance.localDraft().lines[0];
+    expect(line.availableQuantity).toBe(12);
+    expect(line.balanceState).toBe('FRESH');
+  });
+
+  it('B1: quantity/category edits do not fire a new balance request', async () => {
+    mocks.serviceMock.loadBalancesForItems = vi.fn(async () => [
+      { item_id: '1', site_id: '21', qty: '12' },
+    ]);
+    const fixture = TestBed.createComponent(OperationCreateModalComponent);
+    fixture.componentRef.setInput('sites', []);
+    fixture.componentRef.setInput('draft', makeDraft({ lines: [makeLine('local-1', '1')] }));
+    await flush(fixture);
+
+    const callsBefore = mocks.serviceMock.loadBalancesForItems.mock.calls.length;
+    fixture.componentInstance.onQuantityChange('local-1', 5);
+    await flush(fixture, 10);
+
+    expect(mocks.serviceMock.loadBalancesForItems.mock.calls.length).toBe(callsBefore);
+  });
+
+  it('B1: changing site fires exactly one new request for the new site', async () => {
+    mocks.serviceMock.loadBalancesForItems = vi.fn(async () => [
+      { item_id: '1', site_id: '22', qty: '9' },
+    ]);
+    const fixture = TestBed.createComponent(OperationCreateModalComponent);
+    fixture.componentRef.setInput('sites', []);
+    fixture.componentRef.setInput('draft', makeDraft({ lines: [makeLine('local-1', '1')] }));
+    await flush(fixture);
+
+    const callsBefore = mocks.serviceMock.loadBalancesForItems.mock.calls.length;
+    fixture.componentRef.setInput('draft', makeDraft({ destinationSiteId: '22', lines: [makeLine('local-1', '1')] }));
+    await flush(fixture, 10);
+
+    expect(mocks.serviceMock.loadBalancesForItems.mock.calls.length).toBe(callsBefore + 1);
+    expect(mocks.serviceMock.loadBalancesForItems).toHaveBeenLastCalledWith('22', ['1']);
+  });
+
+  it('B2: first HTTP failure → ERROR, never a confirmed zero', async () => {
+    mocks.serviceMock.loadBalancesForItems = vi.fn(async () => {
+      mocks.serviceMock.balanceLoadError.set('Не удалось загрузить остатки');
+      throw new Error('boom');
+    });
+    const fixture = TestBed.createComponent(OperationCreateModalComponent);
+    fixture.componentRef.setInput('sites', []);
+    fixture.componentRef.setInput('draft', makeDraft({ lines: [makeLine('local-1', '1')] }));
+    await flush(fixture, 10);
+
+    const line = fixture.componentInstance.localDraft().lines[0];
+    expect(line.balanceState).toBe('ERROR');
+    expect(line.availableQuantity).toBeNull();
+  });
+
+  it('B2: failure after a previous success keeps the last confirmed value (not replaced by 0)', async () => {
+    let fail = false;
+    mocks.serviceMock.loadBalancesForItems = vi.fn(async () => {
+      if (fail) {
+        mocks.serviceMock.balanceLoadError.set('Не удалось загрузить остатки');
+        throw new Error('boom');
+      }
+      return [{ item_id: '1', site_id: '21', qty: '7' }];
+    });
+    const fixture = TestBed.createComponent(OperationCreateModalComponent);
+    fixture.componentRef.setInput('sites', []);
+    fixture.componentRef.setInput('draft', makeDraft({ lines: [makeLine('local-1', '1')] }));
+    await flush(fixture);
+
+    let line = fixture.componentInstance.localDraft().lines[0];
+    expect(line.availableQuantity).toBe(7);
+    expect(line.balanceState).toBe('FRESH');
+
+    fail = true;
+    await fixture.componentInstance.onRefreshAllBalances();
+    await flush(fixture);
+
+    line = fixture.componentInstance.localDraft().lines[0];
+    expect(line.availableQuantity).toBe(7);
+    expect(line.balanceState).toBe('FRESH');
+  });
+
+  it('B2: successful targeted request with missing row → confirmed zero (FRESH 0)', async () => {
+    mocks.serviceMock.loadBalancesForItems = vi.fn(async () => []);
+    const fixture = TestBed.createComponent(OperationCreateModalComponent);
+    fixture.componentRef.setInput('sites', []);
+    fixture.componentRef.setInput('draft', makeDraft({ lines: [makeLine('local-1', '1')] }));
+    await flush(fixture);
+
+    const line = fixture.componentInstance.localDraft().lines[0];
+    expect(line.balanceState).toBe('FRESH');
+    expect(line.availableQuantity).toBe(0);
+  });
+});
+
+describe('OperationCreateModalComponent — B3 structured save line errors (issue #24)', () => {
+  beforeEach(() => {
+    mocks = createMocks();
+    configureTestBed();
+  });
+
+  it('maps operation_lines_invalid errors onto the correct row (deleted)', async () => {
+    const fixture = TestBed.createComponent(OperationCreateModalComponent);
+    fixture.componentRef.setInput('sites', []);
+    fixture.componentRef.setInput('draft', makeDraft({ lines: [makeLine('local-1', '1')] }));
+    fixture.componentRef.setInput('saveLineErrors', [{ line_number: 1, item_id: 1, reason: 'deleted' }]);
+    await flush(fixture);
+
+    const line = fixture.componentInstance.lines()[0];
+    expect(line.error).toContain('удалена');
+  });
+
+  it('duplicate_item correlates to the first line number', async () => {
+    const fixture = TestBed.createComponent(OperationCreateModalComponent);
+    fixture.componentRef.setInput('sites', []);
+    fixture.componentRef.setInput('draft', makeDraft({ lines: [makeLine('local-1', '1', 1), makeLine('local-2', '2', 2)] }));
+    fixture.componentRef.setInput('saveLineErrors', [{ line_number: 2, item_id: 1, reason: 'duplicate_item', first_line_number: 1 }]);
+    await flush(fixture);
+
+    const lines = fixture.componentInstance.lines();
+    expect(lines[1].error).toContain('строке 1');
+  });
+
+  it('line remains in draft after structured save error', async () => {
+    const fixture = TestBed.createComponent(OperationCreateModalComponent);
+    fixture.componentRef.setInput('sites', []);
+    fixture.componentRef.setInput('draft', makeDraft({ lines: [makeLine('local-1', '1')] }));
+    fixture.componentRef.setInput('saveLineErrors', [{ line_number: 1, item_id: 1, reason: 'inactive' }]);
+    await flush(fixture);
+
+    expect(fixture.componentInstance.localDraft().lines.length).toBe(1);
   });
 });

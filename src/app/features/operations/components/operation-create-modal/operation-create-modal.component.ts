@@ -9,6 +9,7 @@ import {
   OperationInlineItemDraftVm,
   SiteDto,
   BalanceDto,
+  OperationSaveLineError,
   OPERATION_TYPE_LABELS,
 } from '../../../../core/models/operations.models';
 import { OperationsService } from '../../../../core/services/operations.service';
@@ -700,6 +701,8 @@ export class OperationCreateModalComponent implements OnInit, OnDestroy {
    * TZ-FRONTEND §3). Nullable: when null the submit-error surface is reset.
    */
   submitErrorPayload = input<unknown>(null);
+  /** Structured create/update line errors (`operation_lines_invalid`) from the BFF. */
+  saveLineErrors = input<OperationSaveLineError[]>([]);
   save = output<OperationDraftVm>();
   submit = output<OperationDraftVm>();
   retrySubmit = output<OperationDraftVm>();
@@ -751,7 +754,21 @@ export class OperationCreateModalComponent implements OnInit, OnDestroy {
   });
   readonly lines = computed(() => {
     const draftLines = this.localDraft().lines;
-    return draftLines.map(l => ({ ...l, error: this.lineAvailableQtyError(l) }));
+    const errByLine = this.saveLineErrorsByNumber();
+    return draftLines.map(l => ({
+      ...l,
+      error: this.lineAvailableQtyError(l) ?? errByLine.get(l.lineNumber ?? 0) ?? null,
+    }));
+  });
+
+  /** Structured create/update line errors keyed by line_number. */
+  private readonly saveLineErrorsByNumber = computed(() => {
+    const map = new Map<number, string>();
+    for (const e of this.saveLineErrors()) {
+      if (e.line_number == null) continue;
+      map.set(e.line_number, this.formatSaveLineError(e));
+    }
+    return map;
   });
 
   readonly totalQuantity = computed(() => {
@@ -803,6 +820,33 @@ export class OperationCreateModalComponent implements OnInit, OnDestroy {
 
   readonly isBalanceRefreshing = signal<boolean>(false);
   private balanceRefreshSeq = 0;
+
+  /**
+   * B1 fix: the balance-refresh trigger is keyed ONLY by (site, canonical item
+   * ID set), not by the whole draft object. Because computed() signals notify
+   * only when the produced primitive actually changes, applying balance rows
+   * (which mutates `availableQuantity`/`categoryId` but not the item-ID set or
+   * the site) produces an identical key and therefore does NOT retrigger the
+   * effect — eliminating the self-trigger loop (issue #24 B1).
+   *
+   * Returns null when a targeted read is not applicable (object flow, no site,
+   * or no persisted items).
+   */
+  readonly balanceRefreshKey = computed<string | null>(() => {
+    if (this.isObjectSourceFlow() || this.hasPrefilledAssetLine()) return null;
+    const siteId = this.relevantSiteId();
+    if (!siteId || siteId === 'undefined' || siteId === 'null') return null;
+    const itemIds = [...new Set(
+      this.localDraft().lines
+        .map(l => l.itemId)
+        .filter((id): id is string => !!id)
+    )].sort();
+    if (itemIds.length === 0) return null;
+    return `${siteId}::${itemIds.join(',')}`;
+  });
+
+  /** Site whose balance rows were last applied; used to invalidate on site change. */
+  private balanceAppliedSite: string | null = null;
 
   /** True while draft lines are being re-validated against the catalog (TZ-V3.2 W1.2). */
   readonly isRefreshing = signal(false);
@@ -1110,6 +1154,27 @@ export class OperationCreateModalComponent implements OnInit, OnDestroy {
     return null;
   }
 
+  private formatSaveLineError(e: OperationSaveLineError): string {
+    switch (e.reason) {
+      case 'item_not_found':
+        return 'ТМЦ не найдена в каталоге';
+      case 'deleted':
+        return 'ТМЦ удалена из каталога';
+      case 'inactive':
+        return 'ТМЦ деактивирована';
+      case 'duplicate_item':
+        return e.first_line_number
+          ? `Дубликат: ТМЦ уже добавлена в строке ${e.first_line_number}`
+          : 'Дубликат ТМЦ';
+      case 'unit_unusable':
+        return 'Единица измерения недоступна';
+      case 'category_unusable':
+        return 'Категория недоступна';
+      default:
+        return e.reason;
+    }
+  }
+
   constructor() {
     effect(() => {
       this.submitErrorLocal.set(this.submitError());
@@ -1128,6 +1193,24 @@ export class OperationCreateModalComponent implements OnInit, OnDestroy {
       }
       this.submitErrorService.setFromHttpError(raw);
       this.showSubmitErrorSurface();
+    });
+
+    // B3: when structured create/update line errors arrive, scroll/focus the
+    // first errored row so the user sees exactly which line is invalid.
+    effect(() => {
+      const errors = this.saveLineErrors();
+      if (!errors || errors.length === 0) return;
+      const firstLineNumber = errors.map(e => e.line_number).filter((n): n is number => n != null).sort((a, b) => a - b)[0];
+      if (firstLineNumber == null) return;
+      const target = this.lines().find(l => l.lineNumber === firstLineNumber);
+      if (!target) return;
+      setTimeout(() => {
+        const qtyInput = document.querySelector<HTMLElement>(
+          `[data-qty-for="${target.localId}"]`,
+        );
+        qtyInput?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+        qtyInput?.focus({ preventScroll: true });
+      });
     });
 
     // TZ Stage 4 WP-1: debounced autosave (2s of inactivity)
@@ -1178,32 +1261,32 @@ export class OperationCreateModalComponent implements OnInit, OnDestroy {
     });
 
     effect(() => {
-      const siteId = this.relevantSiteId();
-      const isObjectSourceFlow = this.isObjectSourceFlow();
-      const hasPrefilledAssetLine = this.hasPrefilledAssetLine();
-      if (isObjectSourceFlow || hasPrefilledAssetLine || !siteId
-          || siteId === 'undefined' || siteId === 'null') {
+      const key = this.balanceRefreshKey();
+      if (!key) {
+        this.isBalanceRefreshing.set(false);
         return;
       }
-      // Targeted balance refresh: load only for items in current lines
-      const currentLines = this.localDraft().lines;
-      const itemIds = [...new Set(
-        currentLines
-          .map(l => l.itemId)
-          .filter((id): id is string => !!id)
-      )];
-      if (itemIds.length === 0) return;
+      const sep = key.indexOf('::');
+      const siteId = key.slice(0, sep);
+      const itemIds = key.slice(sep + 2).split(',');
 
       const seq = ++this.balanceRefreshSeq;
       this.isBalanceRefreshing.set(true);
+      // Site change invalidates every previously-applied balance value (TZ §12).
+      if (this.balanceAppliedSite !== siteId) {
+        this.resetBalanceState();
+      }
+      this.markBalanceLoading();
       this.service.loadBalancesForItems(siteId, itemIds).then((rows) => {
         if (seq !== this.balanceRefreshSeq) return;
         if (this.relevantSiteId() === siteId) {
-          this.refreshSourceQuantitiesFromRows(rows);
+          this.balanceAppliedSite = siteId;
+          this.applyTargetedBalanceRows(rows);
         }
         this.isBalanceRefreshing.set(false);
       }).catch(() => {
         if (seq === this.balanceRefreshSeq) {
+          this.markBalanceRefreshFailed();
           this.isBalanceRefreshing.set(false);
         }
       });
@@ -1269,47 +1352,15 @@ export class OperationCreateModalComponent implements OnInit, OnDestroy {
     }
   }
 
-  private updateLineStockHint(line: OperationLineDraftVm): void {
-    if (!line.itemId) return;
-    if (this.isObjectSourceFlow() || this.hasPrefilledAssetLine()) return;
-    const siteId = this.relevantSiteId();
-    if (!siteId) return;
-    // Load balance for this specific item (targeted)
-    this.service.loadBalancesForItems(siteId, [line.itemId]).then(rows => {
-      const row = rows.find(r => String(r.item_id) === String(line.itemId));
-      const qty = row ? parseFloat(row.qty) : 0;
-      this.localDraft.update(state => ({
-        ...state,
-        lines: state.lines.map(l =>
-          l.localId === line.localId ? { ...l, availableQuantity: isNaN(qty) ? 0 : qty } : l
-        ),
-      }));
-    });
-  }
-
-  private refreshSourceQuantities(): void {
-    // Do not overwrite object-assigned qty for object-source flows.
-    if (this.isObjectSourceFlow() || this.hasPrefilledAssetLine()) return;
-    const siteId = this.relevantSiteId() || undefined;
-    const balances = this.service.balances();
-    this.localDraft.update(state => ({
-      ...state,
-      lines: state.lines.map(l => {
-        if (!l.itemId) return l;
-        const qty = this.service.getBalanceForItem(l.itemId, siteId);
-        const balanceRow = balances.find(b => String(b.item_id) === String(l.itemId));
-        return {
-          ...l,
-          itemName: l.itemName || balanceRow?.item_name || '',
-          unitName: l.unitName && l.unitName !== 'шт' ? l.unitName : (balanceRow?.unit_symbol || l.unitName),
-          availableQuantity: qty,
-          sourceSiteQuantity: qty,
-        };
-      }),
-    }));
-  }
-
-  private refreshSourceQuantitiesFromRows(rows: BalanceDto[]): void {
+  /**
+   * Apply a successful targeted balance response atomically.
+   *
+   * Rows present → FRESH with the authoritative qty. Requested IDs missing from
+   * the response → FRESH with a confirmed zero (authoritative "no balance
+   * row"). Lines whose ID is in the response get category/unit metadata.
+   * Lines that were not part of this request stay untouched.
+   */
+  private applyTargetedBalanceRows(rows: BalanceDto[]): void {
     if (this.isObjectSourceFlow() || this.hasPrefilledAssetLine()) return;
     const balanceMap = new Map<string, BalanceDto>();
     for (const row of rows) {
@@ -1328,8 +1379,54 @@ export class OperationCreateModalComponent implements OnInit, OnDestroy {
           categoryId: balanceRow?.category_id || l.categoryId || null,
           availableQuantity: isNaN(qty) ? 0 : qty,
           sourceSiteQuantity: isNaN(qty) ? 0 : qty,
+          balanceState: 'FRESH' as const,
         };
       }),
+    }));
+  }
+
+  /**
+   * Mark balance state ERROR after a failed targeted read (issue #24 B2).
+   *
+   * Lines that were previously FRESH keep their last confirmed value (stale
+   * semantics — the failure must NOT overwrite them with 0). Lines that were
+   * NOT_LOADED/LOADING transition to ERROR and never surface a false zero.
+   */
+  private markBalanceRefreshFailed(): void {
+    if (this.isObjectSourceFlow() || this.hasPrefilledAssetLine()) return;
+    this.localDraft.update(state => ({
+      ...state,
+      lines: state.lines.map(l => {
+        if (!l.itemId) return l;
+        if (l.balanceState === 'FRESH') return l;
+        return { ...l, balanceState: 'ERROR' as const, availableQuantity: null, sourceSiteQuantity: null };
+      }),
+    }));
+  }
+
+  /** Transition warehouse lines for the given site into LOADING before a targeted read. */
+  private markBalanceLoading(): void {
+    if (this.isObjectSourceFlow() || this.hasPrefilledAssetLine()) return;
+    this.localDraft.update(state => ({
+      ...state,
+      lines: state.lines.map(l => {
+        if (!l.itemId) return l;
+        if (l.balanceState === 'FRESH') return l;
+        return { ...l, balanceState: 'LOADING' as const };
+      }),
+    }));
+  }
+
+  /** On site change: every persisted line returns to NOT_LOADED (no stale value). */
+  private resetBalanceState(): void {
+    if (this.isObjectSourceFlow() || this.hasPrefilledAssetLine()) return;
+    this.localDraft.update(state => ({
+      ...state,
+      lines: state.lines.map(l =>
+        l.itemId
+          ? { ...l, balanceState: 'NOT_LOADED' as const, availableQuantity: null, sourceSiteQuantity: null }
+          : l
+      ),
     }));
   }
 
@@ -1362,15 +1459,19 @@ export class OperationCreateModalComponent implements OnInit, OnDestroy {
         }
         const seq = ++this.balanceRefreshSeq;
         this.isBalanceRefreshing.set(true);
+        this.markBalanceLoading();
         try {
           const rows = await this.service.loadBalancesForItems(siteId, itemIds);
           if (seq === this.balanceRefreshSeq) {
-            const err = this.service.balanceLoadError();
-            if (err) {
-              this.setToasts([`Не удалось обновить остатки: ${err}`]);
-            } else if (this.relevantSiteId() === siteId) {
-              this.refreshSourceQuantitiesFromRows(rows);
+            if (this.relevantSiteId() === siteId) {
+              this.balanceAppliedSite = siteId;
+              this.applyTargetedBalanceRows(rows);
             }
+          }
+        } catch {
+          if (seq === this.balanceRefreshSeq) {
+            this.markBalanceRefreshFailed();
+            this.setToasts([`Не удалось обновить остатки: ${this.service.balanceLoadError() ?? 'ошибка'}`]);
           }
         } finally {
           if (seq === this.balanceRefreshSeq) this.isBalanceRefreshing.set(false);
@@ -1500,15 +1601,16 @@ export class OperationCreateModalComponent implements OnInit, OnDestroy {
               sku: item.sku,
               unitId: item.unit_id,
               unitName: item.unit_symbol,
+              // Item identity changed → balance is no longer valid until the
+              // targeted refresh (triggered by the item-ID set change) returns.
+              availableQuantity: null,
+              sourceSiteQuantity: null,
+              balanceState: 'NOT_LOADED' as const,
             }
           : l
       ),
     }));
     this.invalidateLineErrors(localId);
-    const line = this.lines().find(l => l.localId === localId);
-    if (line) {
-      this.updateLineStockHint(line);
-    }
   }
 
   async onNewItemSelected(item: Item): Promise<void> {
@@ -1531,10 +1633,6 @@ export class OperationCreateModalComponent implements OnInit, OnDestroy {
       return;
     }
 
-    const isObjectFlow = this.isObjectSourceFlow() || this.localDraft().prefilledAssetLine === true;
-    const availableQuantity = isObjectFlow
-      ? null
-      : this.service.getBalanceForItem(canonicalId, this.relevantSiteId() || undefined);
     this.localDraft.update(d => ({
       ...d,
       lines: [
@@ -1549,8 +1647,10 @@ export class OperationCreateModalComponent implements OnInit, OnDestroy {
           unitId: canonicalUnitId,
           unitName: canonicalUnitSymbol,
           quantity: null,
-          availableQuantity,
-          sourceSiteQuantity: availableQuantity,
+          // B2: NOT_LOADED — never a confirmed 0 until a targeted read returns.
+          availableQuantity: null,
+          sourceSiteQuantity: null,
+          balanceState: 'NOT_LOADED' as const,
           isTemporary: false,
           fromBalances: false,
           lineNumber: d.lines.length + 1,
@@ -1560,11 +1660,6 @@ export class OperationCreateModalComponent implements OnInit, OnDestroy {
       ],
     }));
     this.itemSearch?.reset();
-    // Load targeted balance for the newly added item
-    const newLine = this.localDraft().lines.find(l => l.itemId === canonicalId);
-    if (newLine) {
-      this.updateLineStockHint(newLine);
-    }
   }
 
   private async resolveItemBeforeAppend(itemId: string): Promise<{ canonical_item_id: string | null; status: string; item: any } | null> {

@@ -906,6 +906,30 @@ describe('OperationsService', () => {
     });
   });
 
+  describe('loadBalancesForItems — error != zero (B2)', () => {
+    it('returns rows on success with item_ids param', async () => {
+      bffMock.getData.mockReturnValue(of([{ item_id: '1', site_id: '21', qty: '7' }]));
+
+      const rows = await service.loadBalancesForItems('21', ['1']);
+
+      expect(bffMock.getData).toHaveBeenCalledWith('/balances', { site_id: '21', item_ids: '1' });
+      expect(rows).toEqual([{ item_id: '1', site_id: '21', qty: '7' }]);
+      expect(service.balanceLoadError()).toBeNull();
+    });
+
+    it('throws on failure instead of returning an empty success list', async () => {
+      bffMock.getData.mockReturnValue(throwError(() => new Error('boom')));
+
+      await expect(service.loadBalancesForItems('21', ['1'])).rejects.toThrow('Не удалось загрузить остатки');
+      expect(service.balanceLoadError()).toBe('Не удалось загрузить остатки');
+    });
+
+    it('returns empty list (not an error) for empty item set', async () => {
+      const rows = await service.loadBalancesForItems('21', []);
+      expect(rows).toEqual([]);
+    });
+  });
+
   it('B6: validateLinesBeforePersist with no persisted (only temporary/inline) lines makes no network call and returns empty Map', async () => {
     const draft: OperationDraftVm = {
       type: 'RECEIVE',
