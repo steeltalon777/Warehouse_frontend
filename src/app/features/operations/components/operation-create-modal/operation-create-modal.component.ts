@@ -11,6 +11,7 @@ import {
   BalanceDto,
   OperationSaveLineError,
   OPERATION_TYPE_LABELS,
+  OPERATION_STATUS_LABELS,
 } from '../../../../core/models/operations.models';
 import { OperationsService } from '../../../../core/services/operations.service';
 import { IssueObjectsService } from '../../../../core/services/issue-objects.service';
@@ -52,9 +53,17 @@ function currentDateTimeLocal(): string {
   template: `
     <div class="wh-modal-overlay modal-overlay" [class.modal-overlay--pair]="isInlineModalOpen()">
       <div class="wh-modal modal-container">
-        <div class="wh-modal__header modal-header">
-          <div class="header-title-group">
-            <h2>{{ isEdit() ? 'Редактирование операции' : 'Новая операция' }}</h2>
+        <div class="modal-header">
+          <div class="modal-header__title-group">
+            <div class="modal-header__title-row">
+              <h2>{{ isEdit() ? 'Редактирование операции' : 'Новая операция' }}</h2>
+              @if (localDraft().displayNumber) {
+                <span class="modal-header__num">№ {{ localDraft().displayNumber }}</span>
+              }
+              @if (statusBadgeLabel()) {
+                <span class="status-badge" [class]="statusBadgeClass()">{{ statusBadgeLabel() }}</span>
+              }
+            </div>
             @if (localDraft().id) {
               <div class="operation-uuid">
                 <span class="uuid-text">{{ localDraft().id }}</span>
@@ -62,10 +71,14 @@ function currentDateTimeLocal(): string {
               </div>
             }
           </div>
-          <button class="wh-btn-icon btn-close" aria-label="Закрыть" data-submit-close-btn (click)="onCancelClick()">×</button>
+          <button class="icon-btn btn-close" aria-label="Закрыть" data-submit-close-btn (click)="onCancelClick()">
+            <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+              <path d="M18 6 6 18M6 6l12 12"/>
+            </svg>
+          </button>
         </div>
 
-        <div class="wh-modal__body modal-body">
+        <div class="modal-banners">
           <app-error-alert
             [message]="submitErrorLocal()"
             testId="operation-create-submit-error"
@@ -88,7 +101,8 @@ function currentDateTimeLocal(): string {
               <strong>Не удалось проверить ТМЦ:</strong> {{ err.message }}
             </div>
           }
-          <div class="modal-content-shell">
+        </div>
+        <div class="modal-form-grid">
             <!-- First row: type + warehouse(s) -->
             <div class="form-row first-row">
               <!-- Operation type: 40% -->
@@ -233,7 +247,9 @@ function currentDateTimeLocal(): string {
                 <span class="readonly-value">{{ localDraft().comment || '—' }}</span>
               }
             </div>
+        </div>
 
+        <div class="modal-add-toolbar">
           <!-- Add TMC row: 80% search + 20% disabled button -->
             @if (!isReadonly()) {
               @if (!isObjectSourceFlow()) {
@@ -272,7 +288,12 @@ function currentDateTimeLocal(): string {
                 </div>
               }
             }
+        </div>
 
+        <div class="modal-table-toolbar"></div>
+        <div class="modal-lines-filter"></div>
+
+        <div class="modal-table-wrap">
           <!-- Lines table component -->
             <div class="form-row lines-section">
               <div class="section-header">
@@ -290,10 +311,9 @@ function currentDateTimeLocal(): string {
                 (refreshAllBalances)="onRefreshAllBalances()"
               />
             </div>
-          </div>
         </div>
 
-        <div class="wh-modal__footer modal-footer">
+        <div class="modal-footer">
           <!-- Validation summary -->
           @if (saveDisabledReason()) {
             <div class="validation-hint">{{ saveDisabledReason() }}</div>
@@ -371,62 +391,215 @@ function currentDateTimeLocal(): string {
       padding: 20px;
     }
     .modal-container {
-      background: #FFFFFF;
-      border-radius: 12px;
-      width: 100%;
-      max-width: min(95vw, 1440px);
-      max-height: min(1024px, calc(100vh - 32px));
-      display: flex;
-      flex-direction: column;
-      box-shadow: 0 20px 60px rgba(0,0,0,0.2);
-    }
-    .modal-header {
-      flex-shrink: 0;
-      display: flex;
-      align-items: center;
-      justify-content: space-between;
-      padding: 16px 20px;
-      border-bottom: 1px solid #E2E8F0;
-    }
-    .modal-header h2 { margin: 0; font-size: 18px; font-weight: 700; color: #0F172A; }
-    .btn-close {
-      width: 32px; height: 32px;
-      border: none; background: transparent;
-      font-size: 22px; color: #94A3B8;
-      cursor: pointer; border-radius: 6px;
-      display: inline-flex; align-items: center; justify-content: center;
-    }
-    .btn-close:hover { background: #F1F5F9; color: #374151; }
+      /* ─── Design tokens (TZ §11, scoped to modal) ─────────── */
+      --f-bg: #F8FAFC;
+      --f-surface: #FFFFFF;
+      --f-surface-2: #F1F5F9;
+      --f-surface-3: #E2E8F0;
+      --f-fg: #0F172A;
+      --f-fg-2: #334155;
+      --f-muted: #64748B;
+      --f-muted-2: #94A3B8;
+      --f-border: #E2E8F0;
+      --f-border-2: #CBD5E1;
+      --f-accent: #059669;
+      --f-accent-hover: #047857;
+      --f-accent-bg: #ECFDF5;
+      --f-accent-border: #A7F3D0;
+      --f-warn: #92400E;
+      --f-warn-bg: #FFFBEB;
+      --f-warn-border: #FDE68A;
+      --f-danger: #B91C1C;
+      --f-danger-bg: #FEF2F2;
+      --f-danger-border: #FECACA;
+      --f-info: #1D4ED8;
+      --f-info-bg: #EFF6FF;
+      --f-info-border: #BFDBFE;
+      --f-font-body: -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, Roboto, sans-serif;
+      --f-font-mono: ui-monospace, SFMono-Regular, 'SF Mono', Menlo, Consolas, 'Liberation Mono', monospace;
+      --f-r-sm: 4px;
+      --f-r-md: 6px;
+      --f-r-modal: 10px;
+      --f-ctrl-h: 32px;
+      --f-ctrl-h-sm: 28px;
 
-    .modal-body {
-      flex: 1;
-      overflow-y: auto;
-      padding: 16px 20px;
-      display: flex;
-      flex-direction: column;
-      min-height: 0;
-    }
-    .modal-content-shell {
+      font-family: var(--f-font-body);
+      font-size: 14px;
+      line-height: 1.45;
+      color: var(--f-fg);
+      -webkit-font-smoothing: antialiased;
+
+      /* ─── Grid scaffold (TZ §6) ─────────────────────────────── */
+      background: var(--f-surface);
+      border-radius: var(--f-r-modal);
+      border: 1px solid var(--f-border);
+      box-shadow:
+        0 1px 0 rgba(15, 23, 42, 0.04),
+        0 12px 32px -8px rgba(15, 23, 42, 0.18),
+        0 2px 6px rgba(15, 23, 42, 0.06);
       width: 100%;
-      max-width: 840px;
-      margin: 0 auto;
+      max-width: 1450px;
+      height: clamp(640px, 94vh, 1000px);
+      display: grid;
+      grid-template-rows:
+        auto         /* 1: header */
+        auto         /* 2: banners (collapses to 0 when empty) */
+        auto         /* 3: form-grid */
+        auto         /* 4: add-toolbar (hidden in view) */
+        auto         /* 5: table-toolbar */
+        auto         /* 6: lines-filter */
+        minmax(0, 1fr)/* 7: table-wrap (scroll) */
+        auto;        /* 8: footer */
+      overflow: hidden;
+    }
+
+    .modal-header {
+      display: flex;
+      align-items: flex-start;
+      justify-content: space-between;
+      gap: 16px;
+      padding: 14px 20px;
+      border-bottom: 1px solid var(--f-border);
+      background: var(--f-surface);
+    }
+    .modal-header__title-group {
       display: flex;
       flex-direction: column;
-      flex: 1;
-      min-height: 0;
+      gap: 4px;
+      min-width: 0;
     }
-    .modal-footer {
-      flex-shrink: 0;
+    .modal-header__title-row {
       display: flex;
-      justify-content: space-between;
       align-items: center;
+      gap: 10px;
+      min-width: 0;
+      flex-wrap: wrap;
+    }
+    .modal-header h2 {
+      margin: 0;
+      font-size: 15px;
+      font-weight: 600;
+      color: var(--f-fg);
+      letter-spacing: -0.01em;
+      line-height: 1.2;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+    .modal-header__num {
+      font-family: var(--f-font-mono);
+      font-size: 13px;
+      color: var(--f-muted);
+      font-weight: 500;
+      margin-left: 2px;
+    }
+    .status-badge {
+      display: inline-flex;
+      align-items: center;
+      gap: 5px;
+      font-size: 11px;
+      font-weight: 550;
+      text-transform: uppercase;
+      letter-spacing: 0.06em;
+      padding: 2px 7px 2px 6px;
+      border-radius: var(--f-r-sm);
+      border: 1px solid transparent;
+      line-height: 1.4;
+      flex-shrink: 0;
+    }
+    .status-badge::before {
+      content: "";
+      width: 6px; height: 6px;
+      border-radius: 50%;
+      background: currentColor;
+      flex-shrink: 0;
+    }
+    .status-badge--draft  { color: #92400E; background: var(--f-warn-bg); border-color: var(--f-warn-border); }
+    .status-badge--done   { color: #047857; background: var(--f-accent-bg); border-color: var(--f-accent-border); }
+    .status-badge--cancel { color: var(--f-danger); background: var(--f-danger-bg); border-color: var(--f-danger-border); }
+
+    .icon-btn {
+      appearance: none;
+      background: transparent;
+      border: 1px solid transparent;
+      color: var(--f-muted);
+      width: 28px; height: 28px;
+      border-radius: var(--f-r-sm);
+      cursor: pointer;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      transition: background 120ms ease, color 120ms ease;
+    }
+    .icon-btn:hover { background: var(--f-surface-2); color: var(--f-fg); }
+    .icon-btn:focus-visible {
+      outline: 2px solid var(--f-accent);
+      outline-offset: 1px;
+    }
+    .btn-close {
+      /* legacy alias for selector compatibility */
+      width: 28px; height: 28px;
+    }
+
+    .modal-banners {
+      padding: 10px 20px 0;
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+      background: var(--f-surface);
+    }
+    .modal-banners:empty { display: none; }
+
+    .modal-form-grid {
+      padding: 14px 20px 12px;
+      background: var(--f-surface);
+      border-bottom: 1px solid var(--f-border);
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+    }
+    .modal-add-toolbar {
+      padding: 10px 20px;
+      background: var(--f-surface-2);
+      border-bottom: 1px solid var(--f-border);
+      display: flex;
+      align-items: center;
+      gap: 10px;
+    }
+    .modal-add-toolbar:empty { display: none; }
+    .modal-table-toolbar {
+      background: var(--f-surface);
+      border-bottom: 1px solid var(--f-border);
+      min-height: 38px;
+    }
+    .modal-table-toolbar:empty { display: none; }
+    .modal-lines-filter {
+      background: var(--f-surface);
+      border-bottom: 1px solid var(--f-border);
+      min-height: 40px;
+    }
+    .modal-lines-filter:empty { display: none; }
+    .modal-table-wrap {
+      overflow: auto;
+      min-height: 0;
+      background: var(--f-surface);
+      scrollbar-gutter: stable;
+    }
+
+    .modal-footer {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 16px;
       padding: 12px 20px;
-      border-top: 1px solid #E2E8F0;
+      background: var(--f-surface);
+      border-top: 1px solid var(--f-border);
+      min-height: 56px;
     }
     .footer-actions {
       display: flex;
-      gap: 8px;
       align-items: center;
+      gap: 8px;
       margin-left: auto;
     }
 
@@ -967,6 +1140,22 @@ export class OperationCreateModalComponent implements OnInit, OnDestroy {
   readonly typeLabelForDisplay = computed(() => {
     const type = this.localDraft().type;
     return OPERATION_TYPE_LABELS[type] || type;
+  });
+
+  /** Status badge label — hidden in create mode, shown in edit + view (TZ §10, §7, §8, §9). */
+  readonly statusBadgeLabel = computed<string | null>(() => {
+    if (!this.isEdit() && !this.isReadonly()) return null;
+    const s = this.localDraft().status;
+    return OPERATION_STATUS_LABELS[s] ?? null;
+  });
+
+  /** Status badge modifier class — drives sb-draft / sb-done / sb-cancel colours. */
+  readonly statusBadgeClass = computed<string>(() => {
+    const s = this.localDraft().status;
+    if (s === 'draft') return 'status-badge status-badge--draft';
+    if (s === 'submitted') return 'status-badge status-badge--done';
+    if (s === 'cancelled') return 'status-badge status-badge--cancel';
+    return 'status-badge';
   });
 
   readonly sourceSiteName = computed(() => {
