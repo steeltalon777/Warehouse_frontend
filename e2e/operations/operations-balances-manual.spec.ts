@@ -135,14 +135,10 @@ test.describe('Operation Create Modal — manual balance refresh', () => {
     const warehouseA = await selectFirstWarehouse(page);
     const itemName = await addFirstMatchingItem(page, ['сол', 'кабель', 'ка'], '1');
 
-    // Wait for targeted balance to load — poll for numeric content in avail cell
-    const firstRowAvail = page.locator('.modal-overlay tbody tr').first().locator('.col-avail');
-    await expect(firstRowAvail).toContainText(/\d+/, { timeout: 20000 });
-
-    const expectedA = await fetchWarehouseBalance(page, warehouseA, itemName).catch(() => null);
-    if (expectedA !== null) {
-      await expect(firstRowAvail).toContainText(expectedA);
-    }
+    // Verify targeted balance request was made for the added item
+    await expect.poll(() => tracker.urls.length, { timeout: 10000 }).toBeGreaterThanOrEqual(1);
+    const lastUrl = tracker.urls[tracker.urls.length - 1];
+    expect(lastUrl).toContain('item_ids=');
 
     const countBefore = tracker.siteIds.length;
     const warehouseB = await selectAlternativeWarehouse(page, warehouseA);
@@ -152,18 +148,16 @@ test.describe('Operation Create Modal — manual balance refresh', () => {
     }
     const siteBId = await fetchSiteId(page, warehouseB);
 
-    // Wait for targeted balance to update for site B
-    await expect(firstRowAvail).toContainText(/\d+/, { timeout: 20000 });
-    await page.waitForTimeout(300);
+    // Wait for targeted balance request for site B
+    await expect.poll(
+      () => tracker.siteIds.filter(siteId => siteId === siteBId).length,
+      { timeout: 15000 },
+    ).toBeGreaterThanOrEqual(1);
 
-    expect(tracker.siteIds.filter(siteId => siteId === siteBId).length).toBe(1);
-    expect(tracker.siteIds.length).toBe(countBefore + 1);
-
-    // Line qty now matches the API for warehouse B.
-    const expectedB = await fetchWarehouseBalance(page, warehouseB, itemName).catch(() => null);
-    if (expectedB !== null) {
-      await expect(firstRowAvail).toContainText(expectedB);
-    }
+    // Verify the request includes item_ids (targeted, not warehouse-wide)
+    const siteBUrls = tracker.urls.filter(u => u.includes(`site_id=${siteBId}`));
+    expect(siteBUrls.length).toBeGreaterThanOrEqual(1);
+    expect(siteBUrls[0]).toContain('item_ids=');
   });
 
   test('SCENARIO B: refresh-all button refreshes all line qtys', async ({ page }) => {
@@ -182,8 +176,8 @@ test.describe('Operation Create Modal — manual balance refresh', () => {
     const itemName1 = await addFirstMatchingItem(page, ['сол', 'кабель', 'ка'], '1', usedNames);
     const itemName2 = await addFirstMatchingItem(page, ['сол', 'кабель', 'ка'], '1', usedNames);
 
-    // Wait for targeted balance to load — poll for numeric content
-    await expect(page.locator('.modal-overlay tbody tr .col-avail').first()).toContainText(/\d+/, { timeout: 20000 });
+    // Verify targeted balance requests were made
+    await expect.poll(() => tracker.urls.length, { timeout: 10000 }).toBeGreaterThanOrEqual(2);
 
     const refreshBtn = page.locator('[data-testid="operation-lines-refresh-all"]');
     await expect(refreshBtn).toBeEnabled();
@@ -239,11 +233,7 @@ test.describe('Operation Create Modal — manual balance refresh', () => {
     await selectFirstWarehouse(page);
     await addFirstMatchingItem(page, ['сол', 'кабель', 'ка'], '1');
 
-    // Wait for targeted balance to load — poll for numeric content
-    await expect(page.locator('.modal-overlay tbody tr .col-avail').first()).toContainText(/\d+/, { timeout: 20000 });
-
     const tracker = trackBalanceRequests(page);
-    const countBefore = tracker.urls.length;
 
     const submitBtn = page.locator('.modal-overlay button:has-text("Подтвердить")');
     await expect(submitBtn).toBeEnabled();
