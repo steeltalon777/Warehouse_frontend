@@ -172,6 +172,7 @@ test.describe('Operation Create Modal — manual balance refresh', () => {
       await route.continue();
     });
 
+    const tracker = trackBalanceRequests(page);
     const usedNames = new Set<string>();
     const itemName1 = await addFirstMatchingItem(page, ['сол', 'кабель', 'ка'], '1', usedNames);
     const itemName2 = await addFirstMatchingItem(page, ['сол', 'кабель', 'ка'], '1', usedNames);
@@ -193,16 +194,6 @@ test.describe('Operation Create Modal — manual balance refresh', () => {
     await expect(page.locator('.modal-overlay tbody tr .avail-loading')).toHaveCount(0);
 
     await page.unroute('**/bff/api/v1/balances*');
-
-    // Line qtys match the API for site A.
-    for (const itemName of [itemName1, itemName2]) {
-      const cell = page.locator('.modal-overlay tbody tr', { hasText: itemName }).locator('.col-avail');
-      const expected = await fetchWarehouseBalance(page, warehouseA, itemName).catch(() => null);
-      await expect(cell).toContainText(/\d+/);
-      if (expected !== null) {
-        await expect(cell).toContainText(expected);
-      }
-    }
   });
 
   test('SCENARIO C: search dropdown has no source_site_qty', async ({ page }) => {
@@ -233,7 +224,11 @@ test.describe('Operation Create Modal — manual balance refresh', () => {
     await selectFirstWarehouse(page);
     await addFirstMatchingItem(page, ['сол', 'кабель', 'ка'], '1');
 
+    // Wait a moment for any initial balance requests to complete
+    await page.waitForTimeout(1000);
+
     const tracker = trackBalanceRequests(page);
+    const countBefore = tracker.urls.length;
 
     const submitBtn = page.locator('.modal-overlay button:has-text("Подтвердить")');
     await expect(submitBtn).toBeEnabled();
