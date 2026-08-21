@@ -24,7 +24,7 @@ export interface LineSubmitErrorState {
   imports: [CommonModule, FormsModule],
   template: `
     <div class="lines-container">
-      <table class="lines-data-table">
+      <table class="lines-data-table" data-design-id="items-table">
         <colgroup>
           <col class="col-num-col">
           <col class="col-item-col">
@@ -33,31 +33,31 @@ export interface LineSubmitErrorState {
           <col class="col-avail-col">
           <col class="col-actions-col">
         </colgroup>
-        <thead>
+        <thead data-design-id="items-table-header">
           <tr>
-            <th class="col-num" (click)="toggleSort('lineNumber')"
+            <th class="col-num" data-design-id="col-num-header" (click)="toggleSort('lineNumber')"
                 [attr.aria-sort]="sortColumn() === 'lineNumber' ? (sortDirection() === 'asc' ? 'ascending' : 'descending') : 'none'">
               №
               @if (sortColumn() === 'lineNumber') {
                 <span class="sort-indicator">{{ sortDirection() === 'asc' ? '▲' : '▼' }}</span>
               }
             </th>
-            <th class="col-item" (click)="toggleSort('itemName')"
+            <th class="col-item" data-design-id="col-item-header" (click)="toggleSort('itemName')"
                 [attr.aria-sort]="sortColumn() === 'itemName' ? (sortDirection() === 'asc' ? 'ascending' : 'descending') : 'none'">
               ТМЦ
               @if (sortColumn() === 'itemName') {
                 <span class="sort-indicator">{{ sortDirection() === 'asc' ? '▲' : '▼' }}</span>
               }
             </th>
-            <th class="col-qty" (click)="toggleSort('quantity')"
+            <th class="col-qty" data-design-id="col-qty-header" (click)="toggleSort('quantity')"
                 [attr.aria-sort]="sortColumn() === 'quantity' ? (sortDirection() === 'asc' ? 'ascending' : 'descending') : 'none'">
               {{ qtyLabel() }}
               @if (sortColumn() === 'quantity') {
                 <span class="sort-indicator">{{ sortDirection() === 'asc' ? '▲' : '▼' }}</span>
               }
             </th>
-            <th class="col-cat-id">category_id</th>
-            <th class="col-avail" (click)="toggleSort('availableQuantity')"
+            <th class="col-cat-id" data-design-id="col-category-header">category_id</th>
+            <th class="col-avail" data-design-id="col-stock-header" (click)="toggleSort('availableQuantity')"
                 [attr.aria-sort]="sortColumn() === 'availableQuantity' ? (sortDirection() === 'asc' ? 'ascending' : 'descending') : 'none'">
               {{ availLabel() }}
               @if (sortColumn() === 'availableQuantity') {
@@ -67,23 +67,24 @@ export interface LineSubmitErrorState {
             <th class="col-del"></th>
           </tr>
         </thead>
-        <tbody>
-          @for (line of filteredSortedLines(); track line.localId) {
+        <tbody data-design-id="items-table-body">
+          @for (line of filteredSortedLines(); track line.localId; let n = $index) {
             <tr
               [class.row--has-error]="!!submitErrorState(line.localId)"
               [class.row--has-error--stale]="!!submitErrorState(line.localId)?.stale"
               [class.unusable]="line.resolvedStatus && line.resolvedStatus !== 'active'"
               [attr.data-testid]="submitErrorState(line.localId) ? 'operation-line-row--error' : 'line-' + line.localId"
               [attr.data-line-status]="line.resolvedStatus ?? null"
+              [attr.data-design-id]="'item-row-' + (line.lineNumber ?? (n + 1))"
             >
-              <td class="col-num-cell">{{ line.lineNumber ?? '—' }}</td>
+              <td class="col-num-cell" [attr.data-design-id]="'item-row-' + (line.lineNumber ?? (n + 1)) + '-num'">{{ line.lineNumber ?? '—' }}</td>
               <td class="col-item-cell">
-                <div class="item-name">{{ line.itemName }}</div>
+                <div class="item-name" [attr.data-design-id]="'item-row-' + (line.lineNumber ?? (n + 1)) + '-name'">{{ line.itemName }}</div>
                 <div class="item-meta">
-                  <span class="item-meta-id">ID&nbsp;{{ line.itemId }}</span>
+                  <span class="item-meta-id" [attr.data-design-id]="'item-row-' + (line.lineNumber ?? (n + 1)) + '-id'">ID&nbsp;{{ line.itemId }}</span>
                   @if (line.sku) {
                     <span class="dot"></span>
-                    <span class="item-meta-sku">SKU&nbsp;{{ line.sku }}</span>
+                    <span class="item-meta-sku" [attr.data-design-id]="'item-row-' + (line.lineNumber ?? (n + 1)) + '-sku'">SKU&nbsp;{{ line.sku }}</span>
                   }
                   @if (line.categoryName) {
                     <span class="dot"></span>
@@ -113,6 +114,7 @@ export interface LineSubmitErrorState {
                 <input
                   type="number"
                   class="qty-input"
+                  [attr.data-design-id]="'item-row-' + (line.lineNumber ?? (n + 1)) + '-qty-input'"
                   [class.qty-input--invalid]="!!line.error || !!submitErrorState(line.localId)"
                   [class.qty-input--readonly]="isReadonly()"
                   [ngModel]="line.quantity"
@@ -134,34 +136,37 @@ export interface LineSubmitErrorState {
                 <span class="cat-id-value">{{ line.categoryId ?? '—' }}</span>
               </td>
               <td class="col-avail">
-                @if (line.inlineItem) {
-                  <span class="avail-inline">будет создана при подтверждении</span>
-                } @else if (isObjectSourceFlow()) {
-                  @if (line.availableQuantity == null) {
-                    <span class="avail-na">—</span>
+                <div class="stock-cell" [attr.data-design-id]="'item-row-' + (line.lineNumber ?? (n + 1)) + '-stock-cell'">
+                  @if (line.inlineItem) {
+                    <span class="avail-inline">будет создана при подтверждении</span>
+                  } @else if (isObjectSourceFlow()) {
+                    @if (line.availableQuantity == null) {
+                      <span class="avail-na">—</span>
+                    } @else {
+                      <span class="avail-value avail-value--object">{{ line.availableQuantity }}</span>
+                    }
+                  } @else if (line.balanceState === 'LOADING') {
+                    <span class="avail-loading">
+                      <span class="mini-spinner" aria-hidden="true"></span>…
+                    </span>
+                  } @else if (line.balanceState === 'ERROR') {
+                    <span class="avail-error" data-testid="operation-line-balance-error">
+                      <span class="dot" aria-hidden="true"></span>ошибка
+                    </span>
+                  } @else if (line.balanceState === 'FRESH') {
+                    <span
+                      class="avail-value"
+                      [class.avail-value--zero]="(line.availableQuantity ?? 0) === 0"
+                    >{{ line.availableQuantity ?? 0 }}</span>
                   } @else {
-                    <span class="avail-value avail-value--object">{{ line.availableQuantity }}</span>
+                    <span class="avail-na" data-testid="operation-line-balance-na">—</span>
                   }
-                } @else if (line.balanceState === 'LOADING') {
-                  <span class="avail-loading">
-                    <span class="mini-spinner" aria-hidden="true"></span>…
-                  </span>
-                } @else if (line.balanceState === 'ERROR') {
-                  <span class="avail-error" data-testid="operation-line-balance-error">
-                    <span class="dot" aria-hidden="true"></span>ошибка
-                  </span>
-                } @else if (line.balanceState === 'FRESH') {
-                  <span
-                    class="avail-value"
-                    [class.avail-value--zero]="(line.availableQuantity ?? 0) === 0"
-                  >{{ line.availableQuantity ?? 0 }}</span>
-                } @else {
-                  <span class="avail-na" data-testid="operation-line-balance-na">—</span>
-                }
+                </div>
               </td>
               <td class="col-del">
                 <button
                   class="remove-btn"
+                  [attr.data-design-id]="'item-row-' + (line.lineNumber ?? (n + 1)) + '-delete-btn'"
                   (click)="removeLine.emit(line.localId)"
                   title="Удалить"
                   aria-label="Удалить позицию"
@@ -232,9 +237,9 @@ export interface LineSubmitErrorState {
     }
     .lines-data-table col.col-num-col    { width: 44px; }
     .lines-data-table col.col-item-col   { width: auto; }
-    .lines-data-table col.col-qty-col    { width: 170px; }
-    .lines-data-table col.col-cat-col    { width: 120px; }
-    .lines-data-table col.col-avail-col  { width: 130px; }
+    .lines-data-table col.col-qty-col    { width: 110px; }
+    .lines-data-table col.col-cat-col    { width: 110px; }
+    .lines-data-table col.col-avail-col  { width: 110px; }
     .lines-data-table col.col-actions-col{ width: 56px; }
 
     .lines-data-table thead th {
@@ -244,13 +249,13 @@ export interface LineSubmitErrorState {
       background: var(--l-surface-2);
       border-bottom: 1px solid var(--l-border-2);
       text-align: left;
-      font-size: 10.5px;
+      font-size: 11px;
       text-transform: uppercase;
-      letter-spacing: 0.04em;
+      letter-spacing: 0.06em;
       color: var(--l-muted);
       font-weight: 550;
-      padding: 6px 10px;
-      height: 30px;
+      padding: 8px 10px;
+      height: 34px;
       white-space: nowrap;
       user-select: none;
       cursor: pointer;
@@ -260,10 +265,10 @@ export interface LineSubmitErrorState {
     .lines-data-table thead th:hover:not(.col-cat-id):not(.col-del) { background: #F1F5F9; }
 
     .lines-data-table tbody td {
-      padding: 6px 10px;
+      padding: 8px 10px;
       border-bottom: 1px solid var(--l-border);
-      vertical-align: middle;
-      height: 38px;
+      vertical-align: top;
+      height: 44px;
     }
     .lines-data-table tbody tr:hover td { background: var(--l-surface-2); }
 

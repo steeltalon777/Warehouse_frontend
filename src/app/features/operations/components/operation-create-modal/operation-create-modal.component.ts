@@ -52,11 +52,11 @@ function currentDateTimeLocal(): string {
   providers: [SubmitErrorService],
   template: `
     <div class="wh-modal-overlay modal-overlay" [class.modal-overlay--pair]="isInlineModalOpen()">
-      <div class="wh-modal modal-container" [attr.data-mode]="isReadonly() ? 'view' : 'edit'">
-        <div class="modal-header">
+      <div class="wh-modal modal-container" data-design-id="operation-modal" [attr.data-mode]="isReadonly() ? 'view' : 'edit'">
+        <div class="modal-header" data-design-id="modal-header">
           <div class="modal-header__title-group">
             <div class="modal-header__title-row">
-              <h2>{{ isEdit() ? 'Редактирование операции' : 'Новая операция' }}</h2>
+              <h2 data-design-id="modal-title">{{ isEdit() ? 'Редактирование операции' : 'Новая операция' }}</h2>
               @if (localDraft().displayNumber) {
                 <span class="modal-header__num">№ {{ localDraft().displayNumber }}</span>
               }
@@ -71,7 +71,7 @@ function currentDateTimeLocal(): string {
               </div>
             }
           </div>
-          <button class="icon-btn btn-close" aria-label="Закрыть" data-submit-close-btn (click)="onCancelClick()">
+          <button class="icon-btn btn-close" data-design-id="modal-close-btn" aria-label="Закрыть" data-submit-close-btn (click)="onCancelClick()">
             <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
               <path d="M18 6 6 18M6 6l12 12"/>
             </svg>
@@ -102,16 +102,16 @@ function currentDateTimeLocal(): string {
             </div>
           }
         </div>
-        <div class="modal-form-grid">
+        <div class="modal-form-grid" data-design-id="operation-form">
             <!-- Form grid: type / warehouse(s) / date (TZ §11).
                  data-variant switches between 3-col default and 4-col MOVE.
                  DOM order of selects preserved (type, source[, destination]). -->
-            <div class="form-grid" [attr.data-variant]="isMove() ? 'move' : 'default'">
+            <div class="form-grid" data-design-id="form-grid" [attr.data-variant]="isMove() ? 'move' : 'default'">
               <!-- Operation type -->
               <div class="form-field">
                 <label class="form-field__label">Тип операции</label>
                 @if (!isReadonly()) {
-                  <select class="control" [ngModel]="localDraft().type" (ngModelChange)="onTypeModelChange($event)" [disabled]="isReadonly() || isLockedFromAssetRow()">
+                  <select class="control" data-design-id="operation-type-selector" [ngModel]="localDraft().type" (ngModelChange)="onTypeModelChange($event)" [disabled]="isReadonly() || isLockedFromAssetRow()">
                     @for (t of typeOptions; track t.key) {
                       <option [value]="t.key">{{ t.label }}</option>
                     }
@@ -125,7 +125,7 @@ function currentDateTimeLocal(): string {
               <div class="form-field">
                 <label class="form-field__label">{{ sourceLabel() }}</label>
                 @if (!isReadonly()) {
-                  <select class="control" [ngModel]="isMove() ? (localDraft().sourceSiteId ?? '') : (logicalWarehouseSiteId() ?? '')" (ngModelChange)="isMove() ? onSourceSiteChange($event) : onLogicalWarehouseSiteChange($event)" [disabled]="isReadonly()">
+                  <select class="control" data-design-id="warehouse-source-selector" [ngModel]="isMove() ? (localDraft().sourceSiteId ?? '') : (logicalWarehouseSiteId() ?? '')" (ngModelChange)="isMove() ? onSourceSiteChange($event) : onLogicalWarehouseSiteChange($event)" [disabled]="isReadonly()">
                     <option value="">—</option>
                     @for (site of sites(); track site.id) {
                       <option [value]="site.id">{{ site.name }}</option>
@@ -141,7 +141,7 @@ function currentDateTimeLocal(): string {
                 <div class="form-field">
                   <label class="form-field__label">Склад-получатель</label>
                   @if (!isReadonly()) {
-                    <select class="control" [ngModel]="localDraft().destinationSiteId ?? ''" (ngModelChange)="onDestinationSiteChange($event)" [disabled]="isReadonly()">
+                    <select class="control" data-design-id="warehouse-destination-selector" [ngModel]="localDraft().destinationSiteId ?? ''" (ngModelChange)="onDestinationSiteChange($event)" [disabled]="isReadonly()">
                       <option value="">—</option>
                       @for (site of sites(); track site.id) {
                         <option [value]="site.id">{{ site.name }}</option>
@@ -160,6 +160,7 @@ function currentDateTimeLocal(): string {
                   <input
                     type="datetime-local"
                     class="control"
+                    data-design-id="operation-date-input"
                     [ngModel]="localDraft().effectiveAt"
                     (ngModelChange)="onEffectiveAtChange($event)"
                   />
@@ -247,14 +248,14 @@ function currentDateTimeLocal(): string {
           <div class="form-row form-row--full">
             <label class="form-row__label">Комментарий</label>
             @if (!isReadonly()) {
-              <textarea class="control comment-area" rows="2" [ngModel]="localDraft().comment" (ngModelChange)="onCommentChange($event)" placeholder="Комментарий к операции..."></textarea>
+              <textarea class="control comment-area" data-design-id="operation-comment-input" rows="2" [ngModel]="localDraft().comment" (ngModelChange)="onCommentChange($event)" placeholder="Комментарий к операции..."></textarea>
             } @else {
               <span class="readonly-value">{{ localDraft().comment || '—' }}</span>
             }
           </div>
         </div>
 
-        <div class="modal-add-toolbar">
+        <div class="modal-add-toolbar" data-design-id="add-item-toolbar">
           @if (!isReadonly()) {
             @if (!isObjectSourceFlow()) {
               <div class="modal-add-toolbar__inner">
@@ -279,7 +280,7 @@ function currentDateTimeLocal(): string {
                     </div>
                   }
                 </div>
-                <button class="btn-tmc" title="Создать новую ТМЦ для операции" (click)="openInlineModal()">
+                <button class="btn-tmc" data-design-id="item-create-btn" title="Создать новую ТМЦ для операции" (click)="openInlineModal()">
                   Создать ТМЦ
                 </button>
               </div>
@@ -294,16 +295,19 @@ function currentDateTimeLocal(): string {
           }
         </div>
 
-        <div class="modal-table-toolbar">
-          <div class="table-toolbar__left">
-            <div class="section-header">
-              <h3>Позиции: {{ lines().length }}, Всего: {{ totalQuantity() }}</h3>
-            </div>
-          </div>
+         <div class="modal-table-toolbar" data-design-id="table-toolbar">
+           <div class="table-toolbar__left">
+             <span class="rows-summary">
+               <b data-design-id="rows-count-display">{{ lines().length }}</b>&nbsp;позиций
+               <span class="sep">·</span>
+               всего <b data-design-id="qty-total-display">{{ totalQuantity() }}</b>&nbsp;шт
+             </span>
+           </div>
           <div class="table-toolbar__right">
             <button
               type="button"
               class="btn-refresh-balances"
+              data-design-id="refresh-balances-btn"
               data-testid="operation-lines-refresh-all"
               [disabled]="isBalanceRefreshing()"
               (click)="onRefreshAllBalances()"
@@ -326,10 +330,11 @@ function currentDateTimeLocal(): string {
         </div>
 
         @if (showLinesFilter()) {
-          <div class="modal-lines-filter">
+          <div class="modal-lines-filter" data-design-id="lines-filter">
             <input
               type="search"
               class="lines-filter-input"
+              data-design-id="lines-filter-input"
               [ngModel]="tableNameFilter()"
               (ngModelChange)="tableNameFilter.set($event)"
               placeholder="Фильтр уже добавленных ТМЦ..."
@@ -338,7 +343,7 @@ function currentDateTimeLocal(): string {
           </div>
         }
 
-        <div class="modal-table-wrap">
+        <div class="modal-table-wrap" data-design-id="table-wrap">
           <app-operation-lines-table
             [lines]="lines()"
             [warehouseSiteId]="relevantSiteId()"
@@ -353,13 +358,13 @@ function currentDateTimeLocal(): string {
           />
         </div>
 
-        <div class="modal-footer">
+        <div class="modal-footer" data-design-id="modal-footer">
           <!-- Validation summary -->
           @if (saveDisabledReason()) {
             <div class="validation-hint">{{ saveDisabledReason() }}</div>
           }
 
-          <div class="footer-actions">
+          <div class="footer-actions" data-design-id="modal-footer-actions-edit">
             @if (submitState() === 'outcome_unknown') {
               <button class="wh-btn wh-btn--secondary btn btn-secondary" (click)="resolveSubmit.emit(localDraft())">Проверить результат</button>
             }
@@ -392,12 +397,12 @@ function currentDateTimeLocal(): string {
                   <button class="wh-btn wh-btn--secondary btn btn-accept" (click)="onAcceptOperation()">Приёмка</button>
                 }
               }
-              <button class="wh-btn wh-btn--secondary btn btn-secondary" (click)="onCancelClick()">Отмена</button>
-              <button class="wh-btn wh-btn--primary btn btn-primary" [disabled]="isSaving() || !!saveDisabledReason() || isRefreshing() || hasUnusableLines()" (click)="onSave()">Сохранить черновик</button>
+              <button class="wh-btn wh-btn--secondary btn btn-secondary" data-design-id="cancel-btn" (click)="onCancelClick()">Отмена</button>
+              <button class="wh-btn wh-btn--primary btn btn-primary" data-design-id="save-draft-btn" [disabled]="isSaving() || !!saveDisabledReason() || isRefreshing() || hasUnusableLines()" (click)="onSave()">Сохранить черновик</button>
               @if (hasStaleVersion()) {
                 <button class="wh-btn wh-btn--secondary btn btn-secondary" data-testid="operation-submit-refresh" data-submit-refresh-btn (click)="onRefreshClick()">Обновить</button>
               }
-              <button class="wh-btn wh-btn--success btn btn-submit" [disabled]="!canSubmitComputed() || isSubmitting() || isRefreshing() || hasUnusableLines()" [title]="submitDisabledReason()" (click)="onSubmit()">Подтвердить</button>
+              <button class="wh-btn wh-btn--success btn btn-submit" data-design-id="submit-btn" [disabled]="!canSubmitComputed() || isSubmitting() || isRefreshing() || hasUnusableLines()" [title]="submitDisabledReason()" (click)="onSubmit()">Подтвердить</button>
             }
           </div>
         </div>
@@ -846,7 +851,8 @@ function currentDateTimeLocal(): string {
       padding: 10px 20px;
       background: var(--f-surface);
       border-top: 1px solid var(--f-border);
-      min-height: 50px;
+      height: 56px;
+      flex-shrink: 0;
     }
     .footer-actions {
       display: flex;

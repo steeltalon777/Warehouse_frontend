@@ -35,6 +35,7 @@ function toItem(searchItem: CatalogSearchItem): Item {
           #inputEl
           type="text"
           class="wh-form-input input item-input"
+          data-design-id="item-search-input"
           [placeholder]="placeholder()"
           [ngModel]="searchText()"
           (ngModelChange)="onSearchChange($event)"
@@ -45,6 +46,7 @@ function toItem(searchItem: CatalogSearchItem): Item {
         <button
           type="button"
           class="wh-btn btn-refresh-check"
+          data-design-id="item-check-btn"
           data-testid="btn-refresh-check-items"
           [disabled]="isSearching()"
           (click)="onRefreshCheck()"
