@@ -72,7 +72,7 @@ function currentDateTimeLocal(): string {
             }
           </div>
           <button class="icon-btn btn-close" data-design-id="modal-close-btn" aria-label="Закрыть" data-submit-close-btn (click)="onCancelClick()">
-            <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+            <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
               <path d="M18 6 6 18M6 6l12 12"/>
             </svg>
           </button>
@@ -566,18 +566,18 @@ function currentDateTimeLocal(): string {
 
     .icon-btn {
       appearance: none;
-      background: transparent;
-      border: 1px solid transparent;
-      color: var(--f-muted);
+      background: var(--f-surface-2);
+      border: 1px solid var(--f-border);
+      color: var(--f-fg-2);
       width: 28px; height: 28px;
       border-radius: var(--f-r-sm);
       cursor: pointer;
       display: inline-flex;
       align-items: center;
       justify-content: center;
-      transition: background 120ms ease, color 120ms ease;
+      transition: background 120ms ease, color 120ms ease, border-color 120ms ease;
     }
-    .icon-btn:hover { background: var(--f-surface-2); color: var(--f-fg); }
+    .icon-btn:hover { background: var(--f-surface-3); color: var(--f-fg); border-color: var(--f-border-2); }
     .icon-btn:focus-visible {
       outline: 2px solid var(--f-accent);
       outline-offset: 1px;
