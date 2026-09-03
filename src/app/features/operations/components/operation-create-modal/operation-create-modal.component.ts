@@ -575,12 +575,21 @@ function currentDateTimeLocal(): string {
       display: inline-flex;
       align-items: center;
       justify-content: center;
+      flex-shrink: 0;
       transition: background 120ms ease, color 120ms ease, border-color 120ms ease;
     }
     .icon-btn:hover { background: var(--f-surface-3); color: var(--f-fg); border-color: var(--f-border-2); }
     .icon-btn:focus-visible {
       outline: 2px solid var(--f-accent);
       outline-offset: 1px;
+    }
+    .icon-btn svg {
+      width: 18px;
+      height: 18px;
+      flex-shrink: 0;
+      stroke: currentColor;
+      stroke-width: 2;
+      fill: none;
     }
     .btn-close {
       /* legacy alias for selector compatibility */
