@@ -583,7 +583,9 @@ function currentDateTimeLocal(): string {
       outline: 2px solid var(--f-accent);
       outline-offset: 1px;
     }
-    .icon-btn svg {
+    /* The close button's X was being collapsed to width:0 inside the flex
+       container. Force its SVG to keep its declared dimensions. */
+    .icon-btn.btn-close svg {
       width: 18px;
       height: 18px;
       flex-shrink: 0;
