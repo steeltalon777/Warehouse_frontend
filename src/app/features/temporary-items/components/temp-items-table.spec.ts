@@ -4,8 +4,8 @@ import { TemporaryItemVm } from '../../../core/models/temp-items.models';
 
 describe('TempItemsTableComponent', () => {
   const mockItems: TemporaryItemVm[] = [
-    { id: '1', name: 'Item 1', uiStatus: 'needs_review', uiStatusLabel: 'Требует разбора', createdAt: '19.05.2026 10:00', totalBalance: 10, unitSymbol: 'шт', operationsCount: 2, createdByUserId: 'u-1', status: 'active', canConvert: true, canMergeToPermanent: true, canMergeToTemp: true, canDelete: false, hasPendingAcceptance: false },
-    { id: '2', name: 'Item 2', uiStatus: 'can_delete', uiStatusLabel: 'Можно удалить', createdAt: '18.05.2026 15:00', totalBalance: 0, unitSymbol: 'шт', operationsCount: 0, createdByUserId: 'u-2', status: 'active', canConvert: false, canMergeToPermanent: false, canMergeToTemp: false, canDelete: true, hasPendingAcceptance: false },
+    { id: '1', name: 'Item 1', uiStatus: 'needs_review', uiStatusLabel: 'Требует разбора', createdAt: '19.05.2026 10:00', totalBalance: 10, unitSymbol: 'шт', operationsCount: 2, createdByUserId: 'u-1', status: 'active', canConvert: true, canMergeToPermanent: true, canMergeToTemp: true, canDelete: false, hasPendingAcceptance: false, hasActiveRegisters: false },
+    { id: '2', name: 'Item 2', uiStatus: 'can_delete', uiStatusLabel: 'Можно удалить', createdAt: '18.05.2026 15:00', totalBalance: 0, unitSymbol: 'шт', operationsCount: 0, createdByUserId: 'u-2', status: 'active', canConvert: false, canMergeToPermanent: false, canMergeToTemp: false, canDelete: true, hasPendingAcceptance: false, hasActiveRegisters: false },
   ];
 
   beforeEach(async () => {

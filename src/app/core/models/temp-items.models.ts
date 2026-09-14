@@ -25,6 +25,9 @@ export interface TemporaryItem {
   resolved_at?: string;
   backing_item_is_active?: boolean;
   total_balance: number;
+  /** Server-computed action state (D2 list contract). */
+  has_pending_acceptance?: boolean;
+  has_active_registers?: boolean;
   hashtags?: string;
   /** New review-item fields (permanent catalog items requiring review). */
   requires_review?: boolean;
@@ -163,6 +166,7 @@ export interface TemporaryItemVm {
   mergeBlockedReason?: string;
   deleteBlockedReason?: string;
   hasPendingAcceptance: boolean;
+  hasActiveRegisters: boolean;
 }
 
 export function computeUiStatus(
@@ -185,6 +189,7 @@ export function computeActionFlags(
   status: TemporaryItemStatus,
   totalBalance: number,
   hasPendingAcceptance: boolean,
+  hasActiveRegisters: boolean,
   role: string,
 ): {
   canConvert: boolean;
@@ -211,6 +216,17 @@ export function computeActionFlags(
       convertBlockedReason: 'Нельзя преобразовать: временная ТМЦ участвует в незавершённой приёмке',
       mergeBlockedReason: 'Нельзя слить: временная ТМЦ участвует в незавершённой приёмке',
       deleteBlockedReason: 'Нельзя удалить: временная ТМЦ участвует в незавершённой приёмке',
+    };
+  }
+
+  // Backend enforcement parity: pending|lost|issued > 0 blocks destructive
+  // actions server-side, so the UI must not offer them either.
+  if (hasActiveRegisters) {
+    return {
+      canConvert: false, canMergeToPermanent: false, canMergeToTemp: false, canDelete: false,
+      convertBlockedReason: 'Нельзя преобразовать: по временной ТМЦ есть активные регистры (утраты/выдача)',
+      mergeBlockedReason: 'Нельзя слить: по временной ТМЦ есть активные регистры (утраты/выдача)',
+      deleteBlockedReason: 'Нельзя удалить: по временной ТМЦ есть активные регистры (утраты/выдача)',
     };
   }
 
@@ -243,15 +259,17 @@ function deriveStatusFromReviewStatus(reviewStatus?: string): TemporaryItemStatu
 export function toTempItemVm(
   item: TemporaryItem,
   operationsCount: number,
-  hasPendingAcceptance: boolean,
   role: string,
 ): TemporaryItemVm {
   const name = item.name || (item as any)['item_name'] || '';
   const status: TemporaryItemStatus = item.status || deriveStatusFromReviewStatus(item.review_status);
-  const totalBalance = item.total_balance ?? 0;
+  // API serializes Decimal balances as strings ("5.000"); normalize to number.
+  const totalBalance = Number(item.total_balance ?? 0);
+  const hasPendingAcceptance = item.has_pending_acceptance ?? false;
+  const hasActiveRegisters = item.has_active_registers ?? false;
 
   const uiStatus = computeUiStatus(status, totalBalance, hasPendingAcceptance, item.requires_review);
-  const flags = computeActionFlags(status, totalBalance, hasPendingAcceptance, role);
+  const flags = computeActionFlags(status, totalBalance, hasPendingAcceptance, hasActiveRegisters, role);
 
   return {
     id: item.id,
@@ -269,6 +287,7 @@ export function toTempItemVm(
     operationsCount,
     ...flags,
     hasPendingAcceptance,
+    hasActiveRegisters,
   };
 }
 

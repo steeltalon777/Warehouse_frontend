@@ -83,6 +83,57 @@ describe('TempItemsService', () => {
     expect(service.items()[2].canDelete).toBe(false);
   });
 
+  it('should use server action-state fields from the list response', async () => {
+    bffMock.getList.mockReturnValue(of({
+      items: [
+        { ...mockItem, id: 'ti-1', total_balance: '5.500', has_pending_acceptance: false, has_active_registers: false },
+        { ...mockItem, id: 'ti-2', total_balance: '0.000', has_pending_acceptance: true, has_active_registers: true },
+        { ...mockItem, id: 'ti-3', total_balance: '0.000', has_pending_acceptance: false, has_active_registers: true },
+      ],
+      total_count: 3,
+      page: 1,
+      page_size: 25,
+    }));
+
+    service.role.set('chief_storekeeper');
+    await service.loadList();
+
+    const [free, pending, lostOrIssued] = service.items();
+
+    expect(free.totalBalance).toBe(5.5);
+    expect(free.hasPendingAcceptance).toBe(false);
+    expect(free.hasActiveRegisters).toBe(false);
+    expect(free.canConvert).toBe(true);
+    expect(free.canDelete).toBe(false);
+
+    expect(pending.totalBalance).toBe(0);
+    expect(pending.hasPendingAcceptance).toBe(true);
+    expect(pending.canConvert).toBe(false);
+    expect(pending.canDelete).toBe(false);
+
+    expect(lostOrIssued.hasActiveRegisters).toBe(true);
+    expect(lostOrIssued.canConvert).toBe(false);
+    expect(lostOrIssued.canDelete).toBe(false);
+    expect(lostOrIssued.deleteBlockedReason).toContain('активные регистры');
+  });
+
+  it('should default missing action-state fields to safe zeros', async () => {
+    bffMock.getList.mockReturnValue(of({
+      items: [{ ...mockItem, id: 'ti-legacy', total_balance: undefined }],
+      total_count: 1,
+      page: 1,
+      page_size: 25,
+    }));
+
+    service.role.set('chief_storekeeper');
+    await service.loadList();
+
+    const vm = service.items()[0];
+    expect(vm.totalBalance).toBe(0);
+    expect(vm.hasPendingAcceptance).toBe(false);
+    expect(vm.hasActiveRegisters).toBe(false);
+  });
+
   it('should restrict actions for storekeeper role', async () => {
     bffMock.getList.mockReturnValue(of({
       items: [mockItem],

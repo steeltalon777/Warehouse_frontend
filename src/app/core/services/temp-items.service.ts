@@ -57,12 +57,11 @@ export class TempItemsService {
         this.bffApi.getList<TemporaryItem>('/review-items', params)
       );
 
-      const hasPendingAcceptance = false;
       const role = this.role();
 
       const vms = (response.items || []).map(item => {
         const opsCount = 0;
-        return toTempItemVm(item, opsCount, false, role);
+        return toTempItemVm(item, opsCount, role);
       });
 
       let filteredVms = vms;

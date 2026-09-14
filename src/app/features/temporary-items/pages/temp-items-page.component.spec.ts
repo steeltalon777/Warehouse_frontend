@@ -15,7 +15,7 @@ describe('TempItemsPageComponent (ADR-0033 §7.2)', () => {
     id: 'ti-1', name: 'Болт М8 (временный)', createdAt: '19.05.2026 10:00', totalBalance: 10, unitSymbol: 'шт',
     uiStatus: 'needs_review' as const, uiStatusLabel: 'Требует разбора', createdByUserId: 'u-1',
     status: 'active' as const, canConvert: true, canMergeToPermanent: true, canMergeToTemp: true,
-    canDelete: false, hasPendingAcceptance: false, operationsCount: 2,
+    canDelete: false, hasPendingAcceptance: false, hasActiveRegisters: false, operationsCount: 2,
   };
 
   const candidate: IdentityCandidateDto = {
