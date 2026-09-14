@@ -180,3 +180,72 @@ export const FIXTURE_INSUFFICIENT_STOCK_UNSAFE_LINE_ID: RawSubmitErrorEnvelope =
     },
   ],
 };
+
+/**
+ * ADR-0033: deterministic duplicate ТМЦ against existing catalog items.
+ * `candidates` mirror `IdentityCandidateRef` (id/name/sku/unit/category/match).
+ */
+export const FIXTURE_ITEM_IDENTITY_DUPLICATE: RawSubmitErrorEnvelope = {
+  ...BASE_ENVELOPE,
+  title: 'ТМЦ уже существует',
+  detail:
+    'Создание ТМЦ «Болт М8» заблокировано: в каталоге есть совпадающая позиция. Используйте существующую ТМЦ.',
+  errors: [
+    {
+      code: 'item_identity_duplicate',
+      scope: 'line_group',
+      operation_line_ids: [11, 12],
+      requested_name: 'Болт М8',
+      candidates: [
+        {
+          id: 500,
+          name: 'Болт М8',
+          sku: 'BOLT-M8',
+          unit: { id: 5, name: 'штука', symbol: 'шт' },
+          category: { id: 4, name: 'Крепёж' },
+          match: 'exact',
+        },
+        {
+          id: 501,
+          name: 'Болт М8 оцинк.',
+          sku: 'BOLT-M8Z',
+          unit: { id: 5, name: 'штука', symbol: 'шт' },
+          category: { id: 4, name: 'Крепёж' },
+          match: 'partial',
+        },
+      ],
+    },
+  ],
+};
+
+/** ADR-0033: intra-batch duplicate — no candidates, detail explains the client. */
+export const FIXTURE_ITEM_IDENTITY_DUPLICATE_INTRA_BATCH: RawSubmitErrorEnvelope = {
+  ...BASE_ENVELOPE,
+  title: 'ТМЦ продублирована в строках операции',
+  detail:
+    'Товар «Болт М8» задан в строках операции под разными client_key. Используйте один client_key для одинаковых строк или различите наименования.',
+  errors: [
+    {
+      code: 'item_identity_duplicate',
+      scope: 'line_group',
+      operation_line_ids: [21, 22],
+      requested_name: 'Болт М8',
+      candidates: [],
+    },
+  ],
+};
+
+/** item_identity_duplicate missing required `requested_name` → unknown. */
+export const FIXTURE_ITEM_IDENTITY_DUPLICATE_MISSING_REQUESTED_NAME: RawSubmitErrorEnvelope = {
+  ...BASE_ENVELOPE,
+  title: 'ТМЦ уже существует',
+  detail: 'Создание ТМЦ заблокировано.',
+  errors: [
+    {
+      code: 'item_identity_duplicate',
+      scope: 'line_group',
+      operation_line_ids: [30],
+      candidates: [{ id: 500, name: 'Болт М8', match: 'exact' }],
+    },
+  ],
+};

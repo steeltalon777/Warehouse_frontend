@@ -2,6 +2,7 @@ import { Component, input, output, signal, computed } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { OperationLineDraftVm, OperationType } from '../../../../core/models/operations.models';
+import type { IdentityCandidateRef } from '../../../../core/models/identity-candidate.models';
 
 export type SortColumn = 'itemName' | 'quantity' | 'availableQuantity' | 'lineNumber';
 export type SortDirection = 'asc' | 'desc';
@@ -16,6 +17,17 @@ export interface LineSubmitErrorState {
   groupId: string;
   stale: boolean;
   text: string;
+  /** ADR-0033: candidate list when the row was blocked by an identity duplicate. */
+  identityDuplicate?: {
+    requestedName: string;
+    candidates: IdentityCandidateRef[];
+    intraBatch: boolean;
+  };
+}
+
+export interface IdentityCandidateAction {
+  localId: string;
+  candidate: IdentityCandidateRef;
 }
 
 @Component({
@@ -176,9 +188,32 @@ export interface LineSubmitErrorState {
             @if (submitErrorState(line.localId)) {
               <tr class="submit-error-detail-row">
                 <td colspan="6">
-                  <div class="submit-error-hint" [id]="submitErrorHintId(line.localId)" role="alert">
-                    <span class="submit-error-hint-icon" aria-hidden="true">!</span>
-                    <span data-testid="operation-line-submit-hint">{{ submitErrorState(line.localId)?.text }}</span>
+                  <div class="submit-error-hint-wrap">
+                    <div class="submit-error-hint" [id]="submitErrorHintId(line.localId)" role="alert">
+                      <span class="submit-error-hint-icon" aria-hidden="true">!</span>
+                      <span data-testid="operation-line-submit-hint">{{ submitErrorState(line.localId)?.text }}</span>
+                    </div>
+                    @if (submitErrorState(line.localId)?.identityDuplicate; as identity) {
+                      @if (!identity.intraBatch && identity.candidates.length > 0) {
+                        <div class="identity-candidates" data-testid="identity-duplicate-candidates">
+                          <div class="identity-candidates-label">Существующие ТМЦ с таким же названием:</div>
+                          @for (c of identity.candidates; track c.id) {
+                            <div class="identity-candidate">
+                              <span class="identity-candidate-name">{{ c.name }}</span>
+                              @if (c.sku) { <span class="identity-candidate-sku">SKU {{ c.sku }}</span> }
+                              @if (c.unit?.symbol) { <span class="identity-candidate-unit">{{ c.unit?.symbol }}</span> }
+                              @if (c.category?.name) { <span class="identity-candidate-cat">{{ c.category?.name }}</span> }
+                              <button
+                                class="identity-candidate-use"
+                                type="button"
+                                data-testid="identity-candidate-use"
+                                (click)="useIdentityCandidate.emit({ localId: line.localId, candidate: c })"
+                              >Использовать существующую</button>
+                            </div>
+                          }
+                        </div>
+                      }
+                    }
                   </div>
                 </td>
               </tr>
@@ -481,10 +516,63 @@ export interface LineSubmitErrorState {
       color: #991B1B;
       line-height: 1.4;
     }
+    .submit-error-hint-wrap {
+      display: flex;
+      flex-direction: column;
+      gap: 2px;
+    }
     .submit-error-hint-icon {
       flex-shrink: 0;
       font-size: 13px;
       line-height: 1;
+    }
+    /* ADR-0033: existing-candidate list inside the hint block. */
+    .identity-candidates {
+      display: flex;
+      flex-direction: column;
+      gap: 4px;
+      margin-top: 2px;
+    }
+    .identity-candidates-label {
+      font-size: 11px;
+      font-weight: 550;
+      color: #92400E;
+    }
+    .identity-candidate {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      padding: 4px 8px;
+      background: #FFFFFF;
+      border: 1px solid #FECACA;
+      border-radius: 4px;
+      font-size: 12px;
+      flex-wrap: wrap;
+    }
+    .identity-candidate-name { font-weight: 550; color: #1F2937; }
+    .identity-candidate-sku,
+    .identity-candidate-unit,
+    .identity-candidate-cat {
+      font-family: var(--l-font-mono);
+      font-size: 11px;
+      color: var(--l-muted);
+    }
+    .identity-candidate-use {
+      margin-left: auto;
+      padding: 2px 8px;
+      border: 1px solid var(--l-border-2);
+      border-radius: 4px;
+      background: var(--l-surface);
+      color: var(--l-fg-2);
+      font-family: inherit;
+      font-size: 11.5px;
+      cursor: pointer;
+      transition: background 120ms ease, border-color 120ms ease;
+    }
+    .identity-candidate-use:hover {
+      background: var(--l-accent-bg, #ECFDF5);
+      border-color: var(--l-accent);
+      color: var(--l-accent);
     }
 
     /* Blocked-line markers (TZ-V3.2 §5.2 W1.3). */
@@ -525,6 +613,8 @@ export class OperationLinesTableComponent {
   quantityChange = output<LineQuantityChange>();
   removeLine = output<string>();
   sortChange = output<{ column: SortColumn; direction: SortDirection }>();
+  /** ADR-0033: user chose an existing catalog item for a duplicate-blocked row. */
+  useIdentityCandidate = output<IdentityCandidateAction>();
 
   readonly sortColumn = signal<SortColumn>('lineNumber');
   readonly sortDirection = signal<SortDirection>('asc');

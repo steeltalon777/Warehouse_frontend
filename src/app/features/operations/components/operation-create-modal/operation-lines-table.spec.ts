@@ -1,7 +1,8 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { TestBed } from '@angular/core/testing';
-import { OperationLinesTableComponent } from './operation-lines-table.component';
+import { OperationLinesTableComponent, type IdentityCandidateAction } from './operation-lines-table.component';
 import type { OperationLineDraftVm } from '../../../../core/models/operations.models';
+import type { IdentityCandidateRef } from '../../../../core/models/identity-candidate.models';
 
 function makeLine(localId: string, itemName: string, serverLineId?: number): OperationLineDraftVm {
   return {
@@ -96,6 +97,121 @@ describe('OperationLinesTableComponent', () => {
       (tr: Element) => tr.textContent?.includes('Провод'),
     );
     expect(local2Row?.classList.contains('row--has-error')).toBe(false);
+  });
+});
+
+describe('OperationLinesTableComponent — ADR-0033 identity candidates', () => {
+  const CANDIDATES: IdentityCandidateRef[] = [
+    {
+      id: 500,
+      name: 'Болт М8',
+      sku: 'BOLT-M8',
+      unit: { id: 5, name: 'штука', symbol: 'шт' },
+      category: { id: 4, name: 'Крепёж' },
+      match: 'exact',
+    },
+    { id: 501, name: 'Болт М8 оцинк.', match: 'partial' },
+  ];
+
+  const IDENTITY_HINT = 'ТМЦ «Болт М8» уже существует в каталоге. Используйте существующую позицию';
+
+  function createFixture() {
+    const fixture = TestBed.createComponent(OperationLinesTableComponent);
+    fixture.componentRef.setInput('lines', LINES);
+    fixture.componentRef.setInput('operationType', 'MOVE');
+    return fixture;
+  }
+
+  beforeEach(async () => {
+    await TestBed.configureTestingModule({
+      imports: [OperationLinesTableComponent],
+    }).compileComponents();
+  });
+
+  it('renders candidates with name/SKU/unit/category and one action button per candidate', () => {
+    const fixture = createFixture();
+    fixture.componentRef.setInput('submitErrorLines', {
+      'local-1': {
+        groupId: 'g1',
+        stale: false,
+        text: IDENTITY_HINT,
+        identityDuplicate: { requestedName: 'Болт М8', candidates: CANDIDATES, intraBatch: false },
+      },
+    });
+    fixture.detectChanges();
+
+    const block = fixture.nativeElement.querySelector(
+      '[data-testid="identity-duplicate-candidates"]',
+    ) as HTMLElement;
+    expect(block).toBeTruthy();
+    expect(block.textContent).toContain('Болт М8');
+    expect(block.textContent).toContain('BOLT-M8');
+    expect(block.textContent).toContain('шт');
+    expect(block.textContent).toContain('Крепёж');
+    expect(block.querySelectorAll('[data-testid="identity-candidate-use"]').length).toBe(2);
+
+    const hint = fixture.nativeElement.querySelector('[data-testid="operation-line-submit-hint"]');
+    expect(hint.textContent.trim()).toBe(IDENTITY_HINT);
+  });
+
+  it('does not render the candidate block for an intra-batch duplicate but keeps the hint', () => {
+    const fixture = createFixture();
+    fixture.componentRef.setInput('submitErrorLines', {
+      'local-1': {
+        groupId: 'g1',
+        stale: false,
+        text: 'ТМЦ «Болт М8» указана в нескольких строках операции одинаково',
+        identityDuplicate: { requestedName: 'Болт М8', candidates: [], intraBatch: true },
+      },
+    });
+    fixture.detectChanges();
+
+    expect(
+      fixture.nativeElement.querySelector('[data-testid="identity-duplicate-candidates"]'),
+    ).toBeNull();
+    const hint = fixture.nativeElement.querySelector('[data-testid="operation-line-submit-hint"]');
+    expect(hint.textContent).toContain('в нескольких строках операции');
+  });
+
+  it('does not render the candidate block when the candidate list is empty', () => {
+    const fixture = createFixture();
+    fixture.componentRef.setInput('submitErrorLines', {
+      'local-1': {
+        groupId: 'g1',
+        stale: false,
+        text: IDENTITY_HINT,
+        identityDuplicate: { requestedName: 'Болт М8', candidates: [], intraBatch: false },
+      },
+    });
+    fixture.detectChanges();
+
+    expect(
+      fixture.nativeElement.querySelector('[data-testid="identity-duplicate-candidates"]'),
+    ).toBeNull();
+  });
+
+  it('emits useIdentityCandidate with the row localId and the clicked candidate', () => {
+    const fixture = createFixture();
+    fixture.componentRef.setInput('submitErrorLines', {
+      'local-1': {
+        groupId: 'g1',
+        stale: false,
+        text: IDENTITY_HINT,
+        identityDuplicate: { requestedName: 'Болт М8', candidates: CANDIDATES, intraBatch: false },
+      },
+    });
+    fixture.detectChanges();
+
+    const emitted: IdentityCandidateAction[] = [];
+    fixture.componentInstance.useIdentityCandidate.subscribe(action => emitted.push(action));
+
+    const buttons = fixture.nativeElement.querySelectorAll(
+      '[data-testid="identity-candidate-use"]',
+    ) as NodeListOf<HTMLButtonElement>;
+    buttons[1].click();
+    fixture.detectChanges();
+
+    expect(emitted).toEqual([{ localId: 'local-1', candidate: CANDIDATES[1] }]);
   });
 });
 

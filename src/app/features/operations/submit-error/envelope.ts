@@ -5,10 +5,13 @@
  * `docs/TZ-SYNCSERVER_OPERATION_SUBMIT_DOMAIN_ERRORS.md` §3.3
  * (`ProblemEnvelope`, `InsufficientStockError`, `InsufficientIssuedBalanceError`,
  * `StaleVersionError`, `OperationInWrongStateError`, `RoleNotPermittedError`,
- * `OperationNotFoundError`). These interfaces are a manual mirror; if the
- * Pydantic schema changes, update this file to match. The TypeScript types are
- * NOT the source of truth — the Pydantic schema is.
+ * `OperationNotFoundError`) plus the ADR-0033 `ItemIdentityDuplicateError`
+ * schema (`docs/adr/0033-item-identity-guard-v1.md` §5.5). These interfaces are
+ * a manual mirror; if the Pydantic schema changes, update this file to match.
+ * The TypeScript types are NOT the source of truth — the Pydantic schema is.
  */
+
+import type { IdentityCandidateRef } from '../../../core/models/identity-candidate.models';
 
 /**
  * Raw DTO — exact mirror of a single JSON `errors[]` item, without narrowing.
@@ -24,6 +27,10 @@ export interface RawSubmitError {
   required_qty?: string;
   available_qty?: string;
   unit?: { id: number; name: string; symbol: string };
+  /** ADR-0033: normalized name that collided with an existing item. */
+  requested_name?: string;
+  /** ADR-0033: existing catalog items matching the requested identity. */
+  candidates?: IdentityCandidateRef[];
   expected_version?: number;
   actual_version?: number;
   current_state?: string;
@@ -49,6 +56,7 @@ export interface RawSubmitErrorEnvelope {
 export type KnownErrorCode =
   | 'insufficient_stock'
   | 'insufficient_issued_balance'
+  | 'item_identity_duplicate'
   | 'stale_version'
   | 'operation_in_wrong_state'
   | 'role_not_permitted'
@@ -76,10 +84,32 @@ export interface KnownLineGroupError {
   malformed?: boolean;
 }
 
+/**
+ * ADR-0033 line-group error: a deterministic duplicate ТМЦ was blocked at
+ * submit. The affected rows are mapped via `operation_line_ids`; `candidates`
+ * are the existing catalog items that the requested identity collides with.
+ * `candidates=[]` means the collision is intra-batch (lines of the same
+ * operation with different client_keys) — `detail` explains it to the user.
+ */
+export interface KnownIdentityDuplicateError {
+  kind: 'known_identity_duplicate';
+  code: 'item_identity_duplicate';
+  operation_line_ids: number[];
+  requested_name: string;
+  candidates: IdentityCandidateRef[];
+  /** Intra-batch collision (candidates were empty on the wire). */
+  intra_batch?: boolean;
+  /**
+   * Set when at least one `operation_line_ids[i]` is not a safe integer. The
+   * group is kept for diagnostics but must NOT be highlighted by the UI.
+   */
+  malformed?: boolean;
+}
+
 /** Known operation-level error: shown as a toast, never highlighted inline. */
 export interface KnownOperationError {
   kind: 'known_operation';
-  code: Exclude<KnownErrorCode, 'insufficient_stock' | 'insufficient_issued_balance'>;
+  code: Exclude<KnownErrorCode, 'insufficient_stock' | 'insufficient_issued_balance' | 'item_identity_duplicate'>;
   expected_version?: number;
   actual_version?: number;
   current_state?: string;
@@ -98,7 +128,11 @@ export interface UnknownError {
   detail?: string;
 }
 
-export type NormalizedSubmitError = KnownLineGroupError | KnownOperationError | UnknownError;
+export type NormalizedSubmitError =
+  | KnownLineGroupError
+  | KnownIdentityDuplicateError
+  | KnownOperationError
+  | UnknownError;
 
 /**
  * Normalized envelope: same shape as `RawSubmitErrorEnvelope`, but `errors[]`

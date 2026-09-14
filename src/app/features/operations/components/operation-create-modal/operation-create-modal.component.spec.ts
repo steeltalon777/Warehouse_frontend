@@ -11,6 +11,8 @@ import { DiagnosticsService } from '../../../../core/diagnostics/diagnostics.ser
 import { DraftStorageService } from '../../../../core/services/draft-storage.service';
 import { BffApiService } from '../../../../core/api/bff-api.service';
 import { CatalogSearchService } from '../../../../core/services/catalog-search.service';
+import { FIXTURE_ITEM_IDENTITY_DUPLICATE } from '../../submit-error/envelope.fixtures';
+import { GENERIC_SUBMIT_ERROR_TOAST, lineGroupToast } from './submit-error-toasts';
 import type { OperationDraftVm, OperationLineDraftVm, BalanceDto } from '../../../../core/models/operations.models';
 import type { Item } from '../../../../core/models/nomenclature.models';
 
@@ -25,7 +27,12 @@ function makeDraft(overrides: Partial<OperationDraftVm> = {}): OperationDraftVm 
   };
 }
 
-function makeLine(localId: string, itemId: string | null = '1', lineNumber: number = 1): OperationLineDraftVm {
+function makeLine(
+  localId: string,
+  itemId: string | null = '1',
+  lineNumber: number = 1,
+  serverLineId: number | null = null,
+): OperationLineDraftVm {
   return {
     localId,
     itemId,
@@ -36,6 +43,7 @@ function makeLine(localId: string, itemId: string | null = '1', lineNumber: numb
     isTemporary: false,
     fromBalances: false,
     lineNumber,
+    serverLineId,
   };
 }
 
@@ -569,5 +577,111 @@ describe('OperationCreateModalComponent — B3 structured save line errors (issu
     await flush(fixture);
 
     expect(fixture.componentInstance.localDraft().lines.length).toBe(1);
+  });
+});
+
+describe('OperationCreateModalComponent — ADR-0033 item_identity_duplicate surface', () => {
+  beforeEach(() => {
+    mocks = createMocks();
+    configureTestBed();
+    // jsdom has no Element.prototype.scrollIntoView; the submit-error surface
+    // calls it from a setTimeout after rendering.
+    Element.prototype.scrollIntoView = vi.fn();
+  });
+
+  async function createIdentityDuplicateFixture() {
+    const fixture = TestBed.createComponent(OperationCreateModalComponent);
+    fixture.componentRef.setInput('sites', []);
+    fixture.componentRef.setInput(
+      'draft',
+      makeDraft({ lines: [makeLine('local-1', '1', 1, 11), makeLine('local-2', '2', 2, 12)] }),
+    );
+    fixture.componentRef.setInput('submitErrorPayload', FIXTURE_ITEM_IDENTITY_DUPLICATE);
+    await flush(fixture);
+    return fixture;
+  }
+
+  it('renders the duplicate error with candidates and a line-group toast, not generic (AC-12)', async () => {
+    const fixture = await createIdentityDuplicateFixture();
+
+    const errors = fixture.componentInstance.lineSubmitErrors();
+    expect(errors['local-1'].identityDuplicate?.requestedName).toBe('Болт М8');
+    expect(errors['local-1'].identityDuplicate?.candidates).toHaveLength(2);
+    expect(errors['local-2'].identityDuplicate?.intraBatch).toBe(false);
+
+    const blocks = fixture.nativeElement.querySelectorAll(
+      '[data-testid="identity-duplicate-candidates"]',
+    );
+    // Both affected rows render the error surface, so the candidate list appears twice.
+    expect(blocks.length).toBe(2);
+    expect(
+      fixture.nativeElement.querySelectorAll('[data-testid="identity-candidate-use"]').length,
+    ).toBe(4);
+
+    expect(fixture.componentInstance.toasts()).toEqual([lineGroupToast(2)]);
+    expect(fixture.componentInstance.toasts()).not.toContain(GENERIC_SUBMIT_ERROR_TOAST);
+  });
+
+  it('replaces the blocked line with the chosen existing item', async () => {
+    const fixture = await createIdentityDuplicateFixture();
+    const candidate = FIXTURE_ITEM_IDENTITY_DUPLICATE.errors[0].candidates![0];
+
+    fixture.componentInstance.onUseIdentityCandidate('local-1', candidate);
+
+    const line = fixture.componentInstance.localDraft().lines[0];
+    expect(line.itemId).toBe('500');
+    expect(line.itemName).toBe('Болт М8');
+    expect(line.sku).toBe('BOLT-M8');
+    expect(line.unitId).toBe('5');
+    expect(line.unitName).toBe('шт');
+    expect(line.categoryId).toBe('4');
+    expect(line.categoryName).toBe('Крепёж');
+    expect(line.isTemporary).toBe(false);
+    expect(line.inlineItem).toBeNull();
+    expect(line.balanceState).toBe('NOT_LOADED');
+    expect(fixture.componentInstance.toasts()).toEqual([
+      'Строка заменена на существующую ТМЦ «Болт М8»',
+    ]);
+
+    await flush(fixture);
+
+    // The other line of the group is still errored; the whole group is stale.
+    const errors = fixture.componentInstance.lineSubmitErrors();
+    expect(errors['local-1'].stale).toBe(true);
+    expect(errors['local-2'].stale).toBe(true);
+    expect(errors['local-2'].identityDuplicate?.candidates).toHaveLength(2);
+  });
+
+  it('blocks choosing a candidate that another line already uses (issue #24 guard)', async () => {
+    const fixture = TestBed.createComponent(OperationCreateModalComponent);
+    fixture.componentRef.setInput('sites', []);
+    fixture.componentRef.setInput(
+      'draft',
+      makeDraft({ lines: [makeLine('local-1', '1', 1, 11), makeLine('local-2', '500', 2, 12)] }),
+    );
+    fixture.componentRef.setInput('submitErrorPayload', FIXTURE_ITEM_IDENTITY_DUPLICATE);
+    await flush(fixture);
+
+    const candidate = FIXTURE_ITEM_IDENTITY_DUPLICATE.errors[0].candidates![0];
+    fixture.componentInstance.onUseIdentityCandidate('local-1', candidate);
+
+    expect(fixture.componentInstance.localDraft().lines[0].itemId).toBe('1');
+    expect(fixture.componentInstance.submitErrorLocal()).toContain('уже добавлена в строке 2');
+  });
+
+  it('keeps the happy path: no payload → no identity block and no toasts', async () => {
+    const fixture = TestBed.createComponent(OperationCreateModalComponent);
+    fixture.componentRef.setInput('sites', []);
+    fixture.componentRef.setInput(
+      'draft',
+      makeDraft({ lines: [makeLine('local-1', '1', 1, 11)] }),
+    );
+    await flush(fixture);
+
+    expect(fixture.componentInstance.lineSubmitErrors()).toEqual({});
+    expect(
+      fixture.nativeElement.querySelector('[data-testid="identity-duplicate-candidates"]'),
+    ).toBeNull();
+    expect(fixture.componentInstance.toasts()).toEqual([]);
   });
 });

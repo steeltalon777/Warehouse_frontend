@@ -2,6 +2,15 @@ import { Injectable, computed, signal } from '@angular/core';
 import type { NormalizedSubmitError, SubmitErrorEnvelope } from './envelope';
 import { parseSubmitErrorResponse } from './parser';
 
+/** True for normalized errors that carry safe `operation_line_ids` for line lookup. */
+function lineGroupIds(error: NormalizedSubmitError): number[] | null {
+  if (error.kind === 'known_line_group' && !error.malformed) return error.operation_line_ids;
+  if (error.kind === 'known_identity_duplicate' && !error.malformed) {
+    return error.operation_line_ids;
+  }
+  return null;
+}
+
 /**
  * Error service for operation submit (`docs/TZ-FRONTEND_OPERATION_SUBMIT_ERROR_SURFACE.md` §5).
  *
@@ -36,9 +45,9 @@ export class SubmitErrorService {
     const map = new Map<number, string>();
     for (const group of Object.values(this.groupsState())) {
       const error = group.error;
-      if (error.kind === 'known_line_group' && !error.malformed) {
-        for (const lineId of error.operation_line_ids) map.set(lineId, group.id);
-      }
+      const ids = lineGroupIds(error);
+      if (!ids) continue;
+      for (const lineId of ids) map.set(lineId, group.id);
     }
     return map;
   });
@@ -49,12 +58,12 @@ export class SubmitErrorService {
     const seen = new Set<number>();
     for (const group of Object.values(this.groupsState())) {
       const error = group.error;
-      if (error.kind === 'known_line_group' && !error.malformed) {
-        for (const lineId of error.operation_line_ids) {
-          if (!seen.has(lineId)) {
-            seen.add(lineId);
-            ids.push(lineId);
-          }
+      const lineIds = lineGroupIds(error);
+      if (!lineIds) continue;
+      for (const lineId of lineIds) {
+        if (!seen.has(lineId)) {
+          seen.add(lineId);
+          ids.push(lineId);
         }
       }
     }
@@ -165,14 +174,13 @@ function buildGroups(envelope: SubmitErrorEnvelope): Record<string, ErrorGroup> 
 }
 
 function intersects(error: NormalizedSubmitError, lineIds: Set<number>): boolean {
-  if (error.kind !== 'known_line_group') return false;
-  return error.operation_line_ids.some((id) => lineIds.has(id));
+  const ids = lineGroupIds(error);
+  return !!ids && ids.some((id) => lineIds.has(id));
 }
 
 function coveredByLines(error: NormalizedSubmitError, lineIds: Set<number>): boolean {
-  if (error.kind !== 'known_line_group') return false;
-  const ids = error.operation_line_ids;
-  return ids.length > 0 && ids.every((id) => lineIds.has(id));
+  const ids = lineGroupIds(error);
+  return !!ids && ids.length > 0 && ids.every((id) => lineIds.has(id));
 }
 
 function createGroupId(): string {

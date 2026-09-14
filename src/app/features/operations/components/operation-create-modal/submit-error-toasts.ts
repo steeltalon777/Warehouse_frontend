@@ -1,10 +1,15 @@
-import type { KnownLineGroupError, SubmitErrorEnvelope, UnknownError } from '../../submit-error/envelope';
+import type {
+  KnownIdentityDuplicateError,
+  KnownLineGroupError,
+  SubmitErrorEnvelope,
+  UnknownError,
+} from '../../submit-error/envelope';
 import { countErroredLines } from '../../submit-error/parser';
 
 /**
  * Toast texts and hint formatting for the operation-submit error surface
- * (TZ-FRONTEND_OPERATION_SUBMIT_ERROR_SURFACE §7, §8). Pure functions so the
- * modal keeps them unit-testable.
+ * (TZ-FRONTEND_OPERATION_SUBMIT_ERROR_SURFACE §7, §8; ADR-0033). Pure functions
+ * so the modal keeps them unit-testable.
  */
 
 export const OPERATION_LEVEL_TOAST_MESSAGES: Record<string, string> = {
@@ -33,6 +38,19 @@ export function formatSubmitStockHint(error: KnownLineGroupError): string {
 }
 
 /**
+ * ADR-0033: inline hint under an errored row for a deterministic-identity
+ * duplicate. When candidates exist the hint invites the user to switch to an
+ * existing catalog item; with an empty candidate list the collision happened
+ * between lines of the same operation (intra-batch).
+ */
+export function formatIdentityDuplicateHint(error: KnownIdentityDuplicateError): string {
+  if (error.intra_batch || error.candidates.length === 0) {
+    return `ТМЦ «${error.requested_name}» указана в нескольких строках операции одинаково`;
+  }
+  return `ТМЦ «${error.requested_name}» уже существует в каталоге. Используйте существующую позицию`;
+}
+
+/**
  * Builds the toast list for a failed submit envelope (§7, §8.2):
  * - line-group errors → one toast with the unique errored-line count;
  * - each operation-level error → its fixed text;
@@ -47,7 +65,7 @@ export function buildSubmitToasts(envelope: SubmitErrorEnvelope | null): string[
   let hasUnknown = false;
 
   for (const error of envelope.errors) {
-    if (error.kind === 'known_line_group') {
+    if (error.kind === 'known_line_group' || error.kind === 'known_identity_duplicate') {
       if (!error.malformed) hasLineGroup = true;
     } else if (error.kind === 'known_operation') {
       toasts.push(OPERATION_LEVEL_TOAST_MESSAGES[error.code] ?? GENERIC_SUBMIT_ERROR_TOAST);

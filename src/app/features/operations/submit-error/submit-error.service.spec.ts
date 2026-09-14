@@ -6,6 +6,7 @@ import type { RawSubmitErrorEnvelope, SubmitErrorEnvelope } from './envelope';
 import {
   FIXTURE_AGGREGATED_LINE_GROUP,
   FIXTURE_INSUFFICIENT_STOCK_WITH_UNIT,
+  FIXTURE_ITEM_IDENTITY_DUPLICATE,
   FIXTURE_STALE_VERSION,
 } from './envelope.fixtures';
 
@@ -99,6 +100,59 @@ describe('SubmitErrorService', () => {
 
     // groups [1,4] and [4,9] → unique ids {1, 4, 9} = 3
     expect(countErroredLines(envelope)).toBe(3);
+  });
+
+  // ─── ADR-0033 item_identity_duplicate groups ───────────────────────────
+
+  it('stores item_identity_duplicate as a line-group error mapped to both line ids', () => {
+    service.setFromHttpError(FIXTURE_ITEM_IDENTITY_DUPLICATE);
+
+    const groups = service.groups();
+    const ids = Object.keys(groups);
+    expect(ids).toHaveLength(1);
+    expect(groups[ids[0]].error.kind).toBe('known_identity_duplicate');
+    expect(service.linesByGroup().get(11)).toBe(ids[0]);
+    expect(service.linesByGroup().get(12)).toBe(ids[0]);
+    expect(service.erroredLineIds()).toEqual([11, 12]);
+    expect(service.firstErroredLineId()).toBe(11);
+  });
+
+  it('identity groups participate in stale invalidation and full-coverage clearing', () => {
+    service.setFromHttpError(FIXTURE_ITEM_IDENTITY_DUPLICATE); // ids [11, 12]
+
+    service.invalidateByLineIds([12]);
+    expect(Object.values(service.groups())[0].stale).toBe(true);
+
+    service.clearByLineIds([11]);
+    expect(Object.keys(service.groups())).toHaveLength(1);
+
+    service.clearByLineIds([12]);
+    expect(Object.keys(service.groups())).toHaveLength(1);
+
+    service.clearByLineIds([11, 12]);
+    expect(service.groups()).toEqual({});
+    expect(service.linesByGroup().size).toBe(0);
+  });
+
+  it('countErroredLines counts identity-duplicate lines and excludes malformed groups', () => {
+    const consoleSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+
+    const envelope = parseSubmitErrorResponse(FIXTURE_ITEM_IDENTITY_DUPLICATE)
+      .envelope as SubmitErrorEnvelope;
+    expect(countErroredLines(envelope)).toBe(2);
+
+    const malformed = parseSubmitErrorResponse({
+      ...FIXTURE_ITEM_IDENTITY_DUPLICATE,
+      errors: [
+        {
+          ...FIXTURE_ITEM_IDENTITY_DUPLICATE.errors[0],
+          operation_line_ids: [Number.MAX_SAFE_INTEGER + 1],
+        },
+      ],
+    }).envelope as SubmitErrorEnvelope;
+    expect(countErroredLines(malformed)).toBe(0);
+
+    consoleSpy.mockRestore();
   });
 
   it('lifecycle: clearAll on destroy/init prevents state leaking between mounts', () => {

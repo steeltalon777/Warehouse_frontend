@@ -27,8 +27,9 @@ import { Item } from '../../../../core/models/nomenclature.models';
 import { IssueObject, IssueObjectType, ISSUE_OBJECT_TYPE_LABELS } from '../../../../core/models/issue-objects.models';
 import { snapshotDraft, isDraftClean } from './operation-draft-mappers';
 import { SubmitErrorService } from '../../submit-error/submit-error.service';
-import { buildSubmitToasts, collectUnknownSubmitErrors, formatSubmitStockHint } from './submit-error-toasts';
+import { buildSubmitToasts, collectUnknownSubmitErrors, formatSubmitStockHint, formatIdentityDuplicateHint } from './submit-error-toasts';
 import { CatalogSearchService } from '../../../../core/services/catalog-search.service';
+import type { IdentityCandidateRef } from '../../../../core/models/identity-candidate.models';
 
 let LOCAL_ID_COUNTER = 0;
 function nextLocalId(): string {
@@ -355,6 +356,7 @@ function currentDateTimeLocal(): string {
             [isReadonly]="isReadonly()"
             (quantityChange)="onQuantityChange($event.localId, $event.quantity)"
             (removeLine)="removeLine($event)"
+            (useIdentityCandidate)="onUseIdentityCandidate($event.localId, $event.candidate)"
           />
         </div>
 
@@ -1261,12 +1263,25 @@ export class OperationCreateModalComponent implements OnInit, OnDestroy {
       const groupId = linesByGroup.get(line.serverLineId);
       if (!groupId) continue;
       const group = groups[groupId];
-      if (!group || group.error.kind !== 'known_line_group') continue;
-      result[line.localId] = {
-        groupId,
-        stale: group.stale,
-        text: formatSubmitStockHint(group.error),
-      };
+      if (!group) continue;
+      if (group.error.kind === 'known_line_group') {
+        result[line.localId] = {
+          groupId,
+          stale: group.stale,
+          text: formatSubmitStockHint(group.error),
+        };
+      } else if (group.error.kind === 'known_identity_duplicate') {
+        result[line.localId] = {
+          groupId,
+          stale: group.stale,
+          text: formatIdentityDuplicateHint(group.error),
+          identityDuplicate: {
+            requestedName: group.error.requested_name,
+            candidates: group.error.candidates,
+            intraBatch: !!group.error.intra_batch,
+          },
+        };
+      }
     }
     return result;
   });
@@ -2101,6 +2116,54 @@ export class OperationCreateModalComponent implements OnInit, OnDestroy {
     this.invalidateLineErrors(localId);
   }
 
+  /**
+   * ADR-0033: the submit was rejected because the line's requested identity
+   * collides with an existing catalog item (`item_identity_duplicate`). The user
+   * picked one of the offered candidates — swap the temporary/inline line to
+   * that existing catalog item and drop the whole error group for the line.
+   */
+  onUseIdentityCandidate(localId: string, candidate: IdentityCandidateRef): void {
+    const existingLine = this.localDraft().lines.find(
+      l => String(l.itemId) === String(candidate.id),
+    );
+    if (existingLine && existingLine.localId !== localId) {
+      this.submitErrorLocal.set(
+        `ТМЦ «${candidate.name}» уже добавлена в строке ${existingLine.lineNumber ?? ''}`,
+      );
+      return;
+    }
+    this.localDraft.update(d => ({
+      ...d,
+      lines: d.lines.map(l =>
+        l.localId === localId
+          ? {
+              ...l,
+              itemId: String(candidate.id),
+              itemName: candidate.name,
+              categoryName: candidate.category?.name ?? undefined,
+              categoryId: candidate.category ? String(candidate.category.id) : null,
+              sku: candidate.sku ?? null,
+              unitId: candidate.unit ? String(candidate.unit.id) : (l.unitId ?? null),
+              unitName: candidate.unit
+                ? candidate.unit.symbol || candidate.unit.name
+                : l.unitName,
+              inlineItem: null,
+              isTemporary: false,
+              availableQuantity: null,
+              sourceSiteQuantity: null,
+              balanceState: 'NOT_LOADED' as const,
+            }
+          : l,
+      ),
+    }));
+    const line = this.lines().find(l => l.localId === localId);
+    if (line && line.serverLineId != null) {
+      this.submitErrorService.clearByLineIds([line.serverLineId]);
+    }
+    this.invalidateLineErrors(localId);
+    this.setToasts([`Строка заменена на существующую ТМЦ «${candidate.name}»`]);
+  }
+
   async onNewItemSelected(item: Item): Promise<void> {
     // Selection-time resolve gate: resolve before appending
     const resolved = await this.resolveItemBeforeAppend(item.id);
@@ -2276,7 +2339,10 @@ export class OperationCreateModalComponent implements OnInit, OnDestroy {
     const groupId = this.submitErrorService.linesByGroup().get(line.serverLineId);
     if (!groupId) return;
     const group = this.submitErrorService.groups()[groupId];
-    if (!group || group.error.kind !== 'known_line_group') return;
+    if (!group) return;
+    if (group.error.kind !== 'known_line_group' && group.error.kind !== 'known_identity_duplicate') {
+      return;
+    }
     this.submitErrorService.invalidateByLineIds(group.error.operation_line_ids);
   }
 

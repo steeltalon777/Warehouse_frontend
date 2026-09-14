@@ -1,10 +1,12 @@
 import type {
+  KnownIdentityDuplicateError,
   KnownLineGroupError,
   KnownOperationError,
   NormalizedSubmitError,
   RawSubmitErrorEnvelope,
   SubmitErrorEnvelope,
 } from './envelope';
+import type { IdentityCandidateRef } from '../../../core/models/identity-candidate.models';
 
 /**
  * Parser / normalizer for the operation-submit problem envelope
@@ -28,6 +30,9 @@ const KNOWN_LINE_GROUP_CODES: ReadonlySet<string> = new Set([
   'insufficient_stock',
   'insufficient_issued_balance',
 ]);
+
+/** ADR-0033: deterministic duplicate ТМЦ — separate normalizer (own fields). */
+const KNOWN_IDENTITY_DUPLICATE_CODE = 'item_identity_duplicate';
 
 const KNOWN_OPERATION_CODES: ReadonlySet<string> = new Set([
   'stale_version',
@@ -69,6 +74,9 @@ export function countErroredLines(envelope: SubmitErrorEnvelope): number {
   const ids = new Set<number>();
   for (const error of envelope.errors) {
     if (error.kind === 'known_line_group' && !error.malformed) {
+      for (const id of error.operation_line_ids) ids.add(id);
+    }
+    if (error.kind === 'known_identity_duplicate' && !error.malformed) {
       for (const id of error.operation_line_ids) ids.add(id);
     }
   }
@@ -137,6 +145,37 @@ function normalizeError(raw: unknown, envelopeDetail: string): NormalizedSubmitE
     return error;
   }
 
+  if (code === KNOWN_IDENTITY_DUPLICATE_CODE && scope === 'line_group') {
+    if (hasMissingIdentityDuplicateFields(raw)) {
+      console.error(`${LOG_PREFIX} missing_required_fields`, { code, scope, error: raw });
+      return { kind: 'unknown', code, scope, detail: envelopeDetail };
+    }
+
+    const malformed = hasUnsafeLineIds(raw['operation_line_ids']);
+    if (malformed) {
+      console.error(`${LOG_PREFIX} unsafe_integer`, {
+        code,
+        operation_line_ids: raw['operation_line_ids'],
+      });
+    }
+
+    const candidates = Array.isArray(raw['candidates'])
+      ? (raw['candidates'] as unknown[]).map(normalizeCandidate)
+      : [];
+    const error: KnownIdentityDuplicateError = {
+      kind: 'known_identity_duplicate',
+      code: 'item_identity_duplicate',
+      operation_line_ids: raw['operation_line_ids'] as number[],
+      requested_name: raw['requested_name'] as string,
+      candidates,
+      // Empty candidates on the wire = intra-batch collision (ADR-0033 §5.5):
+      // two lines of the same operation requested the same identity.
+      intra_batch: candidates.length === 0,
+    };
+    if (malformed) error.malformed = true;
+    return error;
+  }
+
   if (KNOWN_OPERATION_CODES.has(code) && scope === 'operation') {
     const error: KnownOperationError = {
       kind: 'known_operation',
@@ -168,6 +207,42 @@ function hasMissingLineGroupFields(raw: Record<string, unknown>): boolean {
     typeof raw['required_qty'] !== 'string' ||
     typeof raw['available_qty'] !== 'string'
   );
+}
+
+/** ADR-0033: identity duplicate requires ids + requested_name (candidates optional). */
+function hasMissingIdentityDuplicateFields(raw: Record<string, unknown>): boolean {
+  return (
+    !Array.isArray(raw['operation_line_ids']) ||
+    raw['operation_line_ids'].length === 0 ||
+    typeof raw['requested_name'] !== 'string' ||
+    raw['requested_name'].length === 0
+  );
+}
+
+function normalizeCandidate(raw: unknown): IdentityCandidateRef {
+  if (!isRecord(raw)) {
+    return { id: -1, name: String(raw ?? ''), match: 'partial' };
+  }
+  const candidate: IdentityCandidateRef = {
+    id: Number(raw['id']),
+    name: String(raw['name'] ?? ''),
+    match: raw['match'] === 'exact' ? 'exact' : 'partial',
+  };
+  if (raw['sku'] !== undefined && raw['sku'] !== null) candidate.sku = String(raw['sku']);
+  if (isRecord(raw['unit'])) {
+    candidate.unit = {
+      id: Number(raw['unit']['id']),
+      name: String(raw['unit']['name'] ?? ''),
+      symbol: String(raw['unit']['symbol'] ?? ''),
+    };
+  }
+  if (isRecord(raw['category'])) {
+    candidate.category = {
+      id: Number(raw['category']['id']),
+      name: String(raw['category']['name'] ?? ''),
+    };
+  }
+  return candidate;
 }
 
 function hasUnsafeLineIds(ids: unknown): boolean {

@@ -7,6 +7,9 @@ import {
   FIXTURE_INSUFFICIENT_STOCK_UNSAFE_LINE_ID,
   FIXTURE_INSUFFICIENT_STOCK_WITHOUT_UNIT,
   FIXTURE_INSUFFICIENT_STOCK_WITH_UNIT,
+  FIXTURE_ITEM_IDENTITY_DUPLICATE,
+  FIXTURE_ITEM_IDENTITY_DUPLICATE_INTRA_BATCH,
+  FIXTURE_ITEM_IDENTITY_DUPLICATE_MISSING_REQUESTED_NAME,
   FIXTURE_LEGACY_DETAIL_ONLY,
   FIXTURE_OPERATION_IN_WRONG_STATE,
   FIXTURE_OPERATION_NOT_FOUND,
@@ -185,6 +188,128 @@ describe('parseSubmitErrorResponse', () => {
       expect.objectContaining({ operation_line_ids: [Number.MAX_SAFE_INTEGER + 1] }),
     );
     consoleSpy.mockRestore();
+  });
+
+  it('parses an item_identity_duplicate envelope into KnownIdentityDuplicateError with mapped candidates', () => {
+    const result = parseSubmitErrorResponse(FIXTURE_ITEM_IDENTITY_DUPLICATE);
+
+    expect(result.ok).toBe(true);
+    expect(result.unknown).toBe(false);
+    const [error] = result.envelope!.errors;
+    expect(error.kind).toBe('known_identity_duplicate');
+    if (error.kind === 'known_identity_duplicate') {
+      expect(error.code).toBe('item_identity_duplicate');
+      expect(error.operation_line_ids).toEqual([11, 12]);
+      expect(error.requested_name).toBe('Болт М8');
+      expect(error.intra_batch).toBe(false);
+      expect(error.malformed).toBeUndefined();
+      expect(error.candidates).toEqual([
+        {
+          id: 500,
+          name: 'Болт М8',
+          sku: 'BOLT-M8',
+          unit: { id: 5, name: 'штука', symbol: 'шт' },
+          category: { id: 4, name: 'Крепёж' },
+          match: 'exact',
+        },
+        {
+          id: 501,
+          name: 'Болт М8 оцинк.',
+          sku: 'BOLT-M8Z',
+          unit: { id: 5, name: 'штука', symbol: 'шт' },
+          category: { id: 4, name: 'Крепёж' },
+          match: 'partial',
+        },
+      ]);
+    }
+  });
+
+  it('flags an item_identity_duplicate with empty candidates as intra_batch', () => {
+    const result = parseSubmitErrorResponse(FIXTURE_ITEM_IDENTITY_DUPLICATE_INTRA_BATCH);
+
+    expect(result.ok).toBe(true);
+    const [error] = result.envelope!.errors;
+    expect(error.kind).toBe('known_identity_duplicate');
+    if (error.kind === 'known_identity_duplicate') {
+      expect(error.requested_name).toBe('Болт М8');
+      expect(error.candidates).toEqual([]);
+      expect(error.intra_batch).toBe(true);
+    }
+  });
+
+  it('downgrades an item_identity_duplicate without requested_name to UnknownError and logs', () => {
+    const consoleSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+
+    const result = parseSubmitErrorResponse(FIXTURE_ITEM_IDENTITY_DUPLICATE_MISSING_REQUESTED_NAME);
+
+    expect(result.ok).toBe(true);
+    const [error] = result.envelope!.errors;
+    expect(error.kind).toBe('unknown');
+    if (error.kind === 'unknown') {
+      expect(error.code).toBe('item_identity_duplicate');
+      expect(error.scope).toBe('line_group');
+      expect(error.detail).toBe(FIXTURE_ITEM_IDENTITY_DUPLICATE_MISSING_REQUESTED_NAME.detail);
+    }
+
+    expect(consoleSpy).toHaveBeenCalledWith(
+      expect.stringContaining('missing_required_fields'),
+      expect.objectContaining({ code: 'item_identity_duplicate', scope: 'line_group' }),
+    );
+    consoleSpy.mockRestore();
+  });
+
+  it('flags an item_identity_duplicate with an unsafe line id as malformed and logs unsafe_integer', () => {
+    const consoleSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+
+    const result = parseSubmitErrorResponse({
+      ...FIXTURE_ITEM_IDENTITY_DUPLICATE,
+      errors: [
+        {
+          ...FIXTURE_ITEM_IDENTITY_DUPLICATE.errors[0],
+          operation_line_ids: [Number.MAX_SAFE_INTEGER + 1],
+        },
+      ],
+    });
+
+    expect(result.ok).toBe(true);
+    const [error] = result.envelope!.errors;
+    expect(error.kind).toBe('known_identity_duplicate');
+    if (error.kind === 'known_identity_duplicate') {
+      expect(error.operation_line_ids).toEqual([Number.MAX_SAFE_INTEGER + 1]);
+      expect(error.malformed).toBe(true);
+    }
+
+    expect(consoleSpy).toHaveBeenCalledWith(
+      expect.stringContaining('unsafe_integer'),
+      expect.objectContaining({ code: 'item_identity_duplicate' }),
+    );
+    consoleSpy.mockRestore();
+  });
+
+  it('normalizes non-object and partial identity candidates defensively', () => {
+    const result = parseSubmitErrorResponse({
+      ...FIXTURE_ITEM_IDENTITY_DUPLICATE,
+      errors: [
+        {
+          code: 'item_identity_duplicate',
+          scope: 'line_group',
+          operation_line_ids: [11],
+          requested_name: 'Болт М8',
+          candidates: [null, { id: 7, name: 'Болт М8', match: 'weird' }],
+        },
+      ],
+    });
+
+    expect(result.ok).toBe(true);
+    const [error] = result.envelope!.errors;
+    expect(error.kind).toBe('known_identity_duplicate');
+    if (error.kind === 'known_identity_duplicate') {
+      expect(error.intra_batch).toBe(false);
+      expect(error.candidates).toEqual([
+        { id: -1, name: '', match: 'partial' },
+        { id: 7, name: 'Болт М8', match: 'partial' },
+      ]);
+    }
   });
 
   it('parses a cancel-flow envelope (operation_cancel_rejected) with a line-group deficit', () => {

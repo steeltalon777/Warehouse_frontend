@@ -4,6 +4,8 @@ import {
   FIXTURE_AGGREGATED_LINE_GROUP,
   FIXTURE_INSUFFICIENT_STOCK_WITHOUT_UNIT,
   FIXTURE_INSUFFICIENT_STOCK_WITH_UNIT,
+  FIXTURE_ITEM_IDENTITY_DUPLICATE,
+  FIXTURE_ITEM_IDENTITY_DUPLICATE_INTRA_BATCH,
   FIXTURE_OPERATION_IN_WRONG_STATE,
   FIXTURE_OPERATION_NOT_FOUND,
   FIXTURE_ROLE_NOT_PERMITTED,
@@ -13,6 +15,7 @@ import {
 import {
   buildSubmitToasts,
   collectUnknownSubmitErrors,
+  formatIdentityDuplicateHint,
   formatSubmitStockHint,
   GENERIC_SUBMIT_ERROR_TOAST,
   lineGroupToast,
@@ -151,5 +154,57 @@ describe('submit-error-toasts', () => {
     const group = envelope.errors.find(e => e.kind === 'known_line_group')!;
     if (group.kind !== 'known_line_group') throw new Error('expected line group');
     expect(formatSubmitStockHint(group)).toBe('На складе: 5.000, запрошено: 10.000');
+  });
+
+  // ─── ADR-0033 item_identity_duplicate ──────────────────────────────────
+
+  it('item_identity_duplicate with candidates is a line-group toast, never generic (AC-12)', () => {
+    const envelope = parseFixture(FIXTURE_ITEM_IDENTITY_DUPLICATE);
+
+    const toasts = buildSubmitToasts(envelope);
+
+    expect(toasts).toEqual([lineGroupToast(2)]);
+    expect(toasts).not.toContain(GENERIC_SUBMIT_ERROR_TOAST);
+  });
+
+  it('item_identity_duplicate intra-batch (empty candidates) is still a line-group toast', () => {
+    const envelope = parseFixture(FIXTURE_ITEM_IDENTITY_DUPLICATE_INTRA_BATCH);
+
+    expect(buildSubmitToasts(envelope)).toEqual([lineGroupToast(2)]);
+  });
+
+  it('identity duplicate mixed with an operation error yields both toasts', () => {
+    const envelope = parseFixture({
+      ...FIXTURE_ITEM_IDENTITY_DUPLICATE,
+      errors: [
+        ...FIXTURE_ITEM_IDENTITY_DUPLICATE.errors,
+        ...FIXTURE_STALE_VERSION.errors,
+      ],
+    });
+
+    expect(buildSubmitToasts(envelope)).toEqual([
+      'Операция была изменена другим пользователем. Перечитайте данные.',
+      lineGroupToast(2),
+    ]);
+  });
+
+  it('formatIdentityDuplicateHint points to the existing position when candidates exist', () => {
+    const envelope = parseFixture(FIXTURE_ITEM_IDENTITY_DUPLICATE);
+    const error = envelope.errors.find(e => e.kind === 'known_identity_duplicate')!;
+    if (error.kind !== 'known_identity_duplicate') throw new Error('expected identity duplicate');
+
+    expect(formatIdentityDuplicateHint(error)).toBe(
+      'ТМЦ «Болт М8» уже существует в каталоге. Используйте существующую позицию',
+    );
+  });
+
+  it('formatIdentityDuplicateHint explains the intra-batch collision when candidates are empty', () => {
+    const envelope = parseFixture(FIXTURE_ITEM_IDENTITY_DUPLICATE_INTRA_BATCH);
+    const error = envelope.errors.find(e => e.kind === 'known_identity_duplicate')!;
+    if (error.kind !== 'known_identity_duplicate') throw new Error('expected identity duplicate');
+
+    expect(formatIdentityDuplicateHint(error)).toBe(
+      'ТМЦ «Болт М8» указана в нескольких строках операции одинаково',
+    );
   });
 });
