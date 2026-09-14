@@ -74,7 +74,10 @@ describe('TempItemDetailModalComponent', () => {
   });
 
   it('renders identity fields for every candidate and emits the chosen one', async () => {
-    const fixture = await createModal({ balances_per_site: [], identity_candidates: CANDIDATES });
+    const fixture = await createModal({
+      balances_per_site: [{ site_id: 's-1', site_name: 'Main', balance: 10 }],
+      identity_candidates: CANDIDATES,
+    });
 
     const rows = fixture.nativeElement.querySelectorAll('[data-testid="review-identity-candidate"]');
     expect(rows.length).toBe(2);
@@ -91,6 +94,7 @@ describe('TempItemDetailModalComponent', () => {
     fixture.componentInstance.mergeWithCandidate.subscribe((e: any) => (emitted = e));
 
     const buttons = fixture.nativeElement.querySelectorAll('[data-testid="review-identity-merge"]');
+    expect((buttons[1] as HTMLButtonElement).disabled).toBe(false);
     (buttons[1] as HTMLButtonElement).click();
 
     expect(emitted?.item.id).toBe('ti-1');
@@ -98,13 +102,10 @@ describe('TempItemDetailModalComponent', () => {
     expect(emitted?.candidate.name).toBe('Болт М8 оцинк.');
   });
 
-  it('disables the merge CTA when the item cannot be merged', async () => {
-    const blocked: TemporaryItemVm = {
-      ...mockItem,
-      canMergeToPermanent: false,
-      mergeBlockedReason: 'Нет остатка для слияния',
-    };
-    const fixture = await createModal({ balances_per_site: [], identity_candidates: CANDIDATES }, blocked);
+  it('disables the merge CTA when the review item has no balance', async () => {
+    // The list DTO carries no balance, so readiness must come from the detail:
+    // a zero-balance review item (e.g. still pending acceptance) must not merge.
+    const fixture = await createModal({ balances_per_site: [], identity_candidates: CANDIDATES });
 
     const buttons = fixture.nativeElement.querySelectorAll('[data-testid="review-identity-merge"]');
     expect(buttons.length).toBe(2);

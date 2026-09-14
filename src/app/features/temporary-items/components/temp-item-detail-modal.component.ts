@@ -1,4 +1,4 @@
-import { Component, input, output, OnInit, inject, signal, HostListener } from '@angular/core';
+import { Component, input, output, OnInit, inject, signal, computed, HostListener } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { TempItemsService } from '../../../core/services/temp-items.service';
@@ -79,8 +79,8 @@ import { IdentityCandidateDto, normalizeIdentityCandidates } from '../../../core
                         class="candidate-merge-btn"
                         type="button"
                         data-testid="review-identity-merge"
-                        [disabled]="!item().canMergeToPermanent"
-                        [title]="item().mergeBlockedReason || ''"
+                        [disabled]="!canMergeCandidate()"
+                        [title]="canMergeCandidate() ? '' : 'Нет остатка для слияния'"
                         (click)="mergeWithCandidate.emit({ item: item(), candidate: c })"
                       >Слить с существующим</button>
                     </div>
@@ -261,6 +261,12 @@ export class TempItemDetailModalComponent implements OnInit {
   readonly detail = signal<TempItemDetail | null>(null);
   readonly identityCandidates = signal<IdentityCandidateDto[]>([]);
   readonly balances = signal<TempItemBalancePerSite[]>([]);
+  /** ADR-0033 §7.2: the review list DTO carries no balance, so merge readiness
+   * is derived from the detail payload — the same rule the action flags use. */
+  readonly detailBalance = computed(() =>
+    this.balances().reduce((sum, row) => sum + Number(row.balance ?? 0), 0),
+  );
+  readonly canMergeCandidate = computed(() => this.detailBalance() > 0);
   readonly operations = signal<TempItemOperation[]>([]);
   readonly isLoading = signal(true);
 

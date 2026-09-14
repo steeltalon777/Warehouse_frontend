@@ -100,9 +100,20 @@ export class TempItemsService {
 
   async loadDetail(id: string): Promise<TempItemDetail | null> {
     try {
-      return await firstValueFrom(
+      const detail = await firstValueFrom(
         this.bffApi.getData<TempItemDetail>(`/review-items/${id}`)
       );
+      // SyncServer serializes review-item balances as `qty`; the UI model uses
+      // `balance`. Normalize at the DTO boundary so the modal renders real
+      // numbers and can gate the merge CTA on the actual stock.
+      if (detail?.balances_per_site) {
+        detail.balances_per_site = detail.balances_per_site.map((row: any) => ({
+          site_id: String(row?.site_id ?? ''),
+          site_name: String(row?.site_name ?? ''),
+          balance: Number(row?.balance ?? row?.qty ?? 0),
+        }));
+      }
+      return detail;
     } catch {
       return null;
     }

@@ -99,10 +99,10 @@ describe('TempItemsService', () => {
     expect(service.items()[0].canDelete).toBe(false);
   });
 
-  it('should load detail via getData', async () => {
+  it('should load detail via getData and normalize balance rows', async () => {
     const detail = {
       ...mockItem,
-      balances_per_site: [],
+      balances_per_site: [{ site_id: 5, site_name: 'Толочи', qty: 7 }],
       operations: [],
       identity_candidates: [{ id: 500, name: 'Болт М8', match: 'exact' }],
     };
@@ -111,8 +111,11 @@ describe('TempItemsService', () => {
     const result = await service.loadDetail('ti-1');
 
     expect(bffMock.getData).toHaveBeenCalledWith('/review-items/ti-1');
-    expect(result).toEqual(detail);
     expect(result?.identity_candidates?.length).toBe(1);
+    // SyncServer sends `qty`; the UI model needs `balance`.
+    expect(result?.balances_per_site).toEqual([
+      { site_id: '5', site_name: 'Толочи', balance: 7 },
+    ]);
   });
 
   it('should approve as item via postData', async () => {
