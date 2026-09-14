@@ -685,3 +685,117 @@ describe('OperationCreateModalComponent — ADR-0033 item_identity_duplicate sur
     expect(fixture.componentInstance.toasts()).toEqual([]);
   });
 });
+
+describe('OperationCreateModalComponent — Stage 1 view mode & RECEIVE-only inline create', () => {
+  beforeEach(() => {
+    mocks = createMocks();
+    configureTestBed();
+  });
+
+  function makeInlineLine(localId: string): OperationLineDraftVm {
+    return {
+      ...makeLine(localId, null),
+      inlineItem: {
+        clientKey: 'k1',
+        name: 'Агент позиция',
+        sku: null,
+        unitId: 'u1',
+        unitName: 'шт',
+        categoryId: null,
+        categoryName: null,
+        description: null,
+        hashtags: null,
+      },
+    };
+  }
+
+  async function createFixture(draft: OperationDraftVm | null) {
+    const fixture = TestBed.createComponent(OperationCreateModalComponent);
+    fixture.componentRef.setInput('sites', []);
+    fixture.componentRef.setInput('draft', draft);
+    await flush(fixture);
+    return fixture;
+  }
+
+  it('submitted operation renders as «Просмотр операции» with no save/submit/remove', async () => {
+    const fixture = await createFixture(
+      makeDraft({ id: 'op-1', status: 'submitted', lines: [makeLine('local-1')] }),
+    );
+
+    const title = fixture.nativeElement.querySelector('[data-design-id="modal-title"]');
+    expect(title.textContent.trim()).toBe('Просмотр операции');
+
+    expect(fixture.nativeElement.querySelector('[data-design-id="submit-btn"]')).toBeNull();
+    expect(fixture.nativeElement.querySelector('[data-design-id="save-draft-btn"]')).toBeNull();
+    expect(fixture.nativeElement.querySelector('.remove-btn')).toBeNull();
+
+    const qty = fixture.nativeElement.querySelector('.qty-input') as HTMLInputElement;
+    expect(qty).toBeTruthy();
+    expect(qty.disabled).toBe(true);
+  });
+
+  it('cancelled operation renders as «Операция отменена» read-only', async () => {
+    const fixture = await createFixture(
+      makeDraft({ id: 'op-2', status: 'cancelled', lines: [makeLine('local-1')] }),
+    );
+
+    const title = fixture.nativeElement.querySelector('[data-design-id="modal-title"]');
+    expect(title.textContent.trim()).toBe('Операция отменена');
+    expect(fixture.nativeElement.querySelector('.remove-btn')).toBeNull();
+    expect(fixture.nativeElement.querySelector('[data-design-id="submit-btn"]')).toBeNull();
+  });
+
+  it('keeps edit/create titles for draft operations', async () => {
+    const editFixture = await createFixture(
+      makeDraft({ id: 'op-3', status: 'draft', lines: [makeLine('local-1')] }),
+    );
+    expect(
+      editFixture.nativeElement
+        .querySelector('[data-design-id="modal-title"]')
+        .textContent.trim(),
+    ).toBe('Редактирование операции');
+
+    const newFixture = await createFixture(null);
+    expect(
+      newFixture.nativeElement
+        .querySelector('[data-design-id="modal-title"]')
+        .textContent.trim(),
+    ).toBe('Новая операция');
+  });
+
+  it('shows «Создать ТМЦ» only for RECEIVE', async () => {
+    const receiveFixture = await createFixture(
+      makeDraft({ type: 'RECEIVE', destinationSiteId: '21' }),
+    );
+    expect(
+      receiveFixture.nativeElement.querySelector('[data-design-id="item-create-btn"]'),
+    ).toBeTruthy();
+
+    for (const type of ['MOVE', 'EXPENSE', 'ISSUE', 'WRITE_OFF'] as const) {
+      const fixture = await createFixture(
+        makeDraft({ type, sourceSiteId: '21', destinationSiteId: '22' }),
+      );
+      expect(
+        fixture.nativeElement.querySelector('[data-design-id="item-create-btn"]'),
+        `type ${type} must not offer inline ТМЦ creation`,
+      ).toBeNull();
+    }
+  });
+
+  it('replaces temporary-item pills with a compact counter and no chips', async () => {
+    const fixture = await createFixture(
+      makeDraft({
+        type: 'RECEIVE',
+        destinationSiteId: '21',
+        lines: [makeInlineLine('local-1')],
+      }),
+    );
+
+    expect(fixture.nativeElement.querySelector('.inline-item-chip')).toBeNull();
+    expect(fixture.nativeElement.textContent).not.toContain('Временные позиции в операции');
+
+    const counter = fixture.nativeElement.querySelector('[data-testid="inline-items-count"]');
+    expect(counter).toBeTruthy();
+    expect(counter.textContent.trim()).toBe('Новых позиций: 1');
+  });
+});

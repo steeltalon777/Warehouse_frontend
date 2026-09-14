@@ -57,7 +57,7 @@ function currentDateTimeLocal(): string {
         <div class="modal-header" data-design-id="modal-header">
           <div class="modal-header__title-group">
             <div class="modal-header__title-row">
-              <h2 data-design-id="modal-title">{{ isEdit() ? 'Редактирование операции' : 'Новая операция' }}</h2>
+              <h2 data-design-id="modal-title">{{ modalTitle() }}</h2>
               @if (localDraft().displayNumber) {
                 <span class="modal-header__num">№ {{ localDraft().displayNumber }}</span>
               }
@@ -271,19 +271,16 @@ function currentDateTimeLocal(): string {
                     (refreshRequested)="onRefreshCheckItems()"
                   />
                   @if (inlineItemsForSearch().length > 0) {
-                    <div class="inline-search-hint">
-                      <span class="hint-label">Временные позиции в операции:</span>
-                      @for (inline of inlineItemsForSearch(); track inline.clientKey) {
-                        <button class="inline-item-chip" (click)="onInlineSearchSelected(inline)">
-                          {{ inline.name }} ({{ inline.unitName }})
-                        </button>
-                      }
-                    </div>
+                    <span class="inline-items-count" data-testid="inline-items-count">
+                      Новых позиций: {{ inlineItemsForSearch().length }}
+                    </span>
                   }
                 </div>
-                <button class="btn-tmc" data-design-id="item-create-btn" title="Создать новую ТМЦ для операции" (click)="openInlineModal()">
-                  Создать ТМЦ
-                </button>
+                @if (canCreateInlineItem()) {
+                  <button class="btn-tmc" data-design-id="item-create-btn" title="Создать новую ТМЦ для операции" (click)="openInlineModal()">
+                    Создать ТМЦ
+                  </button>
+                }
               </div>
             } @else {
               <div class="form-row form-row--full object-source-hint">
@@ -649,6 +646,12 @@ function currentDateTimeLocal(): string {
       display: flex;
       align-items: center;
       position: relative;
+    }
+    .inline-items-count {
+      margin-left: 10px;
+      font-size: 12px;
+      color: var(--f-muted);
+      white-space: nowrap;
     }
     .btn-tmc {
       flex: 0 0 auto;
@@ -1213,6 +1216,23 @@ export class OperationCreateModalComponent implements OnInit, OnDestroy {
     const status = this.localDraft().status;
     return status === 'submitted' || status === 'cancelled';
   });
+
+  /**
+   * Stage 1: conducted/cancelled operations are VIEW-only. The title must not
+   * promise editing for a read-only screen (correction is a separate workflow).
+   */
+  readonly modalTitle = computed(() => {
+    const status = this.localDraft().status;
+    if (status === 'submitted') return 'Просмотр операции';
+    if (status === 'cancelled') return 'Операция отменена';
+    return this.isEdit() ? 'Редактирование операции' : 'Новая операция';
+  });
+
+  /**
+   * Stage 1: inline temporary-item creation is only accepted by SyncServer for
+   * RECEIVE operations (`temporary_item` is rejected with 422 for other types).
+   */
+  readonly canCreateInlineItem = computed(() => this.localDraft().type === 'RECEIVE');
   readonly hasPrefilledAssetLine = computed(() => !!this.localDraft().prefilledAssetLine);
   readonly isMove = computed(() => this.localDraft().type === 'MOVE');
   readonly isObjectSourceFlow = computed(() => {
@@ -1565,34 +1585,6 @@ export class OperationCreateModalComponent implements OnInit, OnDestroy {
       ],
     }));
     this.closeInlineModal();
-  }
-
-  onInlineSearchSelected(inlineItem: OperationInlineItemDraftVm): void {
-    this.localDraft.update(d => ({
-      ...d,
-      lines: [
-        ...d.lines,
-        {
-          localId: nextLocalId(),
-          itemId: null,
-          itemName: inlineItem.name,
-          categoryName: inlineItem.categoryName || undefined,
-          sku: inlineItem.sku,
-          unitId: inlineItem.unitId,
-          unitName: inlineItem.unitName,
-          quantity: null,
-          availableQuantity: null,
-          sourceSiteQuantity: null,
-          isTemporary: false,
-          fromBalances: false,
-          lineNumber: d.lines.length + 1,
-          inlineItem: {
-            ...inlineItem,
-            // reuse same clientKey so backend groups lines by client_key
-          },
-        },
-      ],
-    }));
   }
 
   private preferredSiteId(): string | null {

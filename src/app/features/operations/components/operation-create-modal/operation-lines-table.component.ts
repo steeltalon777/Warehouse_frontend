@@ -176,13 +176,15 @@ export interface IdentityCandidateAction {
                 </div>
               </td>
               <td class="col-del">
-                <button
-                  class="remove-btn"
-                  [attr.data-design-id]="'item-row-' + (line.lineNumber ?? (n + 1)) + '-delete-btn'"
-                  (click)="removeLine.emit(line.localId)"
-                  title="Удалить"
-                  aria-label="Удалить позицию"
-                >×</button>
+                @if (!isReadonly()) {
+                  <button
+                    class="remove-btn"
+                    [attr.data-design-id]="'item-row-' + (line.lineNumber ?? (n + 1)) + '-delete-btn'"
+                    (click)="removeLine.emit(line.localId)"
+                    title="Удалить"
+                    aria-label="Удалить позицию"
+                  >×</button>
+                }
               </td>
             </tr>
             @if (submitErrorState(line.localId)) {

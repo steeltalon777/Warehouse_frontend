@@ -179,6 +179,10 @@ test.describe('Operation Create Modal — Layout', () => {
   test('add TMC row has 80% search and 20% disabled button', async ({ page }) => {
     await openCreateModal(page);
 
+    // Stage 1: inline ТМЦ creation is RECEIVE-only — select it before asserting.
+    await page.locator('.modal-overlay select').first().selectOption('RECEIVE');
+    await page.waitForTimeout(300);
+
     await expect(page.locator('.modal-overlay label:has-text("Добавить ТМЦ в операцию")')).toBeVisible();
     const searchInput = page.locator('.modal-overlay input[placeholder*="Поиск ТМЦ для добавления"]');
     await expect(searchInput).toBeVisible();

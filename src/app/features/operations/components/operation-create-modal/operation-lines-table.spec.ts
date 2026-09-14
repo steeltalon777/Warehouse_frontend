@@ -237,3 +237,49 @@ describe('OperationLinesTableComponent — balance column (refresh button moved 
     expect(fixture.nativeElement.querySelector('[data-testid="operation-lines-refresh-all"]')).toBeNull();
   });
 });
+
+describe('OperationLinesTableComponent — Stage 1 read-only mode', () => {
+  beforeEach(async () => {
+    await TestBed.configureTestingModule({
+      imports: [OperationLinesTableComponent],
+    }).compileComponents();
+  });
+
+  /** `[disabled]` on an ngModel control is applied by NgModel in a microtask. */
+  async function flush(fixture: ReturnType<typeof TestBed.createComponent>): Promise<void> {
+    for (let i = 0; i < 3; i++) {
+      fixture.detectChanges();
+      await Promise.resolve();
+    }
+  }
+
+  async function createFixture(isReadonly: boolean) {
+    const fixture = TestBed.createComponent(OperationLinesTableComponent);
+    fixture.componentRef.setInput('lines', LINES);
+    fixture.componentRef.setInput('operationType', 'MOVE');
+    fixture.componentRef.setInput('isReadonly', isReadonly);
+    await flush(fixture);
+    return fixture;
+  }
+
+  it('hides every remove button and disables qty inputs in read-only mode', async () => {
+    const fixture = await createFixture(true);
+
+    expect(fixture.nativeElement.querySelectorAll('.remove-btn').length).toBe(0);
+    const qtyInputs = fixture.nativeElement.querySelectorAll('.qty-input');
+    expect(qtyInputs.length).toBe(2);
+    for (const input of qtyInputs) {
+      expect((input as HTMLInputElement).disabled).toBe(true);
+    }
+  });
+
+  it('keeps remove buttons and editable qty inputs in draft mode', async () => {
+    const fixture = await createFixture(false);
+
+    expect(fixture.nativeElement.querySelectorAll('.remove-btn').length).toBe(2);
+    const qtyInputs = fixture.nativeElement.querySelectorAll('.qty-input');
+    for (const input of qtyInputs) {
+      expect((input as HTMLInputElement).disabled).toBe(false);
+    }
+  });
+});
