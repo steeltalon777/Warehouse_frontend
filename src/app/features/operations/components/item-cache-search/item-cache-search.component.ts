@@ -48,13 +48,18 @@ function toItem(searchItem: CatalogSearchItem): Item {
           class="wh-btn btn-refresh-check"
           data-design-id="item-check-btn"
           data-testid="btn-refresh-check-items"
-          [disabled]="isSearching()"
+          [disabled]="isSearching() || isRefreshing()"
           (click)="onRefreshCheck()"
-        >Обновить и проверить</button>
+        >{{ isRefreshing() ? 'Обновление...' : 'Обновить и проверить' }}</button>
       </div>
+      @if (refreshError()) {
+        <div class="search-refresh-error" data-testid="search-refresh-error" role="alert">
+          {{ refreshError() }}
+        </div>
+      }
       @if (searchText() && !selectedItem()) {
         <div class="search-dropdown">
-          @if (isLoading() || isSearching()) {
+          @if (isLoading() || isSearching() || isRefreshing()) {
             <div class="search-loading">Поиск...</div>
           } @else if (displayItems().length > 0) {
             @for (item of displayItems(); track item.id; let idx = $index) {
@@ -168,6 +173,11 @@ function toItem(searchItem: CatalogSearchItem): Item {
       color: #94A3B8;
       font-size: 13px;
     }
+    .search-refresh-error {
+      margin-top: 4px;
+      font-size: 12px;
+      color: #B91C1C;
+    }
     .selected-badge {
       display: inline-flex;
       align-items: center;
@@ -197,6 +207,13 @@ export class ItemCacheSearchComponent implements OnDestroy {
   itemName = input<string>('');
   sourceSiteId = input<string | null>(null);
   consistency = input<'fast' | 'authoritative' | undefined>(undefined);
+  /**
+   * Stage 3a: parent-provided search scope (operation type + sites). When it
+   * changes, the candidate snapshot is invalidated — old candidates are no
+   * longer considered verified. Query text is kept; operation lines are a
+   * different entity and are never touched here.
+   */
+  scopeKey = input<string>('');
 
   itemSelected = output<Item>();
   cleared = output<void>();
@@ -211,6 +228,8 @@ export class ItemCacheSearchComponent implements OnDestroy {
   readonly highlightedIndex = signal<number>(-1);
   readonly isFocused = signal<boolean>(false);
   readonly isLoading = signal<boolean>(false);
+  readonly isRefreshing = signal<boolean>(false);
+  readonly refreshError = signal<string | null>(null);
   readonly localResults = signal<CatalogSearchItem[]>([]);
 
   readonly isSearching = computed(() => this.catalogSearch.isSearchingItems());
@@ -218,12 +237,26 @@ export class ItemCacheSearchComponent implements OnDestroy {
   @ViewChild('inputEl') inputEl!: ElementRef<HTMLInputElement>;
   @ViewChild('wrapper') wrapperEl!: ElementRef<HTMLElement>;
 
+  private lastScope: string | undefined;
+
   constructor() {
     effect(() => {
       const name = this.itemName();
       if (name && !this.selectedItem()) {
         this.searchText.set(name);
       }
+    });
+
+    // Stage 3a: context invalidation. Any change of operation type/site scope
+    // or of the effective source site drops the previous candidate snapshot.
+    effect(() => {
+      const scope = `${this.scopeKey()}|${this.sourceSiteId() ?? ''}`;
+      if (this.lastScope !== undefined && scope !== this.lastScope) {
+        this.localResults.set([]);
+        this.refreshError.set(null);
+        this.highlightedIndex.set(-1);
+      }
+      this.lastScope = scope;
     });
 
     // Set up debounced search
@@ -273,6 +306,7 @@ export class ItemCacheSearchComponent implements OnDestroy {
   onSearchChange(value: string): void {
     this.searchText.set(value);
     this.highlightedIndex.set(-1);
+    this.refreshError.set(null);
     if (!value) {
       this.selectedItem.set(null);
       this.cleared.emit();
@@ -325,10 +359,51 @@ export class ItemCacheSearchComponent implements OnDestroy {
     this.searchText.set('');
     this.localResults.set([]);
     this.highlightedIndex.set(-1);
+    this.refreshError.set(null);
   }
 
+  /**
+   * Stage 3a «Обновить и проверить»:
+   *   A. explicit authoritative search refresh for the actual current query and
+   *      site — the returned candidate set fully replaces the previous one
+   *      (no old+new merge, no stale fast-cache rows);
+   *   B. then the parent is asked to re-validate the permanent items already
+   *      in the draft (batch resolve); inline/new draft rows are not part of
+   *      that resolve and are never removed.
+   * Balance refresh remains a separate button and is never triggered here.
+   */
   onRefreshCheck(): void {
-    this.refreshRequested.emit();
-    this.catalogSearch.refreshItemsAuthoritative();
+    if (this.isRefreshing()) return;
+
+    const query = this.searchText().trim();
+    if (query.length < 2) {
+      // Nothing to refresh in the candidate list — still run part B.
+      this.refreshRequested.emit();
+      return;
+    }
+
+    this.isRefreshing.set(true);
+    this.refreshError.set(null);
+
+    this.catalogSearch.refreshItemsAuthoritativeOnce(query, this.sourceSiteId())
+      .pipe(takeUntil(this.destroy$))
+      .subscribe({
+        next: items => {
+          // Full replacement: the authoritative snapshot is the whole set.
+          this.localResults.set(items);
+          this.highlightedIndex.set(-1);
+          this.isRefreshing.set(false);
+          this.refreshRequested.emit();
+        },
+        error: err => {
+          // Keep the old snapshot visible but unverified: never pretend it is
+          // the fresh authoritative state.
+          this.refreshError.set(
+            err?.error?.message || err?.message || 'Не удалось обновить список ТМЦ. Повторите попытку.',
+          );
+          this.isRefreshing.set(false);
+          this.refreshRequested.emit();
+        },
+      });
   }
 }

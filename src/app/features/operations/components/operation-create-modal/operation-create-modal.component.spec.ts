@@ -78,7 +78,7 @@ interface Mocks {
   diagMock: { track: ReturnType<typeof vi.fn> };
   draftStorageMock: { load: ReturnType<typeof vi.fn>; save: ReturnType<typeof vi.fn>; clear: ReturnType<typeof vi.fn> };
   bffMock: { setCurrentDraftId: ReturnType<typeof vi.fn> };
-  catalogSearchMock: { isSearchingItems: ReturnType<typeof vi.fn>; searchItemsOnce: ReturnType<typeof vi.fn>; refreshItemsAuthoritative: ReturnType<typeof vi.fn>; resolveItems: ReturnType<typeof vi.fn> };
+  catalogSearchMock: { isSearchingItems: ReturnType<typeof vi.fn>; searchItemsOnce: ReturnType<typeof vi.fn>; refreshItemsAuthoritativeOnce: ReturnType<typeof vi.fn>; resolveItems: ReturnType<typeof vi.fn> };
 }
 
 function createMocks(): Mocks {
@@ -105,7 +105,7 @@ function createMocks(): Mocks {
     catalogSearchMock: {
       isSearchingItems: vi.fn(() => false),
       searchItemsOnce: vi.fn(() => of([])),
-      refreshItemsAuthoritative: vi.fn(),
+      refreshItemsAuthoritativeOnce: vi.fn(() => of([])),
       resolveItems: vi.fn(() => of([])),
     },
   };
@@ -919,5 +919,88 @@ describe('OperationCreateModalComponent — Stage 2 inline temporary-item editin
     expect(fixture.nativeElement.querySelector('.inline-name-input')).toBeNull();
     expect(fixture.nativeElement.querySelector('[data-testid="inline-card-edit"]')).toBeNull();
     expect(fixture.nativeElement.textContent).toContain('Старое имя');
+  });
+});
+
+describe('OperationCreateModalComponent — Stage 3a authoritative refresh', () => {
+  beforeEach(() => {
+    mocks = createMocks();
+    configureTestBed();
+  });
+
+  function makeInlineItem(name: string) {
+    return {
+      clientKey: 'inline-key-1',
+      name,
+      sku: null,
+      unitId: 'u1',
+      unitName: 'шт',
+      categoryId: null,
+      categoryName: null,
+      description: null,
+      hashtags: null,
+    };
+  }
+
+  function makeInlineLine(localId: string, name: string): OperationLineDraftVm {
+    return {
+      ...makeLine(localId, null),
+      itemName: name,
+      inlineItem: makeInlineItem(name),
+    };
+  }
+
+  async function createFixture(draft: OperationDraftVm) {
+    const fixture = TestBed.createComponent(OperationCreateModalComponent);
+    fixture.componentRef.setInput('sites', []);
+    fixture.componentRef.setInput('draft', draft);
+    await flush(fixture);
+    return fixture;
+  }
+
+  it('onRefreshCheckItems re-validates permanent items only and never touches balances', async () => {
+    const fixture = await createFixture(
+      makeDraft({
+        type: 'RECEIVE',
+        destinationSiteId: '21',
+        lines: [makeLine('local-1', '1'), makeInlineLine('local-2', 'Новая позиция')],
+      }),
+    );
+    mocks.serviceMock.loadBalancesForItems.mockClear();
+    mocks.serviceMock.validateLinesBeforePersist.mockClear();
+
+    await fixture.componentInstance.onRefreshCheckItems();
+    await flush(fixture);
+
+    expect(mocks.serviceMock.validateLinesBeforePersist).toHaveBeenCalledTimes(1);
+    expect(mocks.serviceMock.loadBalancesForItems).not.toHaveBeenCalled();
+    // Lines are annotated, never removed.
+    expect(fixture.componentInstance.localDraft().lines.length).toBe(2);
+    const inline = fixture.componentInstance.localDraft().lines.find(l => l.localId === 'local-2');
+    expect(inline?.inlineItem?.name).toBe('Новая позиция');
+  });
+
+  it('searchScopeKey changes on type and site change while operation lines survive', async () => {
+    const fixture = await createFixture(
+      makeDraft({
+        type: 'MOVE',
+        sourceSiteId: '10',
+        destinationSiteId: '20',
+        lines: [makeLine('local-1', '1')],
+      }),
+    );
+    const initialScope = fixture.componentInstance.searchScopeKey();
+    expect(initialScope).toBe('MOVE|10|20');
+
+    fixture.componentRef.setInput('draft', makeDraft({
+      type: 'MOVE',
+      sourceSiteId: '11',
+      destinationSiteId: '20',
+      lines: [makeLine('local-1', '1')],
+    }));
+    await flush(fixture);
+
+    expect(fixture.componentInstance.searchScopeKey()).toBe('MOVE|11|20');
+    expect(fixture.componentInstance.localDraft().lines.length).toBe(1);
   });
 });

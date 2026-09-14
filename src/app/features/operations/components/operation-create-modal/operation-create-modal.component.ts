@@ -267,6 +267,7 @@ function currentDateTimeLocal(): string {
                     [placeholder]="'Поиск ТМЦ для добавления: название, SKU или хештег...'"
                     [sourceSiteId]="relevantSiteId()"
                     [consistency]="'authoritative'"
+                    [scopeKey]="searchScopeKey()"
                     (itemSelected)="onNewItemSelected($event)"
                     (refreshRequested)="onRefreshCheckItems()"
                   />
@@ -1387,6 +1388,16 @@ export class OperationCreateModalComponent implements OnInit, OnDestroy {
     return d.sourceSiteId ?? null;
   });
 
+  /**
+   * Stage 3a: search scope for the item search component. Any change
+   * (operation type, source site, destination site) invalidates the previous
+   * candidate snapshot; already added operation lines are unaffected.
+   */
+  readonly searchScopeKey = computed(() => {
+    const d = this.localDraft();
+    return `${d.type}|${d.sourceSiteId ?? ''}|${d.destinationSiteId ?? ''}`;
+  });
+
   readonly logicalWarehouseSiteId = computed(() => {
     const d = this.localDraft();
     return d.type === 'RECEIVE' ? (d.destinationSiteId ?? null) : (d.sourceSiteId ?? null);
@@ -2410,13 +2421,13 @@ export class OperationCreateModalComponent implements OnInit, OnDestroy {
   }
 
   /**
-   * TZ-V3.2 §5.2 (W1.2): re-validate persisted draft lines against the
-   * catalog after a cache refresh. The item-cache-search emits
-   * `refreshRequested` when the user clicks «Обновить и проверить»
-   * (btn-refresh-check-items); this handler batch-resolves the draft's
-   * persisted item IDs and annotates each line with its resolver status via
-   * the service. Unusable lines (merged/inactive/deleted/missing) then block
-   * Save/Submit through `hasUnusableLines()`.
+   * Stage 3a «Обновить и проверить», part B: after the item-cache-search has
+   * replaced its candidate set with the authoritative response (part A inside
+   * the search component), re-validate the permanent items already selected in
+   * the draft via the batch resolve endpoint. Inline/new draft rows carry no
+   * permanent item_id and are skipped by `validateLinesBeforePersist` — they
+   * are never resolved and never silently removed. This handler does NOT touch
+   * balances («Обновить остатки» is a separate button).
    */
   async onRefreshCheckItems(): Promise<void> {
     return this.validateAndApplyLineStatuses();

@@ -1,8 +1,8 @@
 import { Injectable, signal, computed, OnDestroy } from '@angular/core';
-import { Observable, Subject, of, throwError, timer } from 'rxjs';
-import { switchMap, filter, debounceTime, distinctUntilChanged, takeUntil, catchError, map, tap } from 'rxjs/operators';
+import { Observable, Subject, of, throwError } from 'rxjs';
+import { takeUntil, catchError, map, finalize } from 'rxjs/operators';
 import { BffApiService } from '../api/bff-api.service';
-import { ConsistencyMode, ResolvedItemDto, ItemResolveStatus } from '../models/operations.models';
+import { ConsistencyMode, ResolvedItemDto } from '../models/operations.models';
 
 export interface CatalogSearchItem {
   id: string;
@@ -56,10 +56,8 @@ export class CatalogSearchService implements OnDestroy {
   private readonly defaultLimit = 20;
 
   private readonly destroy$ = new Subject<void>();
-  private readonly searchQuery$ = new Subject<string>();
 
   // State signals
-  readonly itemSearchQuery = signal<string>('');
   readonly categorySearchQuery = signal<string>('');
   readonly unitSearchQuery = signal<string>('');
 
@@ -67,11 +65,9 @@ export class CatalogSearchService implements OnDestroy {
   readonly isSearchingCategories = signal<boolean>(false);
   readonly isSearchingUnits = signal<boolean>(false);
 
-  readonly itemSearchError = signal<string | null>(null);
   readonly categorySearchError = signal<string | null>(null);
   readonly unitSearchError = signal<string | null>(null);
 
-  readonly itemResults = signal<CatalogSearchItem[]>([]);
   readonly categoryResults = signal<CatalogSearchCategory[]>([]);
   readonly unitResults = signal<CatalogSearchUnit[]>([]);
 
@@ -82,7 +78,6 @@ export class CatalogSearchService implements OnDestroy {
   readonly isLoading = computed(() => this.isSearchingItems() || this.isSearchingCategories() || this.isSearchingUnits());
 
   constructor(private bff: BffApiService) {
-    this.initItemSearch();
     this.initCategorySearch();
   }
 
@@ -91,101 +86,31 @@ export class CatalogSearchService implements OnDestroy {
     this.destroy$.complete();
   }
 
-  // ─── Item Search with Consistency (TZ D1/D2) ────────────────────
-
-  private _lastSourceSiteId?: string;
-  private _lastIncludeBalance?: boolean;
-  private _lastConsistency?: ConsistencyMode;
-
-  searchItems(query: string, limit: number = this.defaultLimit, sourceSiteId?: string, includeBalance?: boolean, consistency?: ConsistencyMode): void {
-    this.itemSearchQuery.set(query);
-
-    if (!query || query.trim().length < 2) {
-      this.itemResults.set([]);
-      this.isSearchingItems.set(false);
-      return;
-    }
-
-    this._lastSourceSiteId = sourceSiteId;
-    this._lastIncludeBalance = includeBalance;
-    this._lastConsistency = consistency;
-    this.searchQuery$.next(query);
-  }
+  // ─── Item search (stateless once-calls) ─────────────────────────
 
   /**
-   * TZ D2: refresh current search with authoritative mode.
-   * Cancels the current debounced stream and re-runs the current query
-   * directly with consistency=authoritative.
+   * Stage 3a: parameters of the last actual item search. The explicit
+   * «Обновить и проверить» refresh re-runs the authoritative request for the
+   * actual current query/context instead of the previously dead itemSearchQuery
+   * signal that `searchItemsOnce` never filled.
    */
-  refreshItemsAuthoritative(): void {
-    const currentQuery = this.itemSearchQuery();
-    if (!currentQuery || currentQuery.trim().length < 2) return;
+  private lastItemsSearch: {
+    query: string;
+    limit: number;
+    sourceSiteId?: string;
+    includeBalance?: boolean;
+  } | null = null;
 
-    this._lastConsistency = 'authoritative';
-    this.isSearchingItems.set(true);
-    this.itemSearchError.set(null);
-
-    this.performItemSearch(
-      currentQuery,
-      this.defaultLimit,
-      this._lastSourceSiteId,
-      this._lastIncludeBalance,
-      'authoritative',
-    ).pipe(
-      takeUntil(this.destroy$),
-      catchError(err => {
-        console.error('Authoritative item search error:', err);
-        this.itemSearchError.set(err.message || 'Ошибка авторитетного поиска');
-        this.itemResults.set([]);
-        this.isSearchingItems.set(false);
-        return of({ results: [] } as CatalogSearchResults<CatalogSearchItem>);
-      })
-    ).subscribe(response => {
-      this.itemResults.set(response.results || []);
-      this.isSearchingItems.set(false);
-      this._lastConsistency = undefined;
-    });
-  }
-
-  private initCategorySearch(): void {
-    // reserved — category search implementation coming in a future PR.
-  }
-
-  private initItemSearch(): void {
-    this.searchQuery$.pipe(
-      debounceTime(150),
-      distinctUntilChanged(),
-      takeUntil(this.destroy$),
-      tap(() => {
-        this.isSearchingItems.set(true);
-        this.itemSearchError.set(null);
-      }),
-      switchMap(query => this.performItemSearch(
-        query,
-        this.defaultLimit,
-        this._lastSourceSiteId,
-        this._lastIncludeBalance,
-        this._lastConsistency,
-      )),
-      catchError(err => {
-        console.error('Item search error:', err);
-        this.itemSearchError.set(err.message || 'Ошибка поиска');
-        this.itemResults.set([]);
-        return of({ results: [] } as CatalogSearchResults<CatalogSearchItem>);
-      })
-    ).subscribe(response => {
-      this.itemResults.set(response.results || []);
-      this.isSearchingItems.set(false);
-    });
-  }
-
-  private performItemSearch(
-    query: string,
-    limit: number = this.defaultLimit,
-    sourceSiteId?: string,
-    includeBalance?: boolean,
-    consistency?: ConsistencyMode,
-  ): Observable<CatalogSearchResults<CatalogSearchItem>> {
+  /**
+   * TZ D1/D2: one-off (stateless) item search used by the operation modal,
+   * the operations list filter and explicit refreshes. Results are deduped by
+   * stable item ID only — same-name items with different IDs stay distinct.
+   */
+  searchItemsOnce(query: string, limit: number = this.defaultLimit, sourceSiteId?: string, includeBalance?: boolean, consistency?: ConsistencyMode): Observable<CatalogSearchItem[]> {
+    if (!query || query.trim().length < 2) {
+      return of([]);
+    }
+    this.lastItemsSearch = { query, limit, sourceSiteId, includeBalance };
     const params: Record<string, string | number | boolean> = { q: query, limit };
     if (sourceSiteId) params['source_site_id'] = sourceSiteId;
     if (includeBalance) params['include_balance'] = true;
@@ -193,13 +118,43 @@ export class CatalogSearchService implements OnDestroy {
     return this.bff.getData<CatalogSearchResults<CatalogSearchItem>>(
       `${this.basePath}/items`,
       params
+    ).pipe(
+      map(response => dedupeItemsById(response.results || []))
     );
   }
 
-  clearItemSearch(): void {
-    this.itemSearchQuery.set('');
-    this.itemResults.set([]);
-    this.itemSearchError.set(null);
+  /**
+   * Stage 3a: explicit authoritative refresh for the current search state.
+   *
+   * Always issues `consistency=authoritative` (BFF reaches SyncServer directly
+   * and never merges the local catalog cache for that mode) and returns the
+   * complete authoritative candidate set for full replacement in the UI.
+   * Falls back to the last `searchItemsOnce` parameters when not supplied.
+   */
+  refreshItemsAuthoritativeOnce(query?: string, sourceSiteId?: string | null): Observable<CatalogSearchItem[]> {
+    const effectiveQuery = (query ?? this.lastItemsSearch?.query ?? '').trim();
+    if (effectiveQuery.length < 2) {
+      return of([]);
+    }
+    const effectiveSite = sourceSiteId !== undefined
+      ? (sourceSiteId ?? undefined)
+      : this.lastItemsSearch?.sourceSiteId;
+    const limit = this.lastItemsSearch?.limit ?? this.defaultLimit;
+    const includeBalance = this.lastItemsSearch?.includeBalance ?? false;
+    this.isSearchingItems.set(true);
+    return this.searchItemsOnce(
+      effectiveQuery,
+      limit,
+      effectiveSite,
+      includeBalance,
+      'authoritative',
+    ).pipe(
+      finalize(() => this.isSearchingItems.set(false)),
+    );
+  }
+
+  private initCategorySearch(): void {
+    // reserved — category search implementation coming in a future PR.
   }
 
   // ─── Batch Item Resolver (TZ D2/D3) ───────────────────────────
@@ -337,22 +292,6 @@ export class CatalogSearchService implements OnDestroy {
 
   // ─── Direct Search Methods (for one-off calls) ─────────────────
 
-  searchItemsOnce(query: string, limit: number = this.defaultLimit, sourceSiteId?: string, includeBalance?: boolean, consistency?: ConsistencyMode): Observable<CatalogSearchItem[]> {
-    if (!query || query.trim().length < 2) {
-      return of([]);
-    }
-    const params: Record<string, string | number | boolean> = { q: query, limit };
-    if (sourceSiteId) params['source_site_id'] = sourceSiteId;
-    if (includeBalance) params['include_balance'] = true;
-    if (consistency) params['consistency'] = consistency;
-    return this.bff.getData<CatalogSearchResults<CatalogSearchItem>>(
-      `${this.basePath}/items`,
-      params
-    ).pipe(
-      map(response => response.results || [])
-    );
-  }
-
   searchCategoriesOnce(query: string, limit: number = this.defaultLimit): Observable<CatalogSearchCategory[]> {
     if (!query || query.trim().length < 1) {
       return of([]);
@@ -385,4 +324,20 @@ export class CatalogSearchService implements OnDestroy {
       map(units => filterUnits(units))
     );
   }
+}
+
+/**
+ * Stage 3a: candidate identity is the stable item ID. Deduplicate by ID only —
+ * identical human names with different IDs are two distinct real items.
+ */
+export function dedupeItemsById(items: CatalogSearchItem[]): CatalogSearchItem[] {
+  const seen = new Set<string>();
+  const result: CatalogSearchItem[] = [];
+  for (const item of items) {
+    const id = String(item?.id ?? '');
+    if (!id || seen.has(id)) continue;
+    seen.add(id);
+    result.push(item);
+  }
+  return result;
 }
