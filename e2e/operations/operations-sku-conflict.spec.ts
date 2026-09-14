@@ -56,7 +56,10 @@ test.describe('OPS-INLINE-SMOKE-001 — Inline item creation without SKU', () =>
     // Inline modal should close
     await expect(inlineModal).toHaveCount(0, { timeout: 5000 });
 
-    // Item appears in operation lines table
-    await expect(page.locator('app-operation-lines-table')).toContainText(itemName, { timeout: 5000 });
+    // Item appears in operation lines table (Stage 2: the inline name is an
+    // editable input, so assert its value rather than cell text).
+    await expect(page.locator('app-operation-lines-table .inline-name-input')).toHaveValue(itemName, {
+      timeout: 5000,
+    });
   });
 });

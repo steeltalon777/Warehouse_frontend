@@ -248,12 +248,12 @@ test.describe('ADR-0033 identity guard E2E', () => {
 
     // Swap the inline line to the existing catalog item; qty must survive.
     const lineRow = page.locator('.modal-overlay tbody tr.row--has-error').first();
-    const qtyBefore = await lineRow.locator('input').first().inputValue();
+    const qtyBefore = await lineRow.locator('.qty-input').first().inputValue();
     await page.locator('[data-testid="identity-candidate-use"]').first().click();
 
     const swappedRow = page.locator(`.modal-overlay tbody tr:has-text("ID ${canonicalId}")`).first();
     await expect(swappedRow).toBeVisible({ timeout: 10000 });
-    expect(await swappedRow.locator('input').first().inputValue()).toBe(qtyBefore);
+    expect(await swappedRow.locator('.qty-input').first().inputValue()).toBe(qtyBefore);
     await expect(page.locator('[data-testid="identity-duplicate-candidates"]')).toHaveCount(0);
 
     // Re-submit goes through.

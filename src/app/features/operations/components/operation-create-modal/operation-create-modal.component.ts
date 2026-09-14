@@ -354,6 +354,8 @@ function currentDateTimeLocal(): string {
             (quantityChange)="onQuantityChange($event.localId, $event.quantity)"
             (removeLine)="removeLine($event)"
             (useIdentityCandidate)="onUseIdentityCandidate($event.localId, $event.candidate)"
+            (inlineNameCommit)="onInlineNameCommit($event.localId, $event.name)"
+            (editInlineCard)="openInlineCardEdit($event)"
           />
         </div>
 
@@ -409,7 +411,9 @@ function currentDateTimeLocal(): string {
       @if (isInlineModalOpen()) {
         <div class="wh-modal modal-container modal-container--inline">
           <app-inline-item-create-modal
+            [initialItem]="editingInlineItem()"
             (create)="onInlineItemCreated($event)"
+            (update)="onInlineItemUpdated($event)"
             (cancel)="closeInlineModal()"
           />
         </div>
@@ -1541,6 +1545,15 @@ export class OperationCreateModalComponent implements OnInit, OnDestroy {
 
   readonly isInlineModalOpen = signal(false);
 
+  /** Stage 2: localId of the inline line whose full card is being edited (null = create). */
+  readonly editingInlineLineId = signal<string | null>(null);
+
+  readonly editingInlineItem = computed<OperationInlineItemDraftVm | null>(() => {
+    const localId = this.editingInlineLineId();
+    if (!localId) return null;
+    return this.localDraft().lines.find(l => l.localId === localId)?.inlineItem ?? null;
+  });
+
   readonly inlineItemsForSearch = computed(() => {
     const seen = new Set<string>();
     const result: OperationInlineItemDraftVm[] = [];
@@ -1554,11 +1567,65 @@ export class OperationCreateModalComponent implements OnInit, OnDestroy {
   });
 
   openInlineModal(): void {
+    this.editingInlineLineId.set(null);
+    this.isInlineModalOpen.set(true);
+  }
+
+  openInlineCardEdit(localId: string): void {
+    this.editingInlineLineId.set(localId);
     this.isInlineModalOpen.set(true);
   }
 
   closeInlineModal(): void {
     this.isInlineModalOpen.set(false);
+    this.editingInlineLineId.set(null);
+  }
+
+  /**
+   * Stage 2 inline rename: `line.inlineItem.name` is the single source of
+   * truth; `line.itemName` is only a one-way display copy for legacy consumers.
+   * The change is local to localDraft — persistence happens through the
+   * existing Save draft / save-before-submit paths.
+   */
+  onInlineNameCommit(localId: string, name: string): void {
+    this.localDraft.update(d => ({
+      ...d,
+      lines: d.lines.map(line =>
+        line.localId === localId && line.inlineItem
+          ? {
+              ...line,
+              itemName: name,
+              inlineItem: { ...line.inlineItem, name },
+            }
+          : line,
+      ),
+    }));
+  }
+
+  /**
+   * Stage 2 full card edit: update the existing line's inline payload in place.
+   * Never appends a line, never creates an item, and never changes clientKey.
+   */
+  onInlineItemUpdated(inlineItem: OperationInlineItemDraftVm): void {
+    const localId = this.editingInlineLineId();
+    if (!localId) return;
+    this.localDraft.update(d => ({
+      ...d,
+      lines: d.lines.map(line =>
+        line.localId === localId && line.inlineItem
+          ? {
+              ...line,
+              itemName: inlineItem.name,
+              sku: inlineItem.sku,
+              unitId: inlineItem.unitId,
+              unitName: inlineItem.unitName,
+              categoryName: inlineItem.categoryName || line.categoryName,
+              inlineItem: { ...inlineItem, clientKey: line.inlineItem.clientKey },
+            }
+          : line,
+      ),
+    }));
+    this.closeInlineModal();
   }
 
   onInlineItemCreated(inlineItem: OperationInlineItemDraftVm): void {

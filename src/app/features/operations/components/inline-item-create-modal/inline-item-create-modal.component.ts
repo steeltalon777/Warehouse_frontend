@@ -1,4 +1,4 @@
-import { Component, output, signal, computed, inject, OnInit, OnDestroy } from '@angular/core';
+import { Component, input, output, signal, computed, inject, OnInit, OnDestroy } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { Subject } from 'rxjs';
@@ -21,14 +21,20 @@ function generateClientKey(): string {
     <div class="modal-overlay">
       <div class="modal-container">
         <div class="modal-header">
-          <h2>Создание ТМЦ</h2>
+          <h2>{{ isEditMode() ? 'Редактирование ТМЦ' : 'Создание ТМЦ' }}</h2>
           <button class="btn-close" aria-label="Закрыть" (click)="cancel.emit()">×</button>
         </div>
 
         <div class="modal-body">
-          <p class="helper-text">
-            Позиция будет добавлена в черновик операции. Постоянная ТМЦ появится в справочнике после подтверждения операции.
-          </p>
+          @if (isEditMode()) {
+            <p class="helper-text">
+              Позиция ещё не создана в справочнике: изменения сохранятся в черновике операции и применятся при её подтверждении.
+            </p>
+          } @else {
+            <p class="helper-text">
+              Позиция будет добавлена в черновик операции. Постоянная ТМЦ появится в справочнике после подтверждения операции.
+            </p>
+          }
 
           <div class="form-fields">
             <!-- Название -->
@@ -37,6 +43,7 @@ function generateClientKey(): string {
               <input
                 type="text"
                 class="input"
+                data-testid="inline-item-name"
                 [ngModel]="name()"
                 (ngModelChange)="onNameChange($event)"
                 placeholder="Введите название ТМЦ"
@@ -122,6 +129,7 @@ function generateClientKey(): string {
               <label>Описание</label>
               <textarea
                 class="input textarea"
+                data-testid="inline-item-description"
                 rows="3"
                 [ngModel]="description()"
                 (ngModelChange)="onDescriptionChange($event)"
@@ -136,10 +144,11 @@ function generateClientKey(): string {
             <button class="btn btn-secondary" (click)="cancel.emit()">Отмена</button>
             <button
               class="btn btn-primary"
+              data-testid="inline-item-save"
               [disabled]="!canSubmit()"
-              (click)="onCreate()"
+              (click)="onSave()"
             >
-              Создать и добавить
+              {{ isEditMode() ? 'Сохранить' : 'Создать и добавить' }}
             </button>
           </div>
         </div>
@@ -333,8 +342,18 @@ function generateClientKey(): string {
   `]
 })
 export class InlineItemCreateModalComponent implements OnInit, OnDestroy {
+  /**
+   * Stage 2: when set, the modal edits the given draft temporary item in place
+   * (no new line/item, clientKey preserved). Null → create mode.
+   */
+  initialItem = input<OperationInlineItemDraftVm | null>(null);
+
   cancel = output<void>();
   create = output<OperationInlineItemDraftVm>();
+  /** Stage 2: edit-mode result for the existing line. */
+  update = output<OperationInlineItemDraftVm>();
+
+  readonly isEditMode = computed(() => !!this.initialItem());
 
   // State signals
   readonly name = signal('');
@@ -381,6 +400,19 @@ export class InlineItemCreateModalComponent implements OnInit, OnDestroy {
     ).subscribe(query => {
       this.performCategorySearch(query);
     });
+
+    const initial = this.initialItem();
+    if (initial) {
+      // Edit mode: prefill from the current draft payload. Do not run the
+      // default-unit preload — it would overwrite the item's unit.
+      this.name.set(initial.name ?? '');
+      this.unitId.set(initial.unitId != null ? String(initial.unitId) : '');
+      this.unitName.set(initial.unitName ?? '');
+      this.categoryId.set(initial.categoryId != null ? String(initial.categoryId) : '');
+      this.categoryName.set(initial.categoryName ?? '');
+      this.description.set(initial.description ?? '');
+      return;
+    }
 
     // Preload default unit "Штука"
     this.loadDefaultUnit();
@@ -513,21 +545,27 @@ export class InlineItemCreateModalComponent implements OnInit, OnDestroy {
     });
   }
 
-  onCreate(): void {
+  onSave(): void {
     if (!this.validate()) {
       return;
     }
+    const initial = this.initialItem();
     const payload: OperationInlineItemDraftVm = {
-      clientKey: generateClientKey(),
+      // Edit mode keeps the stable line identity: same clientKey, no new line.
+      clientKey: initial?.clientKey ?? generateClientKey(),
       name: this.name().trim(),
-      sku: null,
+      sku: initial?.sku ?? null,
       unitId: this.unitId(),
       unitName: this.unitName(),
       categoryId: this.categoryId() || null,
       categoryName: this.categoryName() || null,
       description: this.description().trim() || null,
-      hashtags: null,
+      hashtags: initial?.hashtags ?? null,
     };
+    if (initial) {
+      this.update.emit(payload);
+      return;
+    }
     this.create.emit(payload);
   }
 

@@ -8,7 +8,7 @@ import { CatalogSearchService } from '../../../../core/services/catalog-search.s
 import { DocumentsService } from '../../../../core/services/documents.service';
 import { DiagnosticsService } from '../../../../core/diagnostics/diagnostics.service';
 import { DraftStorageService } from '../../../../core/services/draft-storage.service';
-import { snapshotDraft } from '../../components/operation-create-modal/operation-draft-mappers';
+import { snapshotDraft, mergeInlineItemAfterSave } from '../../components/operation-create-modal/operation-draft-mappers';
 import {
   OperationsFilterVm,
   OperationListRowVm,
@@ -1036,7 +1036,7 @@ export class OperationsPageComponent implements OnInit, OnDestroy {
           destinationSiteQuantity: line.destinationSiteQuantity ?? serverLine.destinationSiteQuantity,
           isTemporary: line.isTemporary || serverLine.isTemporary,
           fromBalances: line.fromBalances || serverLine.fromBalances,
-          inlineItem: line.inlineItem ?? serverLine.inlineItem ?? null,
+          inlineItem: mergeInlineItemAfterSave(line.inlineItem, serverLine.inlineItem),
           serverLineId: serverLine.serverLineId ?? line.serverLineId ?? null,
           lineNumber: serverLine.lineNumber ?? line.lineNumber ?? index + 1,
         };

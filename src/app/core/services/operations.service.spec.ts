@@ -690,8 +690,41 @@ describe('OperationsService', () => {
     expect(draft.lines[1].lineNumber).toBe(2);
   });
 
-  it('mapDtoToDraftVm handles empty lines', () => {
+  it('mapDtoToDraftVm keeps inline temporary unit/category ids as strings (Stage 2)', () => {
     const dto: OperationDto = {
+      id: 'op-2',
+      number: 'OP-002',
+      type: 'RECEIVE',
+      status: 'draft',
+      destination_site_id: '20',
+      created_at: '2026-01-01T00:00:00Z',
+      updated_at: '2026-01-01T00:00:00Z',
+      lines: [
+        {
+          id: 5 as any,
+          qty: '3',
+          is_draft_temporary: true,
+          temporary_draft_payload: {
+            client_key: 'k1',
+            name: 'Новая позиция',
+            unit_id: 7 as any,
+            category_id: 9 as any,
+            description: null,
+            hashtags: null,
+          } as any,
+        },
+      ],
+    } as OperationDto;
+
+    const draft = service.mapDtoToDraftVm(dto);
+    const inline = draft.lines[0].inlineItem!;
+    expect(inline.unitId).toBe('7');
+    expect(inline.categoryId).toBe('9');
+    expect(typeof inline.unitId).toBe('string');
+    expect(typeof inline.categoryId).toBe('string');
+  });
+
+  it('mapDtoToDraftVm handles empty lines', () => {    const dto: OperationDto = {
       id: 'op-1',
       number: 'OP-001',
       type: 'EXPENSE',

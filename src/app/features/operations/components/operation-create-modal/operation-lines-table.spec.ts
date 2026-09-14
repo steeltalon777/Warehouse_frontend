@@ -283,3 +283,146 @@ describe('OperationLinesTableComponent — Stage 1 read-only mode', () => {
     }
   });
 });
+
+describe('OperationLinesTableComponent — Stage 2 inline temporary items', () => {
+  beforeEach(async () => {
+    await TestBed.configureTestingModule({
+      imports: [OperationLinesTableComponent],
+    }).compileComponents();
+  });
+
+  function makeInlineItem(name = 'Новая позиция') {
+    return {
+      clientKey: 'inline-key-1',
+      name,
+      sku: null,
+      unitId: 'u1',
+      unitName: 'шт',
+      categoryId: 'c1',
+      categoryName: 'Крепёж',
+      description: 'desc',
+      hashtags: null,
+    };
+  }
+
+  function makeInlineLine(localId: string, name = 'Новая позиция'): OperationLineDraftVm {
+    return {
+      localId,
+      itemId: null,
+      itemName: name,
+      unitId: 'u1',
+      unitName: 'шт',
+      quantity: 2,
+      isTemporary: false,
+      fromBalances: false,
+      lineNumber: 1,
+      inlineItem: makeInlineItem(name),
+    };
+  }
+
+  function createFixture(lines: OperationLineDraftVm[], isReadonly = false) {
+    const fixture = TestBed.createComponent(OperationLinesTableComponent);
+    fixture.componentRef.setInput('lines', lines);
+    fixture.componentRef.setInput('operationType', 'RECEIVE');
+    fixture.componentRef.setInput('isReadonly', isReadonly);
+    fixture.detectChanges();
+    return fixture;
+  }
+
+  it('renders an editable name, marker, soft highlight and card-edit button for an inline line', () => {
+    const fixture = createFixture([makeInlineLine('local-1')]);
+
+    const input = fixture.nativeElement.querySelector('.inline-name-input') as HTMLInputElement;
+    expect(input).toBeTruthy();
+    expect(input.value).toBe('Новая позиция');
+    expect(fixture.nativeElement.querySelector('[data-testid="new-item-marker"]').textContent).toContain('Новая позиция');
+    expect(fixture.nativeElement.querySelector('[data-testid="inline-card-edit"]')).toBeTruthy();
+    expect(fixture.nativeElement.querySelector('tr.row--new-item')).toBeTruthy();
+    // Inline rows do not show the technical catalog ID badge.
+    expect(fixture.nativeElement.querySelector('.item-meta-id')).toBeNull();
+  });
+
+  it('keeps the catalog item name read-only (no inline input, no card-edit)', () => {
+    const fixture = createFixture([makeLine('local-1', 'Кабель')]);
+
+    expect(fixture.nativeElement.querySelector('.inline-name-input')).toBeNull();
+    expect(fixture.nativeElement.querySelector('[data-testid="inline-card-edit"]')).toBeNull();
+    expect(fixture.nativeElement.querySelector('[data-testid="new-item-marker"]')).toBeNull();
+    expect(fixture.nativeElement.querySelector('.item-name').textContent).toContain('Кабель');
+  });
+
+  it('commits the trimmed inline name on blur', () => {
+    const fixture = createFixture([makeInlineLine('local-1')]);
+    const emitted: Array<{ localId: string; name: string }> = [];
+    fixture.componentInstance.inlineNameCommit.subscribe(e => emitted.push(e));
+
+    const input = fixture.nativeElement.querySelector('.inline-name-input') as HTMLInputElement;
+    input.value = '  Исправленное имя  ';
+    input.dispatchEvent(new Event('blur'));
+
+    expect(emitted).toEqual([{ localId: 'local-1', name: 'Исправленное имя' }]);
+  });
+
+  it('commits the inline name on Enter', () => {
+    const fixture = createFixture([makeInlineLine('local-1')]);
+    const emitted: Array<{ localId: string; name: string }> = [];
+    fixture.componentInstance.inlineNameCommit.subscribe(e => emitted.push(e));
+
+    const input = fixture.nativeElement.querySelector('.inline-name-input') as HTMLInputElement;
+    input.focus();
+    input.value = 'Через Enter';
+    input.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true, cancelable: true }));
+
+    expect(emitted.at(-1)).toEqual({ localId: 'local-1', name: 'Через Enter' });
+    expect(emitted.length).toBeGreaterThanOrEqual(1);
+  });
+
+  it('reverts the input on Escape without emitting', () => {
+    const fixture = createFixture([makeInlineLine('local-1')]);
+    const emitted: Array<{ localId: string; name: string }> = [];
+    fixture.componentInstance.inlineNameCommit.subscribe(e => emitted.push(e));
+
+    const input = fixture.nativeElement.querySelector('.inline-name-input') as HTMLInputElement;
+    input.focus();
+    input.value = 'Не сохранять';
+    input.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true, cancelable: true }));
+
+    expect(emitted).toEqual([]);
+    expect(input.value).toBe('Новая позиция');
+  });
+
+  it('does not emit for empty or unchanged values', () => {
+    const fixture = createFixture([makeInlineLine('local-1')]);
+    const emitted: Array<{ localId: string; name: string }> = [];
+    fixture.componentInstance.inlineNameCommit.subscribe(e => emitted.push(e));
+
+    const input = fixture.nativeElement.querySelector('.inline-name-input') as HTMLInputElement;
+    input.value = '   ';
+    input.dispatchEvent(new Event('blur'));
+    input.value = 'Новая позиция';
+    input.dispatchEvent(new Event('blur'));
+
+    expect(emitted).toEqual([]);
+  });
+
+  it('emits editInlineCard with the row localId', () => {
+    const fixture = createFixture([makeInlineLine('local-1')]);
+    const emitted: string[] = [];
+    fixture.componentInstance.editInlineCard.subscribe(e => emitted.push(e));
+
+    (fixture.nativeElement.querySelector('[data-testid="inline-card-edit"]') as HTMLButtonElement).click();
+
+    expect(emitted).toEqual(['local-1']);
+  });
+
+  it('does not render inline editing affordances in read-only mode', () => {
+    const fixture = createFixture([makeInlineLine('local-1')], true);
+
+    expect(fixture.nativeElement.querySelector('.inline-name-input')).toBeNull();
+    expect(fixture.nativeElement.querySelector('[data-testid="inline-card-edit"]')).toBeNull();
+    // The marker may stay as informational context.
+    expect(fixture.nativeElement.querySelector('[data-testid="new-item-marker"]')).toBeTruthy();
+    expect(fixture.nativeElement.querySelector('.row--new-item')).toBeTruthy();
+    expect(fixture.nativeElement.textContent).toContain('Новая позиция');
+  });
+});

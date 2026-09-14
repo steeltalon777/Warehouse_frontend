@@ -652,9 +652,14 @@ export class OperationsService {
             clientKey: l.temporary_draft_payload.client_key ?? `inline-${idx}-${Date.now()}`,
             name: l.temporary_draft_payload.name ?? l.item_name_snapshot ?? l.resolved_item_name ?? '',
             sku: l.temporary_draft_payload.sku ?? l.item_sku_snapshot ?? null,
-            unitId: l.temporary_draft_payload.unit_id ?? l.unit_id ?? '',
+            unitId: l.temporary_draft_payload.unit_id != null
+              ? String(l.temporary_draft_payload.unit_id)
+              : (l.unit_id != null ? String(l.unit_id) : ''),
             unitName: l.unit_symbol ?? l.unit_symbol_snapshot ?? 'шт',
-            categoryId: l.temporary_draft_payload.category_id ?? null,
+            categoryId: l.temporary_draft_payload.category_id != null
+              ? String(l.temporary_draft_payload.category_id)
+              : null,
+            categoryName: l.category_name_snapshot ?? null,
             description: l.temporary_draft_payload.description ?? null,
             hashtags: l.temporary_draft_payload.hashtags ?? null,
           }

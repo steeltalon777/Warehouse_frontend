@@ -85,42 +85,107 @@ export interface IdentityCandidateAction {
               [class.row--has-error]="!!submitErrorState(line.localId)"
               [class.row--has-error--stale]="!!submitErrorState(line.localId)?.stale"
               [class.unusable]="line.resolvedStatus && line.resolvedStatus !== 'active'"
+              [class.row--new-item]="!!line.inlineItem"
               [attr.data-testid]="submitErrorState(line.localId) ? 'operation-line-row--error' : 'line-' + line.localId"
               [attr.data-line-status]="line.resolvedStatus ?? null"
               [attr.data-design-id]="'item-row-' + (line.lineNumber ?? (n + 1))"
             >
               <td class="col-num-cell" [attr.data-design-id]="'item-row-' + (line.lineNumber ?? (n + 1)) + '-num'">{{ line.lineNumber ?? '—' }}</td>
               <td class="col-item-cell">
-                <div class="item-name" [attr.data-design-id]="'item-row-' + (line.lineNumber ?? (n + 1)) + '-name'">{{ line.itemName }}</div>
-                <div class="item-meta">
-                  <span class="item-meta-id" [attr.data-design-id]="'item-row-' + (line.lineNumber ?? (n + 1)) + '-id'">ID&nbsp;{{ line.itemId }}</span>
-                  @if (line.sku) {
-                    <span class="dot"></span>
-                    <span class="item-meta-sku" [attr.data-design-id]="'item-row-' + (line.lineNumber ?? (n + 1)) + '-sku'">SKU&nbsp;{{ line.sku }}</span>
-                  }
-                  @if (line.categoryName) {
-                    <span class="dot"></span>
-                    <span class="item-meta-cat">{{ line.categoryName }}</span>
-                  }
-                  <span class="dot"></span>
-                  <span class="item-meta-unit">{{ line.unitName }}</span>
-                  @if (line.resolvedStatus && line.resolvedStatus !== 'active') {
-                    <span
-                      class="line-status"
-                      [class.line-status--merged]="line.resolvedStatus === 'merged'"
-                      [class.line-status--deleted]="line.resolvedStatus === 'deleted'"
-                      [class.line-status--inactive]="line.resolvedStatus === 'inactive'"
-                      [class.line-status--missing]="line.resolvedStatus === 'missing'"
-                      [attr.data-testid]="'line-blocked'"
-                      [attr.data-status]="line.resolvedStatus"
-                      [title]="line.blockReason ?? null">
-                      {{ statusLabel(line.resolvedStatus) }}
-                      @if (line.resolvedStatus === 'merged' && line.canonicalItemName) {
-                        → {{ line.canonicalItemName }}@if (line.canonicalItemId) { ({{ line.canonicalItemId }})}
+                @if (line.inlineItem) {
+                  <div class="inline-item-cell">
+                    <div class="inline-item-head">
+                      <span class="new-item-marker" data-testid="new-item-marker">Новая позиция</span>
+                      @if (!isReadonly()) {
+                        <button
+                          type="button"
+                          class="inline-card-edit"
+                          data-testid="inline-card-edit"
+                          title="Редактировать карточку"
+                          aria-label="Редактировать карточку"
+                          (click)="editInlineCard.emit(line.localId)"
+                        >
+                          <svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                            <path d="M17 3a2.85 2.85 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5Z"/>
+                          </svg>
+                        </button>
                       }
-                    </span>
-                  }
-                </div>
+                    </div>
+                    @if (!isReadonly()) {
+                      <input
+                        type="text"
+                        class="inline-name-input"
+                        [attr.data-design-id]="'item-row-' + (line.lineNumber ?? (n + 1)) + '-name'"
+                        [value]="line.inlineItem.name"
+                        maxlength="255"
+                        aria-label="Название новой позиции"
+                        (keydown)="onInlineNameKeydown($event, line)"
+                        (blur)="onInlineNameBlur($event, line)"
+                      />
+                    } @else {
+                      <div class="item-name" [attr.data-design-id]="'item-row-' + (line.lineNumber ?? (n + 1)) + '-name'">{{ line.inlineItem.name }}</div>
+                    }
+                    <div class="item-meta">
+                      @if (line.sku) {
+                        <span class="dot"></span>
+                        <span class="item-meta-sku" [attr.data-design-id]="'item-row-' + (line.lineNumber ?? (n + 1)) + '-sku'">SKU&nbsp;{{ line.sku }}</span>
+                      }
+                      @if (line.categoryName || line.inlineItem.categoryName) {
+                        <span class="dot"></span>
+                        <span class="item-meta-cat">{{ line.categoryName || line.inlineItem.categoryName }}</span>
+                      }
+                      <span class="dot"></span>
+                      <span class="item-meta-unit">{{ line.unitName }}</span>
+                      @if (line.resolvedStatus && line.resolvedStatus !== 'active') {
+                        <span
+                          class="line-status"
+                          [class.line-status--merged]="line.resolvedStatus === 'merged'"
+                          [class.line-status--deleted]="line.resolvedStatus === 'deleted'"
+                          [class.line-status--inactive]="line.resolvedStatus === 'inactive'"
+                          [class.line-status--missing]="line.resolvedStatus === 'missing'"
+                          [attr.data-testid]="'line-blocked'"
+                          [attr.data-status]="line.resolvedStatus"
+                          [title]="line.blockReason ?? null">
+                          {{ statusLabel(line.resolvedStatus) }}
+                          @if (line.resolvedStatus === 'merged' && line.canonicalItemName) {
+                            → {{ line.canonicalItemName }}@if (line.canonicalItemId) { ({{ line.canonicalItemId }})}
+                          }
+                        </span>
+                      }
+                    </div>
+                  </div>
+                } @else {
+                  <div class="item-name" [attr.data-design-id]="'item-row-' + (line.lineNumber ?? (n + 1)) + '-name'">{{ line.itemName }}</div>
+                  <div class="item-meta">
+                    <span class="item-meta-id" [attr.data-design-id]="'item-row-' + (line.lineNumber ?? (n + 1)) + '-id'">ID&nbsp;{{ line.itemId }}</span>
+                    @if (line.sku) {
+                      <span class="dot"></span>
+                      <span class="item-meta-sku" [attr.data-design-id]="'item-row-' + (line.lineNumber ?? (n + 1)) + '-sku'">SKU&nbsp;{{ line.sku }}</span>
+                    }
+                    @if (line.categoryName) {
+                      <span class="dot"></span>
+                      <span class="item-meta-cat">{{ line.categoryName }}</span>
+                    }
+                    <span class="dot"></span>
+                    <span class="item-meta-unit">{{ line.unitName }}</span>
+                    @if (line.resolvedStatus && line.resolvedStatus !== 'active') {
+                      <span
+                        class="line-status"
+                        [class.line-status--merged]="line.resolvedStatus === 'merged'"
+                        [class.line-status--deleted]="line.resolvedStatus === 'deleted'"
+                        [class.line-status--inactive]="line.resolvedStatus === 'inactive'"
+                        [class.line-status--missing]="line.resolvedStatus === 'missing'"
+                        [attr.data-testid]="'line-blocked'"
+                        [attr.data-status]="line.resolvedStatus"
+                        [title]="line.blockReason ?? null">
+                        {{ statusLabel(line.resolvedStatus) }}
+                        @if (line.resolvedStatus === 'merged' && line.canonicalItemName) {
+                          → {{ line.canonicalItemName }}@if (line.canonicalItemId) { ({{ line.canonicalItemId }})}
+                        }
+                      </span>
+                    }
+                  </div>
+                }
               </td>
               <td class="col-qty">
                 <input
@@ -360,6 +425,63 @@ export interface IdentityCandidateAction {
       background: var(--l-border-2);
       display: inline-block;
       flex-shrink: 0;
+    }
+
+    /* ─── Stage 2: inline temporary-item rows ──────────────── */
+    .row--new-item > td { background: #F7FAFC; }
+    .row--new-item:hover > td { background: var(--l-surface-2); }
+    .row--new-item > td:first-child { box-shadow: inset 3px 0 0 #CBD5E1; }
+
+    .inline-item-head {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      margin-bottom: 2px;
+    }
+    .new-item-marker {
+      font-size: 10.5px;
+      letter-spacing: 0.04em;
+      text-transform: uppercase;
+      color: var(--l-muted-2);
+      font-weight: 550;
+    }
+    .inline-card-edit {
+      width: 22px; height: 22px;
+      display: inline-flex; align-items: center; justify-content: center;
+      border: none;
+      border-radius: var(--l-r-sm);
+      background: transparent;
+      color: var(--l-muted-2);
+      cursor: pointer;
+      transition: background 120ms ease, color 120ms ease;
+    }
+    .inline-card-edit:hover { background: #EFF6FF; color: #2563EB; }
+    .inline-card-edit:focus-visible {
+      outline: 2px solid #2563EB;
+      outline-offset: 1px;
+    }
+    .inline-name-input {
+      width: 100%;
+      height: 26px;
+      padding: 0 6px;
+      border: 1px solid transparent;
+      border-radius: var(--l-r-sm);
+      background: transparent;
+      font-family: var(--l-font-body);
+      font-size: 13.5px;
+      font-weight: 500;
+      color: var(--l-fg);
+      box-sizing: border-box;
+    }
+    .inline-name-input:hover {
+      border-color: var(--l-border-2);
+      background: var(--l-surface);
+    }
+    .inline-name-input:focus {
+      outline: none;
+      border-color: var(--l-accent);
+      background: var(--l-surface);
+      box-shadow: 0 0 0 3px rgba(5, 150, 105, 0.12);
     }
 
     .qty-input {
@@ -617,6 +739,10 @@ export class OperationLinesTableComponent {
   sortChange = output<{ column: SortColumn; direction: SortDirection }>();
   /** ADR-0033: user chose an existing catalog item for a duplicate-blocked row. */
   useIdentityCandidate = output<IdentityCandidateAction>();
+  /** Stage 2: inline temporary-item name committed locally (Enter/blur). */
+  inlineNameCommit = output<{ localId: string; name: string }>();
+  /** Stage 2: user asked to open the full temporary-item card editor for a row. */
+  editInlineCard = output<string>();
 
   readonly sortColumn = signal<SortColumn>('lineNumber');
   readonly sortDirection = signal<SortDirection>('asc');
@@ -670,6 +796,37 @@ export class OperationLinesTableComponent {
 
   onQtyChange(localId: string, value: number | null): void {
     this.quantityChange.emit({ localId, quantity: value });
+  }
+
+  /**
+   * Stage 2 inline rename: Enter commits the typed value and releases focus;
+   * Escape reverts the input to the committed inlineItem.name.
+   * Commits are local-only; empty and unchanged values are ignored.
+   */
+  onInlineNameKeydown(event: KeyboardEvent, line: OperationLineDraftVm): void {
+    const input = event.target as HTMLInputElement;
+    if (event.key === 'Enter') {
+      event.preventDefault();
+      this.commitInlineName(line, input.value);
+      input.blur();
+      return;
+    }
+    if (event.key === 'Escape') {
+      event.preventDefault();
+      input.value = line.inlineItem?.name ?? '';
+      input.blur();
+    }
+  }
+
+  onInlineNameBlur(event: FocusEvent, line: OperationLineDraftVm): void {
+    this.commitInlineName(line, (event.target as HTMLInputElement).value);
+  }
+
+  private commitInlineName(line: OperationLineDraftVm, raw: string): void {
+    if (!line.inlineItem) return;
+    const name = raw.trim();
+    if (!name || name === (line.inlineItem.name ?? '')) return;
+    this.inlineNameCommit.emit({ localId: line.localId, name });
   }
 
   submitErrorHintId(localId: string): string {

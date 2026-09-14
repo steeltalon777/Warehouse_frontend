@@ -13,6 +13,7 @@ import { BffApiService } from '../../../../core/api/bff-api.service';
 import { CatalogSearchService } from '../../../../core/services/catalog-search.service';
 import { FIXTURE_ITEM_IDENTITY_DUPLICATE } from '../../submit-error/envelope.fixtures';
 import { GENERIC_SUBMIT_ERROR_TOAST, lineGroupToast } from './submit-error-toasts';
+import { snapshotDraft } from './operation-draft-mappers';
 import type { OperationDraftVm, OperationLineDraftVm, BalanceDto } from '../../../../core/models/operations.models';
 import type { Item } from '../../../../core/models/nomenclature.models';
 
@@ -797,5 +798,126 @@ describe('OperationCreateModalComponent — Stage 1 view mode & RECEIVE-only inl
     const counter = fixture.nativeElement.querySelector('[data-testid="inline-items-count"]');
     expect(counter).toBeTruthy();
     expect(counter.textContent.trim()).toBe('Новых позиций: 1');
+  });
+});
+
+describe('OperationCreateModalComponent — Stage 2 inline temporary-item editing', () => {
+  beforeEach(() => {
+    mocks = createMocks();
+    configureTestBed();
+  });
+
+  function makeInlineItem(name: string) {
+    return {
+      clientKey: 'inline-key-1',
+      name,
+      sku: null,
+      unitId: 'u1',
+      unitName: 'шт',
+      categoryId: 'c1',
+      categoryName: 'Крепёж',
+      description: null,
+      hashtags: null,
+    };
+  }
+
+  function makeInlineLine(localId: string, name: string): OperationLineDraftVm {
+    return {
+      ...makeLine(localId, null),
+      itemName: name,
+      inlineItem: makeInlineItem(name),
+    };
+  }
+
+  async function createFixture(draft: OperationDraftVm) {
+    const fixture = TestBed.createComponent(OperationCreateModalComponent);
+    fixture.componentRef.setInput('sites', []);
+    fixture.componentRef.setInput('draft', draft);
+    await flush(fixture);
+    return fixture;
+  }
+
+  it('renames the inline item in place: inlineItem.name is the source of truth', async () => {
+    const fixture = await createFixture(
+      makeDraft({ type: 'RECEIVE', destinationSiteId: '21', lines: [makeInlineLine('local-1', 'Старое имя')] }),
+    );
+
+    fixture.componentInstance.onInlineNameCommit('local-1', 'Новое имя');
+    await flush(fixture);
+
+    const line = fixture.componentInstance.localDraft().lines[0];
+    expect(line.inlineItem?.name).toBe('Новое имя');
+    expect(line.itemName).toBe('Новое имя');
+
+    const input = fixture.nativeElement.querySelector('.inline-name-input') as HTMLInputElement;
+    expect(input.value).toBe('Новое имя');
+  });
+
+  it('marks the draft dirty after an inline rename (close guard sees it)', async () => {
+    const fixture = await createFixture(
+      makeDraft({ type: 'RECEIVE', destinationSiteId: '21', lines: [makeInlineLine('local-1', 'Старое имя')] }),
+    );
+    fixture.componentInstance.localDraft.update(d => ({
+      ...d,
+      lastSavedSnapshot: snapshotDraft(d),
+    }));
+    await flush(fixture);
+    expect(fixture.componentInstance.hasUnsavedChanges()).toBe(false);
+
+    fixture.componentInstance.onInlineNameCommit('local-1', 'Новое имя');
+    await flush(fixture);
+
+    expect(fixture.componentInstance.hasUnsavedChanges()).toBe(true);
+  });
+
+  it('full card edit updates the existing line in place and never changes clientKey', async () => {
+    const fixture = await createFixture(
+      makeDraft({ type: 'RECEIVE', destinationSiteId: '21', lines: [makeInlineLine('local-1', 'Старое имя')] }),
+    );
+
+    fixture.componentInstance.openInlineCardEdit('local-1');
+    await flush(fixture);
+    expect(fixture.componentInstance.editingInlineLineId()).toBe('local-1');
+    expect(fixture.componentInstance.editingInlineItem()?.name).toBe('Старое имя');
+
+    fixture.componentInstance.onInlineItemUpdated({
+      clientKey: 'attempted-new-key',
+      name: 'Карточка',
+      sku: null,
+      unitId: 'u2',
+      unitName: 'кг',
+      categoryId: 'c2',
+      categoryName: 'Категория 2',
+      description: 'описание',
+      hashtags: null,
+    });
+    await flush(fixture);
+
+    const lines = fixture.componentInstance.localDraft().lines;
+    expect(lines.length).toBe(1);
+    expect(lines[0].inlineItem?.name).toBe('Карточка');
+    expect(lines[0].inlineItem?.clientKey).toBe('inline-key-1');
+    expect(lines[0].inlineItem?.unitId).toBe('u2');
+    expect(lines[0].inlineItem?.categoryId).toBe('c2');
+    expect(lines[0].inlineItem?.description).toBe('описание');
+    expect(lines[0].itemName).toBe('Карточка');
+    expect(lines[0].unitId).toBe('u2');
+    expect(fixture.componentInstance.isInlineModalOpen()).toBe(false);
+  });
+
+  it('does not offer inline or full-card editing in read-only view', async () => {
+    const fixture = await createFixture(
+      makeDraft({
+        id: 'op-1',
+        status: 'submitted',
+        type: 'RECEIVE',
+        destinationSiteId: '21',
+        lines: [makeInlineLine('local-1', 'Старое имя')],
+      }),
+    );
+
+    expect(fixture.nativeElement.querySelector('.inline-name-input')).toBeNull();
+    expect(fixture.nativeElement.querySelector('[data-testid="inline-card-edit"]')).toBeNull();
+    expect(fixture.nativeElement.textContent).toContain('Старое имя');
   });
 });
