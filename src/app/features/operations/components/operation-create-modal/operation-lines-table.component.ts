@@ -41,7 +41,6 @@ export interface IdentityCandidateAction {
           <col class="col-num-col">
           <col class="col-item-col">
           <col class="col-qty-col">
-          <col class="col-cat-col">
           <col class="col-avail-col">
           <col class="col-actions-col">
         </colgroup>
@@ -68,7 +67,6 @@ export interface IdentityCandidateAction {
                 <span class="sort-indicator">{{ sortDirection() === 'asc' ? '▲' : '▼' }}</span>
               }
             </th>
-            <th class="col-cat-id" data-design-id="col-category-header">category_id</th>
             <th class="col-avail" data-design-id="col-stock-header" (click)="toggleSort('availableQuantity')"
                 [attr.aria-sort]="sortColumn() === 'availableQuantity' ? (sortDirection() === 'asc' ? 'ascending' : 'descending') : 'none'">
               {{ availLabel() }}
@@ -104,11 +102,7 @@ export interface IdentityCandidateAction {
                           title="Редактировать карточку"
                           aria-label="Редактировать карточку"
                           (click)="editInlineCard.emit(line.localId)"
-                        >
-                          <svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-                            <path d="M17 3a2.85 2.85 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5Z"/>
-                          </svg>
-                        </button>
+                        >Карточка</button>
                       }
                     </div>
                     @if (!isReadonly()) {
@@ -208,9 +202,6 @@ export interface IdentityCandidateAction {
                 } @else if (isObjectSourceFlow() && line.availableQuantity != null) {
                   <div class="qty-hint">Имеется на объекте: {{ line.availableQuantity }}</div>
                 }
-              </td>
-              <td class="col-cat-id">
-                <span class="cat-id-value">{{ line.categoryId ?? '—' }}</span>
               </td>
               <td class="col-avail">
                 <div class="stock-cell" [attr.data-design-id]="'item-row-' + (line.lineNumber ?? (n + 1)) + '-stock-cell'">
@@ -340,7 +331,6 @@ export interface IdentityCandidateAction {
     .lines-data-table col.col-num-col    { width: 44px; }
     .lines-data-table col.col-item-col   { width: auto; }
     .lines-data-table col.col-qty-col    { width: 110px; }
-    .lines-data-table col.col-cat-col    { width: 110px; }
     .lines-data-table col.col-avail-col  { width: 110px; }
     .lines-data-table col.col-actions-col{ width: 56px; }
 
@@ -362,9 +352,8 @@ export interface IdentityCandidateAction {
       user-select: none;
       cursor: pointer;
     }
-    .lines-data-table thead th.col-cat-id,
     .lines-data-table thead th.col-del { cursor: default; }
-    .lines-data-table thead th:hover:not(.col-cat-id):not(.col-del) { background: #F1F5F9; }
+    .lines-data-table thead th:hover:not(.col-del) { background: #F1F5F9; }
 
     .lines-data-table tbody td {
       padding: 8px 10px;
@@ -385,7 +374,7 @@ export interface IdentityCandidateAction {
       min-width: 0;
       padding-right: 14px !important;
     }
-    .col-qty, .col-cat-id, .col-avail, .col-del { vertical-align: top; }
+    .col-qty, .col-avail, .col-del { vertical-align: top; }
     .col-del { text-align: right; padding-right: 14px !important; }
 
     .sort-indicator {
@@ -446,16 +435,23 @@ export interface IdentityCandidateAction {
       font-weight: 550;
     }
     .inline-card-edit {
-      width: 22px; height: 22px;
-      display: inline-flex; align-items: center; justify-content: center;
-      border: none;
+      height: 22px;
+      padding: 0 8px;
+      display: inline-flex;
+      align-items: center;
+      border: 1px solid var(--l-border-2);
       border-radius: var(--l-r-sm);
-      background: transparent;
-      color: var(--l-muted-2);
+      background: var(--l-surface);
+      color: var(--l-fg-2);
+      font-family: var(--l-font-body);
+      font-size: 11.5px;
+      font-weight: 510;
+      line-height: 1;
+      white-space: nowrap;
       cursor: pointer;
-      transition: background 120ms ease, color 120ms ease;
+      transition: background 120ms ease, color 120ms ease, border-color 120ms ease;
     }
-    .inline-card-edit:hover { background: #EFF6FF; color: #2563EB; }
+    .inline-card-edit:hover { background: #EFF6FF; color: #2563EB; border-color: #BFDBFE; }
     .inline-card-edit:focus-visible {
       outline: 2px solid #2563EB;
       outline-offset: 1px;
@@ -528,13 +524,6 @@ export interface IdentityCandidateAction {
       font-size: 11px;
       color: var(--l-muted-2);
       margin-top: 4px;
-    }
-
-    .col-cat-id .cat-id-value {
-      font-family: var(--l-font-mono);
-      font-size: 12px;
-      color: var(--l-muted);
-      letter-spacing: -0.01em;
     }
 
     .avail-value {

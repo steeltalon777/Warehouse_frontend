@@ -92,8 +92,18 @@ function toItem(searchItem: CatalogSearchItem): Item {
     </div>
   `,
   styles: [`
+    /* Visual polish: the search field grows inside the modal toolbar with a
+       comfortable minimum width and a sane cap; still shrinkable on narrow
+       viewports (min() keeps it from overflowing). */
+    :host {
+      display: block;
+      flex: 1 1 420px;
+      min-width: min(420px, 100%);
+      max-width: 900px;
+    }
     .item-search-wrapper {
       position: relative;
+      width: 100%;
     }
     .item-search-row {
       display: flex;

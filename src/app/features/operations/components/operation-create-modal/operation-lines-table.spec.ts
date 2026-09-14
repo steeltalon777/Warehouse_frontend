@@ -426,3 +426,63 @@ describe('OperationLinesTableComponent — Stage 2 inline temporary items', () =
     expect(fixture.nativeElement.textContent).toContain('Новая позиция');
   });
 });
+
+describe('OperationLinesTableComponent — visual polish layout', () => {
+  beforeEach(async () => {
+    await TestBed.configureTestingModule({
+      imports: [OperationLinesTableComponent],
+    }).compileComponents();
+  });
+
+  function makeInlineLine(localId: string): OperationLineDraftVm {
+    return {
+      localId,
+      itemId: null,
+      itemName: 'Новая позиция',
+      unitId: 'u1',
+      unitName: 'шт',
+      quantity: 1,
+      isTemporary: false,
+      fromBalances: false,
+      lineNumber: 1,
+      inlineItem: {
+        clientKey: 'k1',
+        name: 'Новая позиция',
+        sku: null,
+        unitId: 'u1',
+        unitName: 'шт',
+        categoryId: 'c1',
+        categoryName: 'Крепёж',
+        description: null,
+        hashtags: null,
+      },
+    };
+  }
+
+  it('does not render the category_id column; category stays as human-readable item metadata', () => {
+    const line = { ...makeLine('local-1', 'Кабель'), categoryName: 'Крепёж' };
+    const fixture = TestBed.createComponent(OperationLinesTableComponent);
+    fixture.componentRef.setInput('lines', [line]);
+    fixture.componentRef.setInput('operationType', 'MOVE');
+    fixture.detectChanges();
+
+    expect(fixture.nativeElement.querySelector('th.col-cat-id')).toBeNull();
+    expect(fixture.nativeElement.querySelector('[data-design-id="col-category-header"]')).toBeNull();
+    expect(fixture.nativeElement.querySelector('.cat-id-value')).toBeNull();
+    expect(fixture.nativeElement.querySelectorAll('th').length).toBe(5);
+    expect(fixture.nativeElement.querySelector('.item-meta-cat')?.textContent).toContain('Крепёж');
+  });
+
+  it('renders the inline card action as an explicit labeled «Карточка» button', () => {
+    const fixture = TestBed.createComponent(OperationLinesTableComponent);
+    fixture.componentRef.setInput('lines', [makeInlineLine('local-1')]);
+    fixture.componentRef.setInput('operationType', 'RECEIVE');
+    fixture.detectChanges();
+
+    const button = fixture.nativeElement.querySelector('[data-testid="inline-card-edit"]') as HTMLButtonElement;
+    expect(button).toBeTruthy();
+    expect(button.textContent?.trim()).toBe('Карточка');
+    expect(button.title).toBe('Редактировать карточку');
+    expect(button.getAttribute('aria-label')).toBe('Редактировать карточку');
+  });
+});

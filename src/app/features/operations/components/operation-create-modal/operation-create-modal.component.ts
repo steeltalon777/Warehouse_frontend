@@ -488,7 +488,10 @@ function currentDateTimeLocal(): string {
         0 2px 6px rgba(15, 23, 42, 0.06);
       width: 100%;
       max-width: 1450px;
-      height: clamp(640px, 94vh, 1000px);
+      /* Content-driven height: shrink to 1–3 rows, cap at 94vh and let the
+         table-wrap scroll when lines exceed the viewport. */
+      height: auto;
+      max-height: 94vh;
       display: grid;
       grid-template-rows:
         auto         /* 1: header */
@@ -647,7 +650,7 @@ function currentDateTimeLocal(): string {
     }
     .at-search {
       flex: 1 1 auto;
-      min-width: 240px;
+      min-width: 0;
       display: flex;
       align-items: center;
       position: relative;
@@ -821,7 +824,7 @@ function currentDateTimeLocal(): string {
     }
     @media (max-width: 1024px) {
       .modal-container {
-        height: clamp(640px, 96vh, 1000px);
+        max-height: 96vh;
       }
       .modal-form-grid .form-grid,
       .modal-form-grid .form-grid[data-variant="move"] {
@@ -832,7 +835,7 @@ function currentDateTimeLocal(): string {
     }
     @media (max-width: 768px) {
       .modal-container {
-        height: 96vh;
+        max-height: 96vh;
       }
       .modal-form-grid .form-grid,
       .modal-form-grid .form-grid[data-variant="move"] {
