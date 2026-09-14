@@ -1,3 +1,5 @@
+import type { IdentityCandidateDto } from './identity-candidate.models';
+
 export interface TemporaryItem {
   id: string;
   /** Display name (maps to item_name from review-items API). */
@@ -59,11 +61,28 @@ export interface TempItemDetail extends TemporaryItem {
   balances_per_site: TempItemBalancePerSite[];
   operations: TempItemOperation[];
   operations_count: number;
+  /** ADR-0033 §7.2: live identity candidates for this review item (self-excluded). */
+  identity_candidates?: IdentityCandidateDto[];
 }
 
 export interface TempItemMergePayload {
   target_item_id: string;
   comment?: string;
+}
+
+/** Structured outcome of a merge attempt (ADR-0033 §7.2 error surface). */
+export interface TempItemMergeResult {
+  ok: boolean;
+  error?: {
+    code: string;
+    message: string;
+  };
+}
+
+/** ADR-0033 §7.2: user picked an identity candidate to merge the review item into. */
+export interface TempItemMergeSelection {
+  item: TemporaryItemVm;
+  candidate: IdentityCandidateDto;
 }
 
 export interface TempItemApprovePayload {

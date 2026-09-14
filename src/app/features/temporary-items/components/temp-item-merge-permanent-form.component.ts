@@ -1,10 +1,11 @@
-import { Component, input, output, signal, inject } from '@angular/core';
+import { Component, OnInit, input, output, signal, inject } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { firstValueFrom } from 'rxjs';
 import { TempItemsService } from '../../../core/services/temp-items.service';
 import { BffApiService } from '../../../core/api/bff-api.service';
 import { TemporaryItemVm } from '../../../core/models/temp-items.models';
+import { IdentityCandidateDto } from '../../../core/models/identity-candidate.models';
 
 interface CatalogItem {
   id: string;
@@ -13,6 +14,8 @@ interface CatalogItem {
   category_name?: string;
   unit_symbol?: string;
   total_balance?: number;
+  /** ADR-0033 §7.2: set when the target was prefilled from an identity candidate. */
+  match?: 'exact' | 'partial';
 }
 
 @Component({
@@ -31,7 +34,7 @@ interface CatalogItem {
           @if (isSubmitting()) {
             <div class="loading">Слияние...</div>
           } @else if (error()) {
-            <div class="error-banner">{{ error() }}</div>
+            <div class="error-banner" data-testid="merge-error-banner">{{ error() }}</div>
           } @else {
             <div class="source-info">
               <span class="source-label">Исходная:</span>
@@ -60,10 +63,15 @@ interface CatalogItem {
                 <h4 class="preview-title">Выбранная постоянная:</h4>
                 <p><strong>{{ target.name }}</strong></p>
                 <p>SKU: {{ target.sku || '—' }} · Категория: {{ target.category_name || '—' }} · Ед.: {{ target.unit_symbol || '—' }}</p>
+                @if (target.match) {
+                  <p>Совпадение: <strong>{{ target.match === 'exact' ? 'точное' : 'возможное' }}</strong></p>
+                }
                 <hr class="preview-divider" />
                 <p>Временный остаток: <strong>{{ item().totalBalance }} {{ item().unitSymbol }}</strong></p>
-                <p>Текущий остаток постоянной: <strong>{{ (target.total_balance ?? 0) }} {{ target.unit_symbol }}</strong></p>
-                <p>После слияния: <strong>{{ (target.total_balance ?? 0) + item().totalBalance }} {{ target.unit_symbol }}</strong></p>
+                @if (target.total_balance !== undefined) {
+                  <p>Текущий остаток постоянной: <strong>{{ target.total_balance }} {{ target.unit_symbol }}</strong></p>
+                  <p>После слияния: <strong>{{ target.total_balance + item().totalBalance }} {{ target.unit_symbol }}</strong></p>
+                }
 
                 @if (showUnitWarning()) {
                   <div class="warning-box">
@@ -83,7 +91,7 @@ interface CatalogItem {
               </div>
 
               <div class="modal-actions">
-                <button class="btn btn-primary" [disabled]="!canSubmit()" (click)="onSubmit()">Слить с выбранной ТМЦ</button>
+                <button class="btn btn-primary" data-testid="merge-submit" [disabled]="!canSubmit()" (click)="onSubmit()">Слить с выбранной ТМЦ</button>
                 <button class="btn btn-secondary" (click)="cancel.emit()">Отмена</button>
               </div>
             }
@@ -131,11 +139,13 @@ interface CatalogItem {
     .btn-secondary:hover:not(:disabled) { background: #F8FAFC; }
   `]
 })
-export class TempItemMergePermanentFormComponent {
+export class TempItemMergePermanentFormComponent implements OnInit {
   private readonly service = inject(TempItemsService);
   private readonly bffApi = inject(BffApiService);
 
   readonly item = input.required<TemporaryItemVm>();
+  /** ADR-0033 §7.2: identity candidate chosen in the review detail modal. */
+  readonly prefillTarget = input<IdentityCandidateDto | null>(null);
   readonly submit = output<TemporaryItemVm>();
   readonly cancel = output<void>();
 
@@ -158,6 +168,23 @@ export class TempItemMergePermanentFormComponent {
   readonly canSubmit = () => {
     return this.selectedTarget() !== null && (!this.showUnitWarning() || this.unitConfirmed());
   };
+
+  ngOnInit(): void {
+    // ADR-0033 §7.2: the CTA in the review detail modal opens this dialog with
+    // a preselected candidate target, so the reviewer does not search again.
+    const candidate = this.prefillTarget();
+    if (candidate) {
+      this.searchQuery.set(candidate.name);
+      this.selectedTarget.set({
+        id: String(candidate.id),
+        name: candidate.name,
+        sku: candidate.sku ?? undefined,
+        category_name: candidate.category?.name,
+        unit_symbol: candidate.unit?.symbol,
+        match: candidate.match,
+      });
+    }
+  }
 
   onSearchChange(query: string): void {
     if (this.searchTimer) clearTimeout(this.searchTimer);
@@ -189,15 +216,16 @@ export class TempItemMergePermanentFormComponent {
     this.isSubmitting.set(true);
     this.error.set(null);
 
-    const success = await this.service.mergeToPermanent(
+    const result = await this.service.mergeToPermanent(
       this.item().id,
       target.id,
       this.comment() || undefined,
     );
-    if (success) {
+    if (result.ok) {
       this.submit.emit(this.item());
     } else {
-      this.error.set('Ошибка при слиянии. Попробуйте ещё раз.');
+      // ADR-0033 §7.2: surface the structured BFF error, never a false success.
+      this.error.set(result.error?.message || 'Ошибка при слиянии. Попробуйте ещё раз.');
       this.isSubmitting.set(false);
     }
   }

@@ -2,7 +2,8 @@ import { Component, input, output, OnInit, inject, signal, HostListener } from '
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { TempItemsService } from '../../../core/services/temp-items.service';
-import { TemporaryItemVm, TempItemDetail, TempItemBalancePerSite, TempItemOperation, TEMP_ITEM_UI_STATUS_COLORS } from '../../../core/models/temp-items.models';
+import { TemporaryItemVm, TempItemDetail, TempItemBalancePerSite, TempItemOperation, TempItemMergeSelection, TEMP_ITEM_UI_STATUS_COLORS } from '../../../core/models/temp-items.models';
+import { IdentityCandidateDto, normalizeIdentityCandidates } from '../../../core/models/identity-candidate.models';
 
 @Component({
   selector: 'app-temp-item-detail-modal',
@@ -51,6 +52,42 @@ import { TemporaryItemVm, TempItemDetail, TempItemBalancePerSite, TempItemOperat
                 </div>
               </div>
             </div>
+
+            <!-- ADR-0033 §7.2: live identity candidates with merge CTA -->
+            @if (identityCandidates().length > 0) {
+              <div class="section identity-section" data-testid="review-identity-candidates">
+                <h3 class="section-title">Совпадения в каталоге</h3>
+                <p class="identity-hint">Найдены похожие ТМЦ. Слияние перенесёт остатки на выбранную позицию.</p>
+                <div class="identity-list">
+                  @for (c of identityCandidates(); track c.id) {
+                    <div class="identity-candidate" data-testid="review-identity-candidate">
+                      <div class="candidate-main">
+                        <span class="candidate-name">{{ c.name }}</span>
+                        <span class="candidate-meta">
+                          SKU: {{ c.sku || '—' }} · {{ c.unit?.symbol || '—' }} · {{ c.category?.name || '—' }}
+                        </span>
+                        <span class="candidate-tags">
+                          <span class="candidate-match" [class.candidate-match--exact]="c.match === 'exact'">
+                            {{ c.match === 'exact' ? 'Точное совпадение' : 'Возможное совпадение' }}
+                          </span>
+                          @if (c.requires_review) {
+                            <span class="candidate-review">Кандидат тоже на проверке</span>
+                          }
+                        </span>
+                      </div>
+                      <button
+                        class="candidate-merge-btn"
+                        type="button"
+                        data-testid="review-identity-merge"
+                        [disabled]="!item().canMergeToPermanent"
+                        [title]="item().mergeBlockedReason || ''"
+                        (click)="mergeWithCandidate.emit({ item: item(), candidate: c })"
+                      >Слить с существующим</button>
+                    </div>
+                  }
+                </div>
+              </div>
+            }
 
             <!-- Balances per site -->
             <div class="section">
@@ -159,6 +196,21 @@ import { TemporaryItemVm, TempItemDetail, TempItemBalancePerSite, TempItemOperat
     .meta-value.balance { font-weight: 700; color: #0F172A; }
     .status-badge { display: inline-block; padding: 2px 8px; border-radius: 6px; font-size: 12px; font-weight: 500; line-height: 1.4; width: fit-content; }
 
+    /* ADR-0033 §7.2: identity candidates */
+    .identity-hint { font-size: 12px; color: #64748B; margin: 0 0 8px; }
+    .identity-list { display: flex; flex-direction: column; gap: 8px; }
+    .identity-candidate { display: flex; align-items: center; gap: 12px; padding: 10px 12px; background: #FFFBEB; border: 1px solid #FDE68A; border-radius: 8px; }
+    .candidate-main { display: flex; flex-direction: column; gap: 2px; min-width: 0; flex: 1; }
+    .candidate-name { font-size: 13px; font-weight: 600; color: #1E293B; }
+    .candidate-meta { font-size: 11px; color: #64748B; }
+    .candidate-tags { display: flex; gap: 6px; flex-wrap: wrap; }
+    .candidate-match { font-size: 10px; font-weight: 500; padding: 1px 6px; border-radius: 4px; background: #FEF3C7; color: #92400E; }
+    .candidate-match--exact { background: #DCFCE7; color: #166534; }
+    .candidate-review { font-size: 10px; font-weight: 500; padding: 1px 6px; border-radius: 4px; background: #E0E7FF; color: #3730A3; }
+    .candidate-merge-btn { flex-shrink: 0; padding: 6px 10px; border: 1px solid #D1D5DB; border-radius: 6px; background: #FFFFFF; font-size: 12px; font-weight: 500; color: #334155; cursor: pointer; font-family: inherit; transition: all 0.15s; }
+    .candidate-merge-btn:hover:not(:disabled) { background: #F0FDF4; border-color: #86EFAC; color: #166534; }
+    .candidate-merge-btn:disabled { opacity: 0.4; cursor: not-allowed; }
+
     /* Balances */
     .balances-list { display: flex; flex-direction: column; gap: 6px; }
     .balance-row { display: flex; justify-content: space-between; padding: 6px 10px; background: #F8FAFC; border-radius: 6px; font-size: 13px; }
@@ -201,10 +253,13 @@ export class TempItemDetailModalComponent implements OnInit {
   readonly mergeTemp = output<TemporaryItemVm>();
   readonly confirm = output<TemporaryItemVm>();
   readonly deleteItem = output<TemporaryItemVm>();
+  /** ADR-0033 §7.2: merge this review item into a chosen identity candidate. */
+  readonly mergeWithCandidate = output<TempItemMergeSelection>();
 
   readonly TEMP_ITEM_UI_STATUS_COLORS = TEMP_ITEM_UI_STATUS_COLORS;
 
   readonly detail = signal<TempItemDetail | null>(null);
+  readonly identityCandidates = signal<IdentityCandidateDto[]>([]);
   readonly balances = signal<TempItemBalancePerSite[]>([]);
   readonly operations = signal<TempItemOperation[]>([]);
   readonly isLoading = signal(true);
@@ -212,6 +267,8 @@ export class TempItemDetailModalComponent implements OnInit {
   async ngOnInit(): Promise<void> {
     const detail = await this.service.loadDetail(this.item().id);
     this.detail.set(detail);
+    // Malformed/missing payload degrades to an empty list → no candidates, no CTA.
+    this.identityCandidates.set(normalizeIdentityCandidates(detail?.identity_candidates));
     if (detail?.balances_per_site) {
       this.balances.set(detail.balances_per_site);
     }

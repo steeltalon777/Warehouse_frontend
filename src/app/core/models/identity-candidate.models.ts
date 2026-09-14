@@ -39,3 +39,52 @@ export interface IdentityCandidateDto extends IdentityCandidateRef {
 export interface ItemIdentityCandidatesResponse {
   candidates: IdentityCandidateDto[];
 }
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null;
+}
+
+/**
+ * Defensive normalizer for candidate payloads received from the BFF
+ * (ADR-0033 §7.2). Drops entries without a usable numeric `id` or a non-empty
+ * `name`, so a malformed payload degrades to "no candidates" instead of
+ * rendering a broken CTA. Optional fields are copied only when well-formed.
+ */
+export function normalizeIdentityCandidates(raw: unknown): IdentityCandidateDto[] {
+  if (!Array.isArray(raw)) return [];
+
+  const result: IdentityCandidateDto[] = [];
+  for (const entry of raw) {
+    if (!isRecord(entry)) continue;
+
+    const id = Number(entry['id']);
+    const name = typeof entry['name'] === 'string' ? entry['name'].trim() : '';
+    if (!Number.isSafeInteger(id) || id <= 0 || name.length === 0) continue;
+
+    const candidate: IdentityCandidateDto = {
+      id,
+      name,
+      match: entry['match'] === 'exact' ? 'exact' : 'partial',
+      is_active: entry['is_active'] === true,
+      requires_review: entry['requires_review'] === true,
+    };
+    if (typeof entry['sku'] === 'string' && entry['sku'].length > 0) {
+      candidate.sku = entry['sku'];
+    }
+    if (isRecord(entry['unit'])) {
+      candidate.unit = {
+        id: Number(entry['unit']['id']),
+        name: String(entry['unit']['name'] ?? ''),
+        symbol: String(entry['unit']['symbol'] ?? ''),
+      };
+    }
+    if (isRecord(entry['category'])) {
+      candidate.category = {
+        id: Number(entry['category']['id']),
+        name: String(entry['category']['name'] ?? ''),
+      };
+    }
+    result.push(candidate);
+  }
+  return result;
+}

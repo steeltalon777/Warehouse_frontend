@@ -100,13 +100,19 @@ describe('TempItemsService', () => {
   });
 
   it('should load detail via getData', async () => {
-    const detail = { ...mockItem, balances_per_site: [], operations: [] };
+    const detail = {
+      ...mockItem,
+      balances_per_site: [],
+      operations: [],
+      identity_candidates: [{ id: 500, name: 'Болт М8', match: 'exact' }],
+    };
     bffMock.getData.mockReturnValue(of(detail));
 
     const result = await service.loadDetail('ti-1');
 
     expect(bffMock.getData).toHaveBeenCalledWith('/review-items/ti-1');
     expect(result).toEqual(detail);
+    expect(result?.identity_candidates?.length).toBe(1);
   });
 
   it('should approve as item via postData', async () => {
@@ -119,5 +125,44 @@ describe('TempItemsService', () => {
       { name: 'New Item', category_id: 'cat-1', unit_id: 'u-1' }
     );
     expect(result).toBe(true);
+  });
+
+  it('should merge review item and return ok result', async () => {
+    bffMock.postData.mockReturnValue(of({}));
+
+    const result = await service.mergeToPermanent('ti-1', '500');
+
+    expect(bffMock.postData).toHaveBeenCalledWith(
+      '/review-items/ti-1/merge',
+      { target_item_id: '500' }
+    );
+    expect(result).toEqual({ ok: true });
+  });
+
+  it('should preserve the structured merge error', async () => {
+    bffMock.postData.mockReturnValue(
+      throwError(() => ({ code: 'conflict', message: 'item review already resolved' }))
+    );
+
+    const result = await service.mergeToPermanent('ti-1', '500', 'note');
+
+    expect(bffMock.postData).toHaveBeenCalledWith(
+      '/review-items/ti-1/merge',
+      { target_item_id: '500', comment: 'note' }
+    );
+    expect(result).toEqual({
+      ok: false,
+      error: { code: 'conflict', message: 'item review already resolved' },
+    });
+  });
+
+  it('should fall back to a generic merge error', async () => {
+    bffMock.postData.mockReturnValue(throwError(() => ({})));
+
+    const result = await service.mergeToPermanent('ti-1', '500');
+
+    expect(result.ok).toBe(false);
+    expect(result.error?.code).toBe('merge_failed');
+    expect(result.error?.message).toBe('Ошибка при слиянии');
   });
 });

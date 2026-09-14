@@ -4,6 +4,7 @@ import { BffApiService } from '../api/bff-api.service';
 import {
   TemporaryItem, TempItemDetail, TempItemOperation,
   TempItemMergePayload, TempItemApprovePayload,
+  TempItemMergeResult,
   TempItemsListFilters, TempItemsSort,
   TemporaryItemVm, toTempItemVm,
 } from '../models/temp-items.models';
@@ -140,16 +141,29 @@ export class TempItemsService {
     }
   }
 
-  async mergeToPermanent(id: string, targetItemId: string, comment?: string): Promise<boolean> {
+  async mergeToPermanent(
+    id: string,
+    targetItemId: string,
+    comment?: string,
+  ): Promise<TempItemMergeResult> {
     try {
       const payload: TempItemMergePayload = { target_item_id: targetItemId };
       if (comment) payload.comment = comment;
       await firstValueFrom(
         this.bffApi.postData(`/review-items/${id}/merge`, payload)
       );
-      return true;
-    } catch {
-      return false;
+      return { ok: true };
+    } catch (err: any) {
+      // ADR-0033 §7.2: keep the structured BFF error (code/message) instead of
+      // collapsing every failure into a boolean, so the merge dialog can show
+      // the real domain error rather than a generic message.
+      return {
+        ok: false,
+        error: {
+          code: err?.code || 'merge_failed',
+          message: err?.message || 'Ошибка при слиянии',
+        },
+      };
     }
   }
 

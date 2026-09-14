@@ -3,7 +3,8 @@ import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { Router } from '@angular/router';
 import { TempItemsService } from '../../../core/services/temp-items.service';
-import { TemporaryItemVm, TempItemsListFilters, TempItemsSort } from '../../../core/models/temp-items.models';
+import { TemporaryItemVm, TempItemMergeSelection, TempItemsListFilters, TempItemsSort } from '../../../core/models/temp-items.models';
+import { IdentityCandidateDto } from '../../../core/models/identity-candidate.models';
 import { TempItemsInfoCardComponent } from '../components/temp-items-info-card.component';
 import { TempItemsFiltersComponent, TempItemsFilterValues } from '../components/temp-items-filters.component';
 import { TempItemsTableComponent } from '../components/temp-items-table.component';
@@ -99,6 +100,7 @@ import { TempItemDeleteFormComponent } from '../components/temp-item-delete-form
         (close)="closeModal()"
         (convert)="onConvertAction($event)"
         (mergePermanent)="onMergePermanentAction($event)"
+        (mergeWithCandidate)="onMergeWithCandidate($event)"
         (mergeTemp)="onMergeTempAction($event)"
         (deleteItem)="onDeleteAction($event)"
         (confirm)="onRowConfirm($event)"
@@ -117,8 +119,9 @@ import { TempItemDeleteFormComponent } from '../components/temp-item-delete-form
     @if (showMergePermanentForm() && mergeItem()) {
       <app-temp-item-merge-permanent-form
         [item]="mergeItem()!"
+        [prefillTarget]="mergeCandidate()"
         (submit)="onMergePermanentSubmit($event)"
-        (cancel)="showMergePermanentForm.set(false)"
+        (cancel)="onMergePermanentCancel()"
       />
     }
 
@@ -175,6 +178,8 @@ export class TempItemsPageComponent implements OnInit {
   readonly convertItem = signal<TemporaryItemVm | null>(null);
   readonly showMergePermanentForm = signal(false);
   readonly mergeItem = signal<TemporaryItemVm | null>(null);
+  /** ADR-0033 §7.2: candidate preselected via the review detail CTA. */
+  readonly mergeCandidate = signal<IdentityCandidateDto | null>(null);
   readonly showMergeTempForm = signal(false);
   readonly mergeTempItem = signal<TemporaryItemVm | null>(null);
   readonly showDeleteForm = signal(false);
@@ -246,6 +251,7 @@ export class TempItemsPageComponent implements OnInit {
 
   onRowMerge(item: TemporaryItemVm): void {
     this.mergeItem.set(item);
+    this.mergeCandidate.set(null);
     this.showMergePermanentForm.set(true);
   }
 
@@ -280,6 +286,18 @@ export class TempItemsPageComponent implements OnInit {
   onMergePermanentAction(item: TemporaryItemVm): void {
     this.closeModal();
     this.mergeItem.set(item);
+    this.mergeCandidate.set(null);
+    this.showMergePermanentForm.set(true);
+  }
+
+  /**
+   * ADR-0033 §7.2: the review detail CTA picked a concrete identity candidate —
+   * open the merge dialog with that target prefilled.
+   */
+  onMergeWithCandidate(selection: TempItemMergeSelection): void {
+    this.closeModal();
+    this.mergeItem.set(selection.item);
+    this.mergeCandidate.set(selection.candidate);
     this.showMergePermanentForm.set(true);
   }
 
@@ -304,7 +322,16 @@ export class TempItemsPageComponent implements OnInit {
   async onMergePermanentSubmit(item: TemporaryItemVm): Promise<void> {
     this.showMergePermanentForm.set(false);
     this.mergeItem.set(null);
+    this.mergeCandidate.set(null);
+    // Refresh drops the merged item from the review queue and clears any
+    // stale identity-candidate warning state (ADR-0033 §7.2).
     await this.loadList();
+  }
+
+  onMergePermanentCancel(): void {
+    this.showMergePermanentForm.set(false);
+    this.mergeItem.set(null);
+    this.mergeCandidate.set(null);
   }
 
   async onMergeTempSubmit(item: TemporaryItemVm): Promise<void> {
@@ -324,6 +351,8 @@ export class TempItemsPageComponent implements OnInit {
     this.closeModal();
     this.showConvertForm.set(false);
     this.showMergePermanentForm.set(false);
+    this.mergeItem.set(null);
+    this.mergeCandidate.set(null);
     this.showMergeTempForm.set(false);
     this.showDeleteForm.set(false);
   }
