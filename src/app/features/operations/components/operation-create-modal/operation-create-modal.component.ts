@@ -487,7 +487,7 @@ function currentDateTimeLocal(): string {
         0 12px 32px -8px rgba(15, 23, 42, 0.18),
         0 2px 6px rgba(15, 23, 42, 0.06);
       width: 100%;
-      max-width: 1450px;
+      max-width: clamp(1000px, 53vw, 1450px);
       /* Content-driven height: shrink to 1–3 rows, cap at 94vh and let the
          table-wrap scroll when lines exceed the viewport. */
       height: auto;
@@ -509,8 +509,8 @@ function currentDateTimeLocal(): string {
       display: flex;
       align-items: center;
       justify-content: space-between;
-      gap: 16px;
-      padding: 10px 20px;
+      gap: 12px;
+      padding: 10px 16px;
       border-bottom: 1px solid var(--f-border);
       background: var(--f-surface);
       min-height: 48px;
@@ -606,7 +606,7 @@ function currentDateTimeLocal(): string {
     }
 
     .modal-banners {
-      padding: 8px 20px 0;
+      padding: 8px 16px 0;
       display: flex;
       flex-direction: column;
       gap: 6px;
@@ -615,7 +615,7 @@ function currentDateTimeLocal(): string {
     .modal-banners:empty { display: none; }
 
     .modal-form-grid {
-      padding: 10px 20px 8px;
+      padding: 10px 16px 8px;
       background: var(--f-surface);
       border-bottom: 1px solid var(--f-border);
       display: flex;
@@ -623,7 +623,7 @@ function currentDateTimeLocal(): string {
       gap: 8px;
     }
     .modal-add-toolbar {
-      padding: 8px 20px;
+      padding: 8px 16px;
       background: var(--f-surface-2);
       border-bottom: 1px solid var(--f-border);
     }
@@ -631,15 +631,15 @@ function currentDateTimeLocal(): string {
     .modal-add-toolbar__inner {
       display: flex;
       align-items: center;
-      gap: 10px;
+      gap: 8px;
     }
     .at-label {
       display: inline-flex;
       align-items: center;
       height: var(--f-ctrl-h);
-      padding: 0 12px 0 0;
+      padding: 0 10px 0 0;
       border-right: 1px solid var(--f-border);
-      margin-right: 2px;
+      margin-right: 0;
       font-size: 11px;
       text-transform: uppercase;
       letter-spacing: 0.06em;
@@ -656,7 +656,7 @@ function currentDateTimeLocal(): string {
       position: relative;
     }
     .inline-items-count {
-      margin-left: 10px;
+      margin-left: 8px;
       font-size: 12px;
       color: var(--f-muted);
       white-space: nowrap;
@@ -685,8 +685,8 @@ function currentDateTimeLocal(): string {
       display: flex;
       align-items: center;
       justify-content: space-between;
-      gap: 12px;
-      padding: 6px 20px;
+      gap: 10px;
+      padding: 6px 16px;
       background: var(--f-surface);
       border-bottom: 1px solid var(--f-border);
       min-height: 34px;
@@ -695,13 +695,13 @@ function currentDateTimeLocal(): string {
     .table-toolbar__left {
       display: flex;
       align-items: center;
-      gap: 10px;
+      gap: 8px;
       min-width: 0;
     }
     .table-toolbar__right {
       display: flex;
       align-items: center;
-      gap: 10px;
+      gap: 8px;
     }
     .btn-refresh-balances {
       display: inline-flex;
@@ -745,8 +745,8 @@ function currentDateTimeLocal(): string {
     .modal-lines-filter {
       display: flex;
       align-items: center;
-      gap: 10px;
-      padding: 6px 20px;
+      gap: 8px;
+      padding: 6px 16px;
       background: var(--f-surface);
       border-bottom: 1px solid var(--f-border);
       min-height: 36px;
@@ -813,7 +813,7 @@ function currentDateTimeLocal(): string {
        to win CSS cascade against the default .form-grid rule below. ─── */
     @media (max-width: 1280px) {
       .modal-container {
-        max-width: 100%;
+        max-width: 1000px;
       }
       .modal-form-grid .form-grid {
         grid-template-columns: minmax(0, 1fr) minmax(0, 1.2fr) minmax(0, 0.95fr);
@@ -871,8 +871,8 @@ function currentDateTimeLocal(): string {
       display: flex;
       align-items: center;
       justify-content: space-between;
-      gap: 16px;
-      padding: 10px 20px;
+      gap: 12px;
+      padding: 10px 16px;
       background: var(--f-surface);
       border-top: 1px solid var(--f-border);
       height: 56px;
@@ -881,7 +881,7 @@ function currentDateTimeLocal(): string {
     .footer-actions {
       display: flex;
       align-items: center;
-      gap: 8px;
+      gap: 6px;
       margin-left: auto;
     }
 
@@ -898,7 +898,7 @@ function currentDateTimeLocal(): string {
     }
     .form-grid {
       display: grid;
-      gap: 10px;
+      gap: 8px;
       align-items: start;
       grid-template-columns:
         minmax(0, 1.2fr)

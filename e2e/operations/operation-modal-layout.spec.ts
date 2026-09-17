@@ -2,6 +2,8 @@
  * Visual polish — Operation Modal layout.
  *
  * Covers:
+ *  - compact Full HD width while retaining the established 4K cap;
+ *  - the item table uses its full width, including the empty state;
  *  - content-driven modal height (shrinks for 1–3 rows, caps with inner scroll
  *    for many rows) without changing responsive layout;
  *  - removed CATEGORY_ID column (category stays as human-readable metadata);
@@ -103,6 +105,38 @@ test.describe('Operation Modal — layout polish', () => {
   test.beforeEach(async ({ page }) => {
     installNetworkGuard(page);
     await loginAsRoot(page);
+  });
+
+  test('is compact on Full HD, fills the table width, and retains the 4K cap', async ({ page }) => {
+    await page.setViewportSize({ width: 1920, height: 1080 });
+    await openAuthenticatedOperations(page);
+    await page.locator('[data-testid="operations-create-button"]').click();
+
+    const modal = page.locator('[data-design-id="operation-modal"]');
+    await expect(modal).toBeVisible({ timeout: 10000 });
+
+    const fullHdBox = await modal.boundingBox();
+    expect(fullHdBox).toBeTruthy();
+    expect(fullHdBox!.width).toBeGreaterThanOrEqual(1000);
+    expect(fullHdBox!.width).toBeLessThanOrEqual(1040);
+
+    const tableLayout = await modal.locator('.lines-data-table').evaluate(table => {
+      const tableRect = table.getBoundingClientRect();
+      const lastHeader = table.querySelector('thead th:last-child')!.getBoundingClientRect();
+      const itemHeader = table.querySelector('thead th:nth-child(2)')!.getBoundingClientRect();
+      return {
+        trailingGap: Math.abs(tableRect.right - lastHeader.right),
+        itemColumnWidth: itemHeader.width,
+      };
+    });
+    expect(tableLayout.trailingGap).toBeLessThanOrEqual(2);
+    expect(tableLayout.itemColumnWidth).toBeGreaterThanOrEqual(650);
+
+    await page.setViewportSize({ width: 3840, height: 2160 });
+    const fourKBox = await modal.boundingBox();
+    expect(fourKBox).toBeTruthy();
+    expect(fourKBox!.width).toBeGreaterThanOrEqual(1448);
+    expect(fourKBox!.width).toBeLessThanOrEqual(1452);
   });
 
   test('height is content-driven for a 1-line draft and capped with scroll for many lines', async ({ page }) => {

@@ -245,7 +245,7 @@ export interface IdentityCandidateAction {
             </tr>
             @if (submitErrorState(line.localId)) {
               <tr class="submit-error-detail-row">
-                <td colspan="6">
+                <td colspan="5">
                   <div class="submit-error-hint-wrap">
                     <div class="submit-error-hint" [id]="submitErrorHintId(line.localId)" role="alert">
                       <span class="submit-error-hint-icon" aria-hidden="true">!</span>
@@ -278,7 +278,7 @@ export interface IdentityCandidateAction {
             }
           } @empty {
             <tr>
-              <td colspan="6" class="empty-state">
+              <td colspan="5" class="empty-state">
                 @if (lines().length === 0) {
                   Для добавления используйте поле «Добавить ТМЦ» выше
                 } @else {
@@ -328,11 +328,11 @@ export interface IdentityCandidateAction {
       table-layout: fixed;
       font-family: var(--l-font-body);
     }
-    .lines-data-table col.col-num-col    { width: 44px; }
+    .lines-data-table col.col-num-col    { width: 40px; }
     .lines-data-table col.col-item-col   { width: auto; }
     .lines-data-table col.col-qty-col    { width: 110px; }
-    .lines-data-table col.col-avail-col  { width: 110px; }
-    .lines-data-table col.col-actions-col{ width: 56px; }
+    .lines-data-table col.col-avail-col  { width: 100px; }
+    .lines-data-table col.col-actions-col{ width: 48px; }
 
     .lines-data-table thead th {
       position: sticky;
@@ -346,7 +346,7 @@ export interface IdentityCandidateAction {
       letter-spacing: 0.06em;
       color: var(--l-muted);
       font-weight: 550;
-      padding: 8px 10px;
+      padding: 8px;
       height: 34px;
       white-space: nowrap;
       user-select: none;
@@ -356,7 +356,7 @@ export interface IdentityCandidateAction {
     .lines-data-table thead th:hover:not(.col-del) { background: #F1F5F9; }
 
     .lines-data-table tbody td {
-      padding: 8px 10px;
+      padding: 8px;
       border-bottom: 1px solid var(--l-border);
       vertical-align: top;
       height: 44px;
@@ -372,10 +372,10 @@ export interface IdentityCandidateAction {
     }
     .col-item-cell {
       min-width: 0;
-      padding-right: 14px !important;
+      padding-right: 10px !important;
     }
     .col-qty, .col-avail, .col-del { vertical-align: top; }
-    .col-del { text-align: right; padding-right: 14px !important; }
+    .col-del { text-align: right; padding-right: 10px !important; }
 
     .sort-indicator {
       margin-left: 4px;
