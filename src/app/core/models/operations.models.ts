@@ -86,8 +86,10 @@ export interface OperationsFilterVm {
   status: OperationStatus | null;
   acceptanceState: OperationAcceptanceState | null;
   siteId: string | null;
-  createdAfter: string | null;
-  createdBefore: string | null;
+  /** Business-time period filter (`effective_at`, falling back to
+   *  `created_at` for legacy rows) — same date as the "Дата" column. */
+  effectiveAfter: string | null;
+  effectiveBefore: string | null;
   updatedAfter: string | null;
   updatedBefore: string | null;
   createdByUserId: string | null;
@@ -113,6 +115,9 @@ export interface OperationListRowVm {
   statusLabel: string;
   statusLines: StatusLineVm[];
   createdAt: string;
+  /** Business date shown and sorted by default (`effective_at`, falling back
+   *  to `created_at` for legacy rows without a business timestamp). */
+  effectiveAt: string;
   createdByUserId: string;
   createdByLabel: string;
   sourceSiteId?: string | null;

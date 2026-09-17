@@ -75,7 +75,7 @@ export class PendingAcceptancePageComponent implements OnInit {
   readonly isLoading = signal(false);
   readonly error = signal<string | null>(null);
   readonly allRows = signal<OperationListRowVm[]>([]);
-  readonly sortColumn = signal<string>('createdAt');
+  readonly sortColumn = signal<string>('effectiveAt');
   readonly sortDirection = signal<'asc' | 'desc'>('desc');
   readonly currentPage = signal(1);
   readonly pageSize = signal(20);
@@ -185,6 +185,7 @@ export class PendingAcceptancePageComponent implements OnInit {
           : []),
       ],
       createdAt: op.created_at,
+      effectiveAt: op.effective_at ?? op.created_at,
       createdByUserId: op.created_by_user_id,
       createdByLabel: op.created_by_label || 'Пользователь',
       sourceSiteId: op.source_site_id,

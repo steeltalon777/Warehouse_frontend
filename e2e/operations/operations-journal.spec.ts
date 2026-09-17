@@ -196,11 +196,12 @@ test.describe('OPS-UI-001..010 — Operations Journal UI', () => {
     validFrom.setDate(validFrom.getDate() - 30);
     const validTo = new Date(today);
 
-    // Valid range: should trigger a request
+    // Valid range: should trigger a request over the business date
+    // (effective_at), not the ingestion date (created_at).
     const validResponsePromise = page.waitForResponse(response => {
       if (!response.url().includes('/bff/api/v1/operations') || response.request().method() !== 'GET') return false;
       const url = new URL(response.url());
-      return url.searchParams.has('created_after') && url.searchParams.has('created_before') && response.status() === 200;
+      return url.searchParams.has('effective_after') && url.searchParams.has('effective_before') && response.status() === 200;
     });
 
     await page.locator('[data-testid="operations-date-from"]').fill(toIsoDate(validFrom));

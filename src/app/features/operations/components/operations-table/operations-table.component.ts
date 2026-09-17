@@ -51,9 +51,9 @@ import {
                 <span class="sort-arrow">{{ sortDirection() === 'asc' ? '▲' : '▼' }}</span>
               }
             </th>
-            <th class="col-date" (click)="sort.emit('createdAt')">
+            <th class="col-date" (click)="sort.emit('effectiveAt')">
               Дата
-              @if (sortColumn() === 'createdAt') {
+              @if (sortColumn() === 'effectiveAt') {
                 <span class="sort-arrow">{{ sortDirection() === 'asc' ? '▲' : '▼' }}</span>
               }
             </th>
@@ -95,7 +95,7 @@ import {
               >
                 <span class="comment-text">{{ row.comment?.trim() || '—' }}</span>
               </td>
-              <td class="col-date" data-testid="operation-date-cell">{{ row.createdAt | date:'dd.MM.yyyy HH:mm' }}</td>
+              <td class="col-date" data-testid="operation-date-cell">{{ row.effectiveAt | date:'dd.MM.yyyy HH:mm' }}</td>
               <td class="col-actions" (click)="$event.stopPropagation()">
                 <div class="action-stack">
                   @if (row.canInvoice) {

@@ -59,7 +59,9 @@ import {
             type="date"
             class="wh-form-input input"
             data-testid="operations-date-from"
-            [ngModel]="filters().createdAfter"
+            title="Дата операции — с"
+            aria-label="Дата операции с"
+            [ngModel]="filters().effectiveAfter"
             (ngModelChange)="onDateAfterChange($event)"
           />
           <span class="date-sep">—</span>
@@ -67,7 +69,9 @@ import {
             type="date"
             class="wh-form-input input"
             data-testid="operations-date-to"
-            [ngModel]="filters().createdBefore"
+            title="Дата операции — по"
+            aria-label="Дата операции по"
+            [ngModel]="filters().effectiveBefore"
             (ngModelChange)="onDateBeforeChange($event)"
           />
         </div>
@@ -146,11 +150,11 @@ export class OperationsFilterPanelComponent {
   }
 
   onDateAfterChange(value: string | null): void {
-    this.filtersChange.emit({ createdAfter: value });
+    this.filtersChange.emit({ effectiveAfter: value });
   }
 
   onDateBeforeChange(value: string | null): void {
-    this.filtersChange.emit({ createdBefore: value });
+    this.filtersChange.emit({ effectiveBefore: value });
   }
 
   onOnlyMineChange(value: boolean): void {

@@ -359,8 +359,8 @@ export class OperationsPageComponent implements OnInit, OnDestroy {
     status: null,
     acceptanceState: null,
     siteId: null,
-    createdAfter: null,
-    createdBefore: null,
+    effectiveAfter: null,
+    effectiveBefore: null,
     updatedAfter: null,
     updatedBefore: null,
     createdByUserId: null,
@@ -370,7 +370,7 @@ export class OperationsPageComponent implements OnInit, OnDestroy {
   });
 
   readonly activeStatusTab = signal<string>('all');
-  readonly sortColumn = signal<string>('createdAt');
+  readonly sortColumn = signal<string>('effectiveAt');
   readonly sortDirection = signal<'asc' | 'desc'>('desc');
 
   // ─── Modal state ─────────────────────────────────────────────
@@ -531,8 +531,8 @@ export class OperationsPageComponent implements OnInit, OnDestroy {
       status: null,
       acceptanceState: null,
       siteId: null,
-      createdAfter: null,
-      createdBefore: null,
+      effectiveAfter: null,
+      effectiveBefore: null,
       updatedAfter: null,
       updatedBefore: null,
       createdByUserId: null,
@@ -668,6 +668,7 @@ export class OperationsPageComponent implements OnInit, OnDestroy {
       statusLabel,
       statusLines,
       createdAt: dto.created_at,
+      effectiveAt: dto.effective_at ?? dto.created_at,
       createdByUserId: dto.created_by_user_id,
       createdByLabel: dto.created_by_label || 'Пользователь',
       sourceSiteId: dto.source_site_id,

@@ -114,8 +114,10 @@ export class OperationsService {
       }
       if (filters.acceptanceState) params['acceptance_state'] = filters.acceptanceState;
       if (filters.siteId) params['site_id'] = filters.siteId;
-      if (filters.createdAfter) params['created_after'] = filters.createdAfter;
-      if (filters.createdBefore) params['created_before'] = filters.createdBefore;
+      // Period filter follows the visible business date ("Дата" column =
+      // effective_at with created_at fallback), not the ingestion date.
+      if (filters.effectiveAfter) params['effective_after'] = filters.effectiveAfter;
+      if (filters.effectiveBefore) params['effective_before'] = filters.effectiveBefore;
       if (filters.updatedAfter) params['updated_after'] = filters.updatedAfter;
       if (filters.updatedBefore) params['updated_before'] = filters.updatedBefore;
       if (filters.createdByUserId) params['created_by_user_id'] = filters.createdByUserId;
@@ -845,6 +847,7 @@ export class OperationsService {
       statusLabel,
       statusLines,
       createdAt: op.created_at,
+      effectiveAt: op.effective_at ?? op.created_at,
       createdByUserId: op.created_by_user_id,
       createdByLabel,
       sourceSiteId: op.source_site_id,

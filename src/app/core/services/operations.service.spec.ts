@@ -83,8 +83,8 @@ describe('OperationsService', () => {
       status: 'draft' as OperationStatus,
       acceptanceState: 'pending',
       siteId: 'site-1',
-      createdAfter: '2026-01-01',
-      createdBefore: '2026-01-31',
+      effectiveAfter: '2026-01-01',
+      effectiveBefore: '2026-01-31',
       updatedAfter: '2026-02-01',
       updatedBefore: '2026-02-28',
       createdByUserId: 'user-2',
@@ -102,8 +102,11 @@ describe('OperationsService', () => {
     expect(params['status']).toBe('draft');
     expect(params['acceptance_state']).toBe('pending');
     expect(params['site_id']).toBe('site-1');
-    expect(params['created_after']).toBe('2026-01-01');
-    expect(params['created_before']).toBe('2026-01-31');
+    expect(params['effective_after']).toBe('2026-01-01');
+    expect(params['effective_before']).toBe('2026-01-31');
+    // The Operations journal must not filter by ingestion time anymore.
+    expect(params['created_after']).toBeUndefined();
+    expect(params['created_before']).toBeUndefined();
     expect(params['updated_after']).toBe('2026-02-01');
     expect(params['updated_before']).toBe('2026-02-28');
     expect(params['created_by_user_id']).toBe('user-2');
@@ -115,7 +118,7 @@ describe('OperationsService', () => {
     await service.loadList({
       search: '', type: null, status: null, siteId: null,
       acceptanceState: null,
-      createdAfter: null, createdBefore: null, updatedAfter: null, updatedBefore: null,
+      effectiveAfter: null, effectiveBefore: null, updatedAfter: null, updatedBefore: null,
       createdByUserId: null, onlyMine: true, page: 1, pageSize: 20,
     });
 
@@ -133,7 +136,7 @@ describe('OperationsService', () => {
     await service.loadList({
       search: '', type: null, status: null, siteId: null,
       acceptanceState: null,
-      createdAfter: null, createdBefore: null, updatedAfter: null, updatedBefore: null,
+      effectiveAfter: null, effectiveBefore: null, updatedAfter: null, updatedBefore: null,
       createdByUserId: null, onlyMine: false, page: 1, pageSize: 20,
     });
 
@@ -152,7 +155,7 @@ describe('OperationsService', () => {
     await service.loadList({
       search: '', type: null, status: null, siteId: null,
       acceptanceState: null,
-      createdAfter: null, createdBefore: null, updatedAfter: null, updatedBefore: null,
+      effectiveAfter: null, effectiveBefore: null, updatedAfter: null, updatedBefore: null,
       createdByUserId: null, onlyMine: false, page: 1, pageSize: 20,
     });
 
@@ -171,7 +174,7 @@ describe('OperationsService', () => {
     await service.loadList({
       search: '', type: null, status: null, siteId: null,
       acceptanceState: null,
-      createdAfter: null, createdBefore: null, updatedAfter: null, updatedBefore: null,
+      effectiveAfter: null, effectiveBefore: null, updatedAfter: null, updatedBefore: null,
       createdByUserId: null, onlyMine: false, page: 1, pageSize: 20,
     });
 
@@ -189,7 +192,7 @@ describe('OperationsService', () => {
     await service.loadList({
       search: '', type: null, status: null, siteId: null,
       acceptanceState: null,
-      createdAfter: null, createdBefore: null, updatedAfter: null, updatedBefore: null,
+      effectiveAfter: null, effectiveBefore: null, updatedAfter: null, updatedBefore: null,
       createdByUserId: null, onlyMine: false, page: 1, pageSize: 20,
     });
 
@@ -209,13 +212,54 @@ describe('OperationsService', () => {
     await service.loadList({
       search: '', type: null, status: null, siteId: null,
       acceptanceState: null,
-      createdAfter: null, createdBefore: null, updatedAfter: null, updatedBefore: null,
+      effectiveAfter: null, effectiveBefore: null, updatedAfter: null, updatedBefore: null,
       createdByUserId: null, onlyMine: false, page: 1, pageSize: 20,
     });
 
     const rows = service.rows();
     expect(rows[0].canPrint).toBe(false);
     expect(rows[1].canPrint).toBe(true);
+  });
+
+  // ─── Business chronology mapping (effective_at) ────────────────────
+
+  it('mapToRowVm maps effectiveAt from effective_at, keeping createdAt intact', async () => {
+    authMock.authContext = vi.fn(() => ({ userId: 'user-1', role: 'root', defaultSiteId: null }));
+    const op = makeOperation('submitted', {
+      effective_at: '2026-01-15T09:00:00Z',
+      created_at: '2026-09-16T09:00:00Z',
+    });
+    bffMock.getList.mockReturnValue(of({ items: [op], total_count: 1, page: 1, page_size: 20 }));
+
+    await service.loadList({
+      search: '', type: null, status: null, siteId: null,
+      acceptanceState: null,
+      effectiveAfter: null, effectiveBefore: null, updatedAfter: null, updatedBefore: null,
+      createdByUserId: null, onlyMine: false, page: 1, pageSize: 20,
+    });
+
+    const row = service.rows()[0];
+    expect(row.effectiveAt).toBe('2026-01-15T09:00:00Z');
+    expect(row.createdAt).toBe('2026-09-16T09:00:00Z');
+  });
+
+  it('mapToRowVm falls back to created_at when effective_at is null (legacy rows)', async () => {
+    authMock.authContext = vi.fn(() => ({ userId: 'user-1', role: 'root', defaultSiteId: null }));
+    const op = makeOperation('submitted', {
+      effective_at: null,
+      created_at: '2026-03-01T09:00:00Z',
+    });
+    bffMock.getList.mockReturnValue(of({ items: [op], total_count: 1, page: 1, page_size: 20 }));
+
+    await service.loadList({
+      search: '', type: null, status: null, siteId: null,
+      acceptanceState: null,
+      effectiveAfter: null, effectiveBefore: null, updatedAfter: null, updatedBefore: null,
+      createdByUserId: null, onlyMine: false, page: 1, pageSize: 20,
+    });
+
+    const row = service.rows()[0];
+    expect(row.effectiveAt).toBe('2026-03-01T09:00:00Z');
   });
 
   // ─── isSaving / isSubmitting flags ─────────────────────────────────
@@ -423,7 +467,7 @@ describe('OperationsService', () => {
     await service.loadList({
       search: '', type: null, status: null, siteId: null,
       acceptanceState: null,
-      createdAfter: null, createdBefore: null, updatedAfter: null, updatedBefore: null,
+      effectiveAfter: null, effectiveBefore: null, updatedAfter: null, updatedBefore: null,
       createdByUserId: null, onlyMine: false, page: 1, pageSize: 20,
     });
 
@@ -439,7 +483,7 @@ describe('OperationsService', () => {
     await service.loadList({
       search: '', type: null, status: null, siteId: null,
       acceptanceState: null,
-      createdAfter: null, createdBefore: null, updatedAfter: null, updatedBefore: null,
+      effectiveAfter: null, effectiveBefore: null, updatedAfter: null, updatedBefore: null,
       createdByUserId: null, onlyMine: false, page: 1, pageSize: 20,
     });
 
@@ -455,7 +499,7 @@ describe('OperationsService', () => {
     await service.loadList({
       search: '', type: null, status: null, siteId: null,
       acceptanceState: null,
-      createdAfter: null, createdBefore: null, updatedAfter: null, updatedBefore: null,
+      effectiveAfter: null, effectiveBefore: null, updatedAfter: null, updatedBefore: null,
       createdByUserId: null, onlyMine: false, page: 1, pageSize: 20,
     });
 
@@ -472,7 +516,7 @@ describe('OperationsService', () => {
     await service.loadList({
       search: '', type: null, status: null, siteId: null,
       acceptanceState: null,
-      createdAfter: null, createdBefore: null, updatedAfter: null, updatedBefore: null,
+      effectiveAfter: null, effectiveBefore: null, updatedAfter: null, updatedBefore: null,
       createdByUserId: null, onlyMine: false, page: 1, pageSize: 20,
     });
 
@@ -498,7 +542,7 @@ describe('OperationsService', () => {
     await service.loadList({
       search: '', type: null, status: null, siteId: null,
       acceptanceState: null,
-      createdAfter: null, createdBefore: null, updatedAfter: null, updatedBefore: null,
+      effectiveAfter: null, effectiveBefore: null, updatedAfter: null, updatedBefore: null,
       createdByUserId: null, onlyMine: false, page: 1, pageSize: 20,
     });
 
@@ -523,7 +567,7 @@ describe('OperationsService', () => {
     await service.loadList({
       search: '', type: null, status: null, siteId: null,
       acceptanceState: null,
-      createdAfter: null, createdBefore: null, updatedAfter: null, updatedBefore: null,
+      effectiveAfter: null, effectiveBefore: null, updatedAfter: null, updatedBefore: null,
       createdByUserId: null, onlyMine: false, page: 1, pageSize: 20,
     });
 
@@ -543,13 +587,13 @@ describe('OperationsService', () => {
       service.loadList({
         search: '', type: null, status: null, siteId: null,
         acceptanceState: null,
-        createdAfter: null, createdBefore: null, updatedAfter: null, updatedBefore: null,
+        effectiveAfter: null, effectiveBefore: null, updatedAfter: null, updatedBefore: null,
         createdByUserId: null, onlyMine: false, page: 1, pageSize: 20,
       }),
       service.loadList({
         search: '', type: null, status: null, siteId: null,
         acceptanceState: null,
-        createdAfter: null, createdBefore: null, updatedAfter: null, updatedBefore: null,
+        effectiveAfter: null, effectiveBefore: null, updatedAfter: null, updatedBefore: null,
         createdByUserId: null, onlyMine: false, page: 1, pageSize: 20,
       }),
     ]);
